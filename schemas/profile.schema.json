@@ -1,0 +1,907 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/profile.schema.json",
+  "title": "CareerOS Canonical Profile",
+  "description": "A structural schema for the canonical CareerOS professional profile from which generated career artifacts are derived.",
+  "version": "1.0.0",
+  "$comment": "The top-level version field is CareerOS project metadata for this schema document; it is not a JSON Schema validation keyword.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "profileVersion": {
+      "type": "string",
+      "description": "The version identifier of this canonical profile data set."
+    },
+    "person": {
+      "$ref": "#/$defs/person",
+      "description": "The professional individual represented by the canonical profile."
+    },
+    "professionalSummaries": {
+      "type": "array",
+      "description": "Reusable professional summaries or positioning statements derived from canonical profile facts.",
+      "items": {
+        "$ref": "#/$defs/professionalSummary"
+      }
+    },
+    "experiences": {
+      "type": "array",
+      "description": "Professional roles, engagements, assignments, business activities, or other periods of work.",
+      "items": {
+        "$ref": "#/$defs/experience"
+      }
+    },
+    "organizations": {
+      "type": "array",
+      "description": "Employers, clients, institutions, sponsors, or other organizations connected to the profile.",
+      "items": {
+        "$ref": "#/$defs/organization"
+      }
+    },
+    "projects": {
+      "type": "array",
+      "description": "Distinct bodies of work that demonstrate professional capability.",
+      "items": {
+        "$ref": "#/$defs/project"
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Capabilities, methods, tools, technologies, domain competencies, languages, or working styles.",
+      "items": {
+        "$ref": "#/$defs/skill"
+      }
+    },
+    "achievements": {
+      "type": "array",
+      "description": "Measurable or meaningful professional results attributable to the person.",
+      "items": {
+        "$ref": "#/$defs/achievement"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Supporting material that substantiates profile claims, achievements, credentials, or artifacts.",
+      "items": {
+        "$ref": "#/$defs/evidence"
+      }
+    },
+    "education": {
+      "type": "array",
+      "description": "Formal or structured learning history.",
+      "items": {
+        "$ref": "#/$defs/education"
+      }
+    },
+    "certifications": {
+      "type": "array",
+      "description": "Credentials, licenses, certificates, or verified training results.",
+      "items": {
+        "$ref": "#/$defs/certification"
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "description": "Generated or curated career outputs derived from canonical profile data.",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "targetContexts": {
+      "type": "array",
+      "description": "Audience, role, market, geography, language, or opportunity contexts used to shape generated artifacts.",
+      "items": {
+        "$ref": "#/$defs/targetContext"
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Project-specific extensions that preserve the distinction between canonical data, target context, and generated output.",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "profileVersion",
+    "person"
+  ],
+  "$defs": {
+    "person": {
+      "type": "object",
+      "description": "The professional individual represented by the profile.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the person within the profile."
+        },
+        "names": {
+          "type": "array",
+          "description": "Names used by the person in professional contexts.",
+          "items": {
+            "$ref": "#/$defs/name"
+          }
+        },
+        "contact": {
+          "$ref": "#/$defs/contact",
+          "description": "Contact channels and preferences for professional use."
+        },
+        "location": {
+          "$ref": "#/$defs/location",
+          "description": "The person's professional location context."
+        },
+        "languages": {
+          "type": "array",
+          "description": "Languages relevant to professional communication or artifact generation.",
+          "items": {
+            "$ref": "#/$defs/language"
+          }
+        },
+        "positioning": {
+          "$ref": "#/$defs/positioning",
+          "description": "High-level professional identity, direction, and positioning themes."
+        },
+        "links": {
+          "type": "array",
+          "description": "Professional web links associated with the person.",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional person-level profile data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "name": {
+      "type": "object",
+      "description": "A professional name or name variant.",
+      "additionalProperties": true,
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "The name text."
+        },
+        "usage": {
+          "type": "string",
+          "description": "The context in which this name is used."
+        }
+      }
+    },
+    "contact": {
+      "type": "object",
+      "description": "Professional contact information and preferences.",
+      "additionalProperties": true,
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "A professional email address."
+        },
+        "phone": {
+          "type": "string",
+          "description": "A professional phone number."
+        },
+        "preferredContactMethod": {
+          "type": "string",
+          "description": "The preferred channel for professional contact."
+        },
+        "links": {
+          "type": "array",
+          "description": "Contact-related web links.",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "description": "A geographic or work-location context.",
+      "additionalProperties": true,
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "A human-readable location label."
+        },
+        "country": {
+          "type": "string",
+          "description": "The country associated with the location."
+        },
+        "region": {
+          "type": "string",
+          "description": "The region, state, province, or county associated with the location."
+        },
+        "city": {
+          "type": "string",
+          "description": "The city associated with the location."
+        },
+        "workMode": {
+          "type": "string",
+          "description": "The work-location mode associated with the profile or role."
+        }
+      }
+    },
+    "language": {
+      "type": "object",
+      "description": "A language relevant to the professional profile.",
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "The language name."
+        },
+        "proficiency": {
+          "type": "string",
+          "description": "The person's proficiency level or description for the language."
+        },
+        "usage": {
+          "type": "string",
+          "description": "The professional context in which the language is used."
+        }
+      }
+    },
+    "positioning": {
+      "type": "object",
+      "description": "Professional identity, direction, and positioning themes.",
+      "additionalProperties": true,
+      "properties": {
+        "headline": {
+          "type": "string",
+          "description": "A concise professional headline."
+        },
+        "valueProposition": {
+          "type": "string",
+          "description": "A concise statement of the professional value offered."
+        },
+        "targetDirection": {
+          "type": "string",
+          "description": "The intended professional direction or opportunity focus."
+        },
+        "themes": {
+          "type": "array",
+          "description": "Reusable positioning themes that may guide generated artifacts.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "professionalSummary": {
+      "type": "object",
+      "description": "A reusable professional summary or positioning statement.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the professional summary."
+        },
+        "label": {
+          "type": "string",
+          "description": "A human-readable label for the summary."
+        },
+        "text": {
+          "type": "string",
+          "description": "The summary text."
+        },
+        "targetContextRefs": {
+          "type": "array",
+          "description": "References to target contexts for which the summary is intended.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "claimRefs": {
+          "type": "array",
+          "description": "References to claims or profile elements supporting the summary.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional summary data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "experience": {
+      "type": "object",
+      "description": "A professional period, role, engagement, assignment, or business activity.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the experience."
+        },
+        "title": {
+          "type": "string",
+          "description": "The role title or experience label."
+        },
+        "organizationRefs": {
+          "type": "array",
+          "description": "References to organizations involved in the experience.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "dateRange": {
+          "$ref": "#/$defs/dateRange",
+          "description": "The time period associated with the experience."
+        },
+        "location": {
+          "$ref": "#/$defs/location",
+          "description": "The location context for the experience."
+        },
+        "engagementType": {
+          "type": "string",
+          "description": "The type of professional engagement represented by the experience."
+        },
+        "scope": {
+          "type": "string",
+          "description": "The scope, responsibilities, or operating context of the experience."
+        },
+        "achievementRefs": {
+          "type": "array",
+          "description": "References to achievements associated with the experience.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "projectRefs": {
+          "type": "array",
+          "description": "References to projects associated with the experience.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "skillRefs": {
+          "type": "array",
+          "description": "References to skills demonstrated by the experience.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "description": "References to evidence supporting the experience.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional experience data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "organization": {
+      "type": "object",
+      "description": "An employer, client, institution, sponsor, or other organization.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the organization."
+        },
+        "name": {
+          "type": "string",
+          "description": "The organization's name."
+        },
+        "description": {
+          "type": "string",
+          "description": "A short description of the organization."
+        },
+        "industry": {
+          "type": "string",
+          "description": "The industry or domain associated with the organization."
+        },
+        "location": {
+          "$ref": "#/$defs/location",
+          "description": "The location context for the organization."
+        },
+        "links": {
+          "type": "array",
+          "description": "Web links associated with the organization.",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional organization data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "project": {
+      "type": "object",
+      "description": "A body of work that demonstrates professional capability.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the project."
+        },
+        "name": {
+          "type": "string",
+          "description": "The project name."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the project and its professional relevance."
+        },
+        "dateRange": {
+          "$ref": "#/$defs/dateRange",
+          "description": "The time period associated with the project."
+        },
+        "experienceRefs": {
+          "type": "array",
+          "description": "References to experiences associated with the project.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "organizationRefs": {
+          "type": "array",
+          "description": "References to organizations associated with the project.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "skillRefs": {
+          "type": "array",
+          "description": "References to skills demonstrated by the project.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "achievementRefs": {
+          "type": "array",
+          "description": "References to achievements associated with the project.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "artifactRefs": {
+          "type": "array",
+          "description": "References to artifacts produced by or related to the project.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "description": "References to evidence supporting the project.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional project data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "skill": {
+      "type": "object",
+      "description": "A capability, method, tool, technology, domain competency, language, or working style.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the skill."
+        },
+        "name": {
+          "type": "string",
+          "description": "The skill name."
+        },
+        "category": {
+          "type": "string",
+          "description": "A grouping or classification for the skill."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of the skill and its professional context."
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "description": "References to evidence supporting the skill.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional skill data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "achievement": {
+      "type": "object",
+      "description": "A measurable or meaningful result attributable to the person.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the achievement."
+        },
+        "statement": {
+          "type": "string",
+          "description": "The achievement statement."
+        },
+        "contextRefs": {
+          "type": "array",
+          "description": "References to experiences, projects, education, or certifications that provide context for the achievement.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "skillRefs": {
+          "type": "array",
+          "description": "References to skills demonstrated by the achievement.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "description": "References to evidence supporting the achievement.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional achievement data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Supporting material that substantiates a profile claim.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the evidence item."
+        },
+        "title": {
+          "type": "string",
+          "description": "A human-readable title for the evidence item."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of what the evidence supports."
+        },
+        "evidenceType": {
+          "type": "string",
+          "description": "The kind of supporting material represented by the evidence item."
+        },
+        "links": {
+          "type": "array",
+          "description": "Web links or file references associated with the evidence.",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "relatedRefs": {
+          "type": "array",
+          "description": "References to profile elements substantiated by the evidence.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional evidence data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "education": {
+      "type": "object",
+      "description": "A formal or structured learning record.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the education record."
+        },
+        "institutionRef": {
+          "$ref": "#/$defs/ref",
+          "description": "A reference to the institution or organization associated with the education record."
+        },
+        "program": {
+          "type": "string",
+          "description": "The program, degree, course, or learning path name."
+        },
+        "fieldOfStudy": {
+          "type": "string",
+          "description": "The field or subject area of study."
+        },
+        "dateRange": {
+          "$ref": "#/$defs/dateRange",
+          "description": "The time period associated with the education record."
+        },
+        "achievementRefs": {
+          "type": "array",
+          "description": "References to achievements associated with the education record.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "description": "References to evidence supporting the education record.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional education data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "certification": {
+      "type": "object",
+      "description": "A credential, license, certificate, or verified training result.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the certification."
+        },
+        "name": {
+          "type": "string",
+          "description": "The certification or credential name."
+        },
+        "issuerRef": {
+          "$ref": "#/$defs/ref",
+          "description": "A reference to the issuing organization or authority."
+        },
+        "dateRange": {
+          "$ref": "#/$defs/dateRange",
+          "description": "The issue and validity period associated with the certification."
+        },
+        "credentialId": {
+          "type": "string",
+          "description": "An identifier assigned to the credential by the issuer."
+        },
+        "skillRefs": {
+          "type": "array",
+          "description": "References to skills supported by the certification.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "description": "References to evidence supporting the certification.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional certification data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "artifact": {
+      "type": "object",
+      "description": "A generated or curated career output derived from canonical profile data.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the artifact."
+        },
+        "title": {
+          "type": "string",
+          "description": "The artifact title."
+        },
+        "artifactType": {
+          "type": "string",
+          "description": "The kind of career output represented by the artifact."
+        },
+        "targetContextRefs": {
+          "type": "array",
+          "description": "References to target contexts used to shape the artifact.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "sourceRefs": {
+          "type": "array",
+          "description": "References to canonical profile elements used to derive the artifact.",
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "derivedFromProfileVersion": {
+          "type": "string",
+          "description": "The profile version or source state from which the artifact was derived."
+        },
+        "dateRange": {
+          "$ref": "#/$defs/dateRange",
+          "description": "The lifecycle period associated with the artifact."
+        },
+        "links": {
+          "type": "array",
+          "description": "Web links or file references associated with the artifact.",
+          "items": {
+            "$ref": "#/$defs/link"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional artifact data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "targetContext": {
+      "type": "object",
+      "description": "A context that guides selection, ordering, tone, language, detail, and emphasis for generated artifacts.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier for the target context."
+        },
+        "label": {
+          "type": "string",
+          "description": "A human-readable label for the target context."
+        },
+        "audience": {
+          "type": "string",
+          "description": "The intended audience for the context."
+        },
+        "role": {
+          "type": "string",
+          "description": "The role or opportunity focus for the context."
+        },
+        "market": {
+          "type": "string",
+          "description": "The market, industry, or domain focus for the context."
+        },
+        "geography": {
+          "type": "string",
+          "description": "The geographic focus for the context."
+        },
+        "language": {
+          "type": "string",
+          "description": "The language focus for generated artifacts in this context."
+        },
+        "seniority": {
+          "type": "string",
+          "description": "The seniority level or career stage focus for the context."
+        },
+        "emphasis": {
+          "type": "array",
+          "description": "Themes, skills, claims, or profile elements to emphasize in this context.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "extensions": {
+          "type": "object",
+          "description": "Additional target-context data not represented by the base schema.",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "dateRange": {
+      "type": "object",
+      "description": "A flexible time period associated with a profile element.",
+      "additionalProperties": true,
+      "properties": {
+        "start": {
+          "type": "string",
+          "description": "The start date, year, or time label for the period."
+        },
+        "end": {
+          "type": "string",
+          "description": "The end date, year, or time label for the period."
+        },
+        "label": {
+          "type": "string",
+          "description": "A human-readable date or duration label."
+        },
+        "isCurrent": {
+          "type": "boolean",
+          "description": "Whether the period is currently active."
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "description": "A web link, file reference, or other locator associated with a profile element.",
+      "additionalProperties": true,
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "A human-readable label for the link."
+        },
+        "href": {
+          "type": "string",
+          "description": "The link target or locator."
+        },
+        "linkType": {
+          "type": "string",
+          "description": "The kind of link or locator."
+        },
+        "description": {
+          "type": "string",
+          "description": "A description of what the link represents."
+        }
+      }
+    },
+    "ref": {
+      "type": "object",
+      "description": "A reference from one profile element to another.",
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The referenced element identifier."
+        },
+        "type": {
+          "type": "string",
+          "description": "The kind of profile element being referenced."
+        },
+        "label": {
+          "type": "string",
+          "description": "A human-readable label for the reference."
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ]
+    }
+  }
+}
