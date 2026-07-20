@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 careeros = "careeros_cli.main:app"
+careeros-api = "api.main:app"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
