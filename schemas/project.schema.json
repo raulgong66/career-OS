@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/project.schema.json",
+  "title": "CareerOS Project",
+  "description": "A schema for representing a professional project within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the project."
+    },
+    "title": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The title of the project."
+    },
+    "description": {
+      "type": "string",
+      "description": "A detailed description of the project.",
+      "maxLength": 8000
+    },
+    "technologies": {
+      "type": "array",
+      "description": "Technologies used in the project.",
+      "items": {
+        "type": "string",
+        "description": "A technology name.",
+        "maxLength": 200
+      }
+    },
+    "skills": {
+      "type": "array",
+      "description": "Skills demonstrated or used in the project.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference"
+      }
+    },
+    "role": {
+      "type": "string",
+      "description": "The role held in the project.",
+      "maxLength": 200
+    },
+    "metrics": {
+      "type": "array",
+      "description": "Quantitative measurements associated with the project.",
+      "items": {
+        "$ref": "#/$defs/metric"
+      }
+    },
+    "repository": {
+      "$ref": "#/$defs/repositoryReference",
+      "description": "A reference to the project's repository or source code location."
+    },
+    "demo": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/externalLink",
+      "description": "A link to a demonstration or deployment of the project."
+    },
+    "documents": {
+      "type": "array",
+      "description": "Documents associated with the project.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/fileReference"
+      }
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the project record."
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "metadata"
+  ],
+  "$defs": {
+    "metric": {
+      "type": "object",
+      "description": "A quantitative metric for a project.",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+          "description": "The metric label."
+        },
+        "value": {
+          "type": "string",
+          "description": "The measurement value.",
+          "maxLength": 200
+        },
+        "unit": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+          "description": "The unit of measurement."
+        }
+      }
+    },
+    "repositoryReference": {
+      "type": "object",
+      "description": "A repository reference for a project.",
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "The hosting platform of the repository.",
+          "maxLength": 100
+        },
+        "url": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/website",
+          "description": "The repository URL."
+        }
+      }
+    }
+  }
+}

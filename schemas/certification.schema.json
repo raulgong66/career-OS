@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/certification.schema.json",
+  "title": "CareerOS Certification",
+  "description": "A schema for representing a professional certification or credential within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the certification."
+    },
+    "issuer": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The issuing organization or authority."
+    },
+    "credentialId": {
+      "type": "string",
+      "description": "The credential or certificate identifier.",
+      "maxLength": 200
+    },
+    "verificationUrl": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/website",
+      "description": "A URL that can be used to verify the certification."
+    },
+    "issueDate": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/date",
+      "description": "The date the certification was issued."
+    },
+    "expiration": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/date",
+      "description": "The expiration date of the certification, if applicable."
+    },
+    "relatedSkills": {
+      "type": "array",
+      "description": "Skills associated with the certification.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference"
+      }
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the certification record."
+    }
+  },
+  "required": [
+    "id",
+    "issuer",
+    "metadata"
+  ]
+}

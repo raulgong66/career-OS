@@ -1,0 +1,297 @@
+profileVersion: "1.0.0"
+person:
+  id: person-raul-gongora
+  names:
+    - value: Raul Gongora Betancourt
+      usage: professional
+  location:
+    city: Stockholm
+    country: Sweden
+  languages:
+    - name: Swedish
+      proficiency: fluent
+    - name: English
+      proficiency: fluent
+    - name: Spanish
+      proficiency: native
+    - name: Russian
+      proficiency: fluent
+  positioning:
+    headline: Senior IT DevSecOps Specialist & AI Solutions Architect
+    valueProposition: Results-driven senior IT DevSecOps specialist and cloud architect with 12+ years of experience managing, scaling, and securing mission-critical enterprise systems.
+    targetDirection: DevSecOps, cloud architecture, and AI solutions architecture roles
+    themes:
+      - DevSecOps
+      - Cloud architecture
+      - Cybersecurity
+      - Agentic AI
+      - Infrastructure automation
+  extensions:
+    citizenship: Swedish
+    drivingLicenses:
+      - A
+      - B
+professionalSummaries:
+  - id: summary-professional-profile
+    label: Professional profile
+    text: Results-driven Senior IT DevSecOps Specialist and Cloud Architect with over 12 years of experience managing, scaling, and securing mission-critical enterprise systems in highly regulated sectors, recently upskilled in Agentic AI, LLM orchestration, and autonomous workflow automation.
+organizations:
+  - id: org-qred-bank
+    name: Qred Bank
+  - id: org-cabonline
+    name: Cabonline
+  - id: org-personal-project
+    name: Personal Project
+  - id: org-dulcecare
+    name: Dulcecare AB
+    industry: Healthcare
+  - id: org-tele2
+    name: Tele2
+  - id: org-radisson-hotels
+    name: Radisson Hotels
+  - id: org-lexicon
+    name: Lexicon AB
+  - id: org-oracle
+    name: Oracle AB
+  - id: org-state-university-moldova
+    name: State University of Moldova
+experiences:
+  - id: exp-qred-bank
+    title: Senior IT System Administrator & DevSecOps Specialist
+    organizationRefs:
+      - id: org-qred-bank
+        type: organization
+    dateRange:
+      start: March 2025
+      end: Dec 2025
+    scope: Administered and secured Google Cloud infrastructure and device endpoints for 200+ users across the Nordics; automated operations with Python, Bash, and AppleScript; enforced MDM and cybersecurity policies; prototyped LLM-based autonomous agents for log parsing and anomaly alerts.
+  - id: exp-cabonline
+    title: Senior DevSecOps Specialist
+    organizationRefs:
+      - id: org-cabonline
+        type: organization
+    dateRange:
+      start: May 2023
+      end: Dec 2024
+    scope: Led migration from VMware VxRail datacenters to AWS, reducing infrastructure overhead by over 50%; designed Zero Trust cloud security; built CI/CD automation with Docker and Kubernetes; deployed ELK stack in Kubernetes.
+  - id: exp-personal-project
+    title: System Developer & AI Architect
+    organizationRefs:
+      - id: org-personal-project
+        type: organization
+    dateRange:
+      start: Feb 2022
+      end: April 2023
+    scope: Architected, coded, and deployed accent-mvp; built Python Django REST APIs and React frontend; used LangChain for autonomous AI agents; containerized services with Docker and Kubernetes on AWS.
+  - id: exp-dulcecare
+    title: Founder & CEO
+    organizationRefs:
+      - id: org-dulcecare
+        type: organization
+    dateRange:
+      start: August 2019
+      end: January 2022
+    scope: Founded and operated a healthcare-sector business with responsibility for corporate finance, strategic planning, and IT infrastructure setup.
+  - id: exp-tele2
+    title: System Administrator / IT Engineer
+    organizationRefs:
+      - id: org-tele2
+        type: organization
+    dateRange:
+      start: May 2001
+      end: August 2019
+    scope: Managed large-scale Windows and Linux environments with more than 1,000 servers and clients under high-availability SLAs; automated provisioning, patching, and logging with PowerShell and Bash; managed routing, firewalls, DNS, TCP/IP, monitoring, and 24/7 incident response.
+  - id: exp-radisson-hotels
+    title: System Administrator
+    organizationRefs:
+      - id: org-radisson-hotels
+        type: organization
+    dateRange:
+      start: August 1996
+      end: April 2001
+    scope: Spearheaded integration of distributed hotel systems into a standardized, secure central IT structure.
+projects:
+  - id: project-accent-mvp
+    name: accent-mvp
+    description: Software platform integrating Agentic AI to autonomously process and analyze linguistic patterns and data.
+skills:
+  - id: skill-agentic-ai
+    name: Agentic AI & Engineering
+    description: Autonomous AI Agents, LangChain, CrewAI, AutoGen, Prompt Engineering, LLM integrations, Python, Django, REST APIs, React, Git/GitHub, accent-mvp architecture.
+  - id: skill-cloud-containers
+    name: Cloud & Containers
+    description: AWS, Google Cloud, VMware VxRail, Kubernetes, Docker, OpenStack, Azure, CI/CD pipelines, Infrastructure as Code.
+  - id: skill-infrastructure-os
+    name: Infrastructure & OS
+    description: Linux, Windows Server, Active Directory, Mosyle MDM, Mobile Device Management.
+  - id: skill-cybersecurity
+    name: Cybersecurity
+    description: Zero Trust Architecture, CompTIA Security+, SIEM, SOAR, VPN, regulatory compliance, access control, security hardening.
+  - id: skill-network-monitoring
+    name: Network & Monitoring
+    description: DNS, TCP/IP, firewalls, routing, ELK Stack, Prometheus, Grafana, Zabbix, SCOM, HP Openview, Helix, Apache Solr.
+  - id: skill-web-databases
+    name: Web & Databases
+    description: IIS, Apache, Nginx, SQL Server, MySQL, MariaDB, Oracle.
+achievements:
+  - id: achievement-cloud-cost-reduction
+    statement: Led AWS cloud migration that reduced infrastructure overhead by over 50%.
+  - id: achievement-enterprise-scale
+    statement: Managed and secured mission-critical enterprise systems with more than 1,000 endpoints.
+  - id: achievement-zero-trust
+    statement: Designed and built a Zero Trust cloud security framework for regulated environments.
+education:
+  - id: edu-msc-mathematics
+    institutionRef:
+      id: org-state-university-moldova
+      type: organization
+    program: Master of Science
+    fieldOfStudy: Mathematics
+    dateRange:
+      start: "1985"
+      end: "1990"
+certifications:
+  - id: cert-comptia-security-plus
+    name: CompTIA Security+
+    issuerRef:
+      id: org-lexicon
+      type: organization
+    dateRange:
+      start: "2022"
+      end: "2023"
+  - id: cert-cloud-containerization
+    name: Cloud & Containerization
+    issuerRef:
+      id: org-lexicon
+      type: organization
+    dateRange:
+      start: "2022"
+      end: "2023"
+  - id: cert-linux-administration
+    name: Linux Administration
+    issuerRef:
+      id: org-lexicon
+      type: organization
+    dateRange:
+      start: "2022"
+      end: "2023"
+  - id: cert-oracle-ocp
+    name: Oracle Certified Professional
+    issuerRef:
+      id: org-oracle
+      type: organization
+    dateRange:
+      label: "2004"
+  - id: cert-cisco-network-devices
+    name: Cisco Network Devices
+    dateRange:
+      label: "2000"
+  - id: cert-unix-linux-system-admin
+    name: Certified UNIX/Linux System Administrator
+    dateRange:
+      label: "1996"
+artifacts:
+  - id: cv-english-source
+    title: Raul Gongora English CV
+    artifactType: CV
+    targetContextRefs:
+      - id: target-devsecops-ai
+        type: targetContext
+    sourceRefs:
+      - id: summary-professional-profile
+        type: professional_summary
+      - id: exp-qred-bank
+        type: experience
+      - id: exp-cabonline
+        type: experience
+      - id: exp-personal-project
+        type: experience
+      - id: exp-dulcecare
+        type: experience
+      - id: exp-tele2
+        type: experience
+      - id: exp-radisson-hotels
+        type: experience
+      - id: project-accent-mvp
+        type: project
+      - id: skill-agentic-ai
+        type: skill
+      - id: skill-cloud-containers
+        type: skill
+      - id: skill-infrastructure-os
+        type: skill
+      - id: skill-cybersecurity
+        type: skill
+      - id: skill-network-monitoring
+        type: skill
+      - id: skill-web-databases
+        type: skill
+      - id: achievement-cloud-cost-reduction
+        type: achievement
+      - id: achievement-enterprise-scale
+        type: achievement
+      - id: achievement-zero-trust
+        type: achievement
+      - id: edu-msc-mathematics
+        type: education
+      - id: cert-comptia-security-plus
+        type: certification
+      - id: cert-cloud-containerization
+        type: certification
+      - id: cert-linux-administration
+        type: certification
+      - id: cert-oracle-ocp
+        type: certification
+      - id: cert-cisco-network-devices
+        type: certification
+      - id: cert-unix-linux-system-admin
+        type: certification
+    derivedFromProfileVersion: "1.0.0"
+    links:
+      - value: 01_CV/English/source/Raul_Gongora_CV_Eng.doc
+        linkType: source
+  - id: cover-letter-devsecops-ai
+    title: DevSecOps and AI Solutions Cover Letter
+    artifactType: COVER_LETTER
+    targetContextRefs:
+      - id: target-devsecops-ai
+        type: targetContext
+    sourceRefs:
+      - id: summary-professional-profile
+        type: professional_summary
+      - id: exp-qred-bank
+        type: experience
+      - id: exp-cabonline
+        type: experience
+      - id: exp-personal-project
+        type: experience
+      - id: achievement-cloud-cost-reduction
+        type: achievement
+      - id: achievement-zero-trust
+        type: achievement
+      - id: skill-agentic-ai
+        type: skill
+      - id: skill-cloud-containers
+        type: skill
+      - id: skill-cybersecurity
+        type: skill
+    derivedFromProfileVersion: "1.0.0"
+targetContexts:
+  - id: target-devsecops-ai
+    label: DevSecOps and AI solutions architecture
+    audience: Hiring teams
+    role: Senior IT DevSecOps Specialist / AI Solutions Architect
+    market: Cloud, cybersecurity, infrastructure, and AI automation
+    geography: Sweden
+    language: English
+    seniority: Senior
+    emphasis:
+      - DevSecOps
+      - Cloud migration
+      - Zero Trust
+      - Agentic AI
+      - Automation
+extensions:
+  sourceCv:
+    path: 01_CV/English/source/Raul_Gongora_CV_Eng.doc
+    extractedWith: textutil

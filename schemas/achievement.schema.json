@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/achievement.schema.json",
+  "title": "CareerOS Achievement",
+  "description": "A schema for representing a professional achievement within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the achievement."
+    },
+    "title": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The title of the achievement."
+    },
+    "description": {
+      "type": "string",
+      "description": "A detailed description of the achievement.",
+      "maxLength": 8000
+    },
+    "organization": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The organization associated with the achievement."
+    },
+    "impact": {
+      "type": "string",
+      "description": "A description of the achievement's impact.",
+      "maxLength": 4000
+    },
+    "metrics": {
+      "type": "array",
+      "description": "Quantitative measures associated with the achievement.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label"
+      }
+    },
+    "date": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/date",
+      "description": "The date associated with the achievement."
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the achievement record."
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "metadata"
+  ]
+}

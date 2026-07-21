@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/metadata.schema.json",
+  "title": "CareerOS Metadata",
+  "description": "A reusable metadata object for CareerOS entities.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier"
+    },
+    "version": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/version"
+    },
+    "createdAt": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/timestamp"
+    },
+    "updatedAt": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/timestamp"
+    },
+    "createdBy": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier"
+    },
+    "updatedBy": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier"
+    },
+    "status": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/lifecycleStatus"
+    },
+    "visibility": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/visibility"
+    },
+    "owner": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier"
+    },
+    "source": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/sourceType"
+    },
+    "checksum": {
+      "type": "string",
+      "description": "A checksum or hash value used to validate the integrity of the associated payload.",
+      "maxLength": 128
+    },
+    "tags": {
+      "type": "array",
+      "description": "Reusable tags for categorization and filtering.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/tag"
+      }
+    },
+    "labels": {
+      "type": "array",
+      "description": "Human-readable labels for categorization.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label"
+      }
+    },
+    "revision": {
+      "type": "integer",
+      "description": "The revision number of the entity.",
+      "minimum": 1
+    },
+    "isArchived": {
+      "type": "boolean",
+      "description": "Whether the entity is archived."
+    },
+    "isDeleted": {
+      "type": "boolean",
+      "description": "Whether the entity is marked as deleted."
+    }
+  },
+  "required": [
+    "id",
+    "version",
+    "status"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/document.schema.json",
+  "title": "CareerOS Document",
+  "description": "A schema for representing a document or artifact within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the document."
+    },
+    "documentType": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/documentType",
+      "description": "The document category."
+    },
+    "language": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The document language."
+    },
+    "format": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/fileType",
+      "description": "The file format of the document."
+    },
+    "template": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The template used to produce the document."
+    },
+    "generatedFrom": {
+      "type": "array",
+      "description": "Entities from which the document was generated.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference"
+      }
+    },
+    "checksum": {
+      "type": "string",
+      "description": "A checksum or hash value for the document content.",
+      "maxLength": 128
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the document record."
+    }
+  },
+  "required": [
+    "id",
+    "documentType",
+    "metadata"
+  ]
+}

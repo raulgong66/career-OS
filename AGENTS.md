@@ -27,5 +27,8 @@ AI agents must clearly distinguish:
 1. Do not redesign the architecture unless explicitly requested.
 2. Treat approved architecture documents as frozen until implementation reveals a problem.
 3. Make small, cohesive, reviewable changes.
-4. Keep changes local. Do not push to the remote repository unless explicitly instructed by the user.
-5. Record major architectural decisions in the project's Architecture Decision Records (ADR) or other designated decision log.
+4. AI agents may create or amend local commits only when explicitly requested by the user.
+5. AI agents must never push changes to the remote repository unless the user explicitly instructs them to do so and the required authentication and permissions are available.
+6. If a push cannot be completed because of missing authentication, permissions, tooling, or other environmental limitations, clearly explain the reason and stop without attempting alternative publication methods.
+7. Repository publication is a user-controlled action unless explicitly delegated.
+8. Maintain a decision log for major architectural decisions.

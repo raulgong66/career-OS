@@ -1,0 +1,52 @@
+# Canonical CareerOS master profile template.
+# This file intentionally contains placeholder values only.
+# It is intended to be progressively completed with real profile data.
+
+profileVersion: <REQUIRED>
+
+person:
+  # Required structural element for the canonical profile.
+  id: <REQUIRED>
+  names:
+    - value: <REQUIRED>
+      usage: <OPTIONAL>
+  contact:
+    # TODO: Add the appropriate professional contact detail once known.
+    email: <REQUIRED>
+    phone: <OPTIONAL>
+    preferredContactMethod: <OPTIONAL>
+  location:
+    # TODO: Add the relevant location context once known.
+    label: <OPTIONAL>
+    country: <OPTIONAL>
+    region: <OPTIONAL>
+    city: <OPTIONAL>
+    workMode: <OPTIONAL>
+  languages:
+    - name: <OPTIONAL>
+      proficiency: <OPTIONAL>
+      usage: <OPTIONAL>
+  positioning:
+    # TODO: Add the approved positioning statement once known.
+    headline: <REQUIRED>
+    valueProposition: <REQUIRED>
+    targetDirection: <REQUIRED>
+    themes:
+      - <OPTIONAL>
+  links:
+    - value: <OPTIONAL>
+      label: <OPTIONAL>
+
+# Optional sections are intentionally present but empty so the structure can grow over time.
+professionalSummaries: []
+experiences: []
+organizations: []
+projects: []
+skills: []
+achievements: []
+evidence: []
+education: []
+certifications: []
+artifacts: []
+targetContexts: []
+extensions: {}

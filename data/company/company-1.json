@@ -1,0 +1,9 @@
+{
+  "id": "company-1",
+  "metadata": {
+    "id": "company-1",
+    "status": "ACTIVE",
+    "version": "1.0.0"
+  },
+  "name": "Example company"
+}

@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/event.schema.json",
+  "title": "CareerOS Event",
+  "description": "A schema for representing a domain event or timeline entry within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the event."
+    },
+    "eventType": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The type of event."
+    },
+    "relatedEntity": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference",
+      "description": "A reference to the entity related to the event."
+    },
+    "timestamp": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/dateTime",
+      "description": "The time when the event occurred."
+    },
+    "summary": {
+      "type": "string",
+      "description": "A summary of the event.",
+      "maxLength": 4000
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the event record."
+    }
+  },
+  "required": [
+    "id",
+    "eventType",
+    "metadata"
+  ]
+}

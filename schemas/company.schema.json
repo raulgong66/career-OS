@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/company.schema.json",
+  "title": "CareerOS Company",
+  "description": "A schema for representing an organization or company within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the company."
+    },
+    "name": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The primary display name of the company."
+    },
+    "legalInformation": {
+      "$ref": "#/$defs/legalInformation",
+      "description": "Legal and registration details for the company."
+    },
+    "industry": {
+      "type": "string",
+      "description": "The industry or sector in which the company operates.",
+      "maxLength": 200
+    },
+    "locations": {
+      "type": "array",
+      "description": "Physical or regional locations associated with the company.",
+      "items": {
+        "$ref": "#/$defs/location"
+      }
+    },
+    "contacts": {
+      "type": "array",
+      "description": "Contact details associated with the company.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/contactInformation"
+      }
+    },
+    "websites": {
+      "type": "array",
+      "description": "Websites and public URLs associated with the company.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/externalLink"
+      }
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the company record."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "metadata"
+  ],
+  "$defs": {
+    "legalInformation": {
+      "type": "object",
+      "description": "Structured legal details for an organization.",
+      "additionalProperties": false,
+      "properties": {
+        "legalName": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+          "description": "The legal name of the company."
+        },
+        "taxId": {
+          "type": "string",
+          "description": "The company's tax or registration identifier.",
+          "maxLength": 64
+        },
+        "registrationNumber": {
+          "type": "string",
+          "description": "The commercial or corporate registration number.",
+          "maxLength": 64
+        },
+        "foundedDate": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/date",
+          "description": "The date the company was founded."
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "description": "A location associated with the company.",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+          "description": "The human-readable name of the location."
+        },
+        "address": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/address",
+          "description": "The postal address of the location."
+        },
+        "geolocation": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/geoLocation",
+          "description": "The geographic coordinates for the location."
+        }
+      }
+    }
+  }
+}

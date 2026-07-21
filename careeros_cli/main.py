@@ -12,7 +12,15 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
-from careeros import EntityValidator, FileSystemRepository, SchemaLoader
+from careeros import (
+    CVDocumentRenderer,
+    CVOptimizer,
+    EntityValidator,
+    FileSystemRepository,
+    SchemaLoader,
+    generate_artifact as run_artifact_pipeline,
+    generate_markdown_cv as run_markdown_cv_pipeline,
+)
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
 app = typer.Typer(
@@ -185,6 +193,134 @@ def search_entities(
             console.print(match)
     else:
         console.print("No matches found")
+
+
+@app.command("generate-markdown-cv")
+def generate_markdown_cv(
+    profile_file: Path = typer.Argument(..., help="Path to the JSON or YAML profile file."),
+    artifact_id: str = typer.Argument(..., help="ID of the CV artifact to generate."),
+    output_file: Path = typer.Argument(..., help="Path where the Markdown CV should be written."),
+) -> None:
+    """Generate a Markdown CV from a canonical profile artifact."""
+    schema_loader = SchemaLoader(Path(__file__).resolve().parents[1] / "schemas")
+    try:
+        markdown = run_markdown_cv_pipeline(profile_file, artifact_id, schema_loader)
+        output_path = output_file.expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(markdown, encoding="utf-8")
+    except (ValidationError, EntityNotFoundError, OSError) as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[bold green]Generated[/bold green] {output_path}")
+
+
+@app.command("generate-artifact")
+def generate_artifact(
+    profile_file: Path = typer.Argument(..., help="Path to the JSON or YAML profile file."),
+    artifact_id: str = typer.Argument(..., help="ID of the artifact to generate."),
+    output_format: str = typer.Argument(..., help="Output format registered for the artifact type."),
+    output_file: Path = typer.Argument(..., help="Path where the generated artifact should be written."),
+) -> None:
+    """Generate an artifact through the generator registry."""
+    schema_loader = SchemaLoader(Path(__file__).resolve().parents[1] / "schemas")
+    try:
+        output = run_artifact_pipeline(profile_file, artifact_id, output_format, schema_loader)
+        output_path = output_file.expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(output, bytes):
+            output_path.write_bytes(output)
+        else:
+            output_path.write_text(output, encoding="utf-8")
+    except (ValidationError, EntityNotFoundError, OSError) as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[bold green]Generated[/bold green] {output_path}")
+
+
+@app.command("optimize-cv")
+def optimize_cv(
+    profile_file: Path = typer.Argument(..., help="Path to the JSON or YAML profile file."),
+    artifact_id: str = typer.Argument(..., help="ID of the CV artifact to optimize."),
+    job_desc: str = typer.Option(None, "--job-desc", help="Optional job description text or path to a file containing it."),
+    docx: Path = typer.Option(None, "--docx", help="Optional input template DOCX file path."),
+    output: Path = typer.Option(None, "--output", help="Optional output DOCX file path."),
+) -> None:
+    """Optimize a CV artifact by recommending evidence-based additions."""
+    try:
+        profile_data = _load_payload(profile_file)
+    except Exception as exc:
+        console.print(f"[bold red]Failed to load profile file: {exc}[/bold red]")
+        raise typer.Exit(code=1)
+
+    # Resolve job description if it's a file
+    job_desc_text = None
+    if job_desc:
+        desc_path = Path(job_desc).expanduser().resolve()
+        if desc_path.exists() and desc_path.is_file():
+            try:
+                job_desc_text = desc_path.read_text(encoding="utf-8")
+            except Exception as exc:
+                console.print(f"[bold red]Failed to read job description file: {exc}[/bold red]")
+                raise typer.Exit(code=1)
+        else:
+            job_desc_text = job_desc
+
+    try:
+        optimizer = CVOptimizer(profile_data)
+        recommendations = optimizer.optimize_cv(artifact_id, job_desc_text)
+    except EntityNotFoundError as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        console.print(f"[bold red]Optimization error: {exc}[/bold red]")
+        raise typer.Exit(code=1)
+
+    if not recommendations:
+        console.print("[bold yellow]No additions recommended. Your CV is already fully optimized or there is no evidence-backed data to add.[/bold yellow]")
+        return
+
+    table = Table(title=f"Recommended Additions for CV '{artifact_id}'")
+    table.add_column("Type", style="cyan")
+    table.add_column("Operation", style="green")
+    table.add_column("Display Name", style="bold")
+    table.add_column("Evidence", style="magenta")
+    table.add_column("Total Score", style="yellow", justify="right")
+    table.add_column("Scores Breakdown", style="dim")
+
+    for rec in recommendations:
+        ev_list = [ev.get("title") or ev.get("id") for ev in rec.evidence]
+        ev_str = ", ".join(ev_list) if ev_list else "None"
+        
+        breakdown = (
+            f"JD: {rec.scores.get('job_description_match', 0.0):.1f} | "
+            f"Ctx: {rec.scores.get('target_context_match', 0.0):.1f} | "
+            f"Ev: {rec.scores.get('evidence_strength', 0.0):.1f}"
+        )
+        table.add_row(
+            rec.type.capitalize(),
+            rec.operation,
+            rec.display_name,
+            ev_str,
+            f"{rec.scores.get('weighted_total', 0.0):.2f}",
+            breakdown,
+        )
+
+    console.print(table)
+
+    if docx or output:
+        if not (docx and output):
+            console.print("[bold red]Both --docx and --output options must be provided to render updates.[/bold red]")
+            raise typer.Exit(code=1)
+        
+        try:
+            renderer = CVDocumentRenderer()
+            renderer.apply_recommendations(docx, output, recommendations)
+            console.print(f"[bold green]Successfully applied recommendations to {output}[/bold green]")
+        except Exception as exc:
+            console.print(f"[bold red]Failed to write updated DOCX file: {exc}[/bold red]")
+            raise typer.Exit(code=1)
 
 
 def _load_payload(file_path: Path) -> dict[str, Any]:

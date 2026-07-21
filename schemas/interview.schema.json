@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/interview.schema.json",
+  "title": "CareerOS Interview",
+  "description": "A schema for representing an interview event within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the interview."
+    },
+    "application": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference",
+      "description": "A reference to the related application."
+    },
+    "round": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/interviewRound",
+      "description": "The interview stage in the process."
+    },
+    "type": {
+      "type": "string",
+      "description": "The interview format or modality.",
+      "maxLength": 100
+    },
+    "scheduledAt": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/dateTime",
+      "description": "The scheduled date and time of the interview."
+    },
+    "participants": {
+      "type": "array",
+      "description": "Participants involved in the interview.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/personReference"
+      }
+    },
+    "questions": {
+      "type": "array",
+      "description": "Questions asked during the interview.",
+      "items": {
+        "$ref": "#/$defs/questionAnswer"
+      }
+    },
+    "evaluation": {
+      "$ref": "#/$defs/evaluation",
+      "description": "The interviewer evaluation or assessment of the interview."
+    },
+    "nextSteps": {
+      "type": "array",
+      "description": "Planned follow-up actions after the interview.",
+      "items": {
+        "type": "string",
+        "description": "A next step description.",
+        "maxLength": 2000
+      }
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the interview record."
+    }
+  },
+  "required": [
+    "id",
+    "metadata"
+  ],
+  "$defs": {
+    "questionAnswer": {
+      "type": "object",
+      "description": "A question and answer pair captured during an interview.",
+      "additionalProperties": false,
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "The question posed during the interview.",
+          "maxLength": 4000
+        },
+        "answer": {
+          "type": "string",
+          "description": "The answer provided during the interview.",
+          "maxLength": 4000
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "description": "The evaluation outcome of the interview.",
+      "additionalProperties": false,
+      "properties": {
+        "score": {
+          "type": "number",
+          "description": "A numeric score assigned to the interview.",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "summary": {
+          "type": "string",
+          "description": "A summary of the evaluation.",
+          "maxLength": 4000
+        }
+      }
+    }
+  }
+}

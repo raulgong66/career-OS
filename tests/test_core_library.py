@@ -11,6 +11,7 @@ from careeros.exceptions import (
     ValidationError,
 )
 from careeros.models import EntityRecord, ValidationResult
+from careeros.profile_loader import ProfileLoader
 from careeros.repository import FileSystemRepository
 from careeros.schema_loader import SchemaLoader
 from careeros.validator import EntityValidator
@@ -71,6 +72,65 @@ def test_validator_reports_validation_errors(repo_root: Path) -> None:
 
     assert not result.is_valid
     assert len(result.errors) >= 1
+
+
+def test_profile_loader_loads_valid_yaml_profile(tmp_path: Path, repo_root: Path) -> None:
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text(
+        yaml.safe_dump(
+            {
+                "profileVersion": "1.0.0",
+                "person": {
+                    "id": "person-1",
+                    "names": [{"value": "Jane Doe", "usage": "professional"}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    loader = ProfileLoader(SchemaLoader(repo_root / "schemas"))
+
+    profile = loader.load(profile_file)
+
+    assert profile["person"]["id"] == "person-1"
+
+
+def test_profile_loader_loads_valid_json_profile(tmp_path: Path, repo_root: Path) -> None:
+    profile_file = tmp_path / "profile.json"
+    profile_file.write_text(
+        json.dumps(
+            {
+                "profileVersion": "1.0.0",
+                "person": {"id": "person-2"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    loader = ProfileLoader(SchemaLoader(repo_root / "schemas"))
+
+    profile = loader.load(profile_file)
+
+    assert profile["person"]["id"] == "person-2"
+
+
+def test_profile_loader_reports_invalid_profile(tmp_path: Path, repo_root: Path) -> None:
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text(yaml.safe_dump({"person": {}}), encoding="utf-8")
+    loader = ProfileLoader(SchemaLoader(repo_root / "schemas"))
+
+    with pytest.raises(ValidationError) as exc_info:
+        loader.load(profile_file)
+
+    assert exc_info.value.errors
+
+
+def test_profile_loader_requires_object_payload(tmp_path: Path, repo_root: Path) -> None:
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text("- not\n- an\n- object\n", encoding="utf-8")
+    loader = ProfileLoader(SchemaLoader(repo_root / "schemas"))
+
+    with pytest.raises(ValidationError, match="object"):
+        loader.load(profile_file)
 
 
 def test_repository_round_trip(tmp_path: Path, repo_root: Path) -> None:

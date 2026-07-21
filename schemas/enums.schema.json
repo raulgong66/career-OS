@@ -1,0 +1,265 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/enums.schema.json",
+  "title": "CareerOS Shared Enumerations",
+  "description": "Centralized reusable enumerations for CareerOS entities and workflows.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "employmentType": {
+      "type": "string",
+      "description": "A professional employment relationship or engagement type.",
+      "enum": [
+        "FULL_TIME",
+        "PART_TIME",
+        "CONTRACT",
+        "FREELANCE",
+        "TEMPORARY",
+        "INTERNSHIP",
+        "SELF_EMPLOYED",
+        "VOLUNTEER"
+      ]
+    },
+    "workMode": {
+      "type": "string",
+      "description": "The working arrangement for a role or location.",
+      "enum": [
+        "ON_SITE",
+        "REMOTE",
+        "HYBRID"
+      ]
+    },
+    "jobStatus": {
+      "type": "string",
+      "description": "The lifecycle status of a job or opportunity.",
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "PAUSED",
+        "CLOSED",
+        "ARCHIVED"
+      ]
+    },
+    "applicationStatus": {
+      "type": "string",
+      "description": "The progression state of a job application.",
+      "enum": [
+        "DRAFT",
+        "SUBMITTED",
+        "UNDER_REVIEW",
+        "INTERVIEWING",
+        "OFFERED",
+        "REJECTED",
+        "WITHDRAWN"
+      ]
+    },
+    "interviewStatus": {
+      "type": "string",
+      "description": "The current status of an interview event.",
+      "enum": [
+        "SCHEDULED",
+        "COMPLETED",
+        "CANCELLED",
+        "NO_SHOW",
+        "PENDING"
+      ]
+    },
+    "interviewRound": {
+      "type": "string",
+      "description": "The stage of a multi-round interview process.",
+      "enum": [
+        "SCREENING",
+        "PHONE",
+        "TECHNICAL",
+        "MANAGER",
+        "FINAL"
+      ]
+    },
+    "priority": {
+      "type": "string",
+      "description": "A general priority classification.",
+      "enum": [
+        "P0",
+        "P1",
+        "P2",
+        "P3"
+      ]
+    },
+    "difficulty": {
+      "type": "string",
+      "description": "The difficulty level of a task or activity.",
+      "enum": [
+        "XS",
+        "S",
+        "M",
+        "L",
+        "XL"
+      ]
+    },
+    "documentType": {
+      "type": "string",
+      "description": "A document classification.",
+      "enum": [
+        "CV",
+        "RESUME",
+        "COVER_LETTER",
+        "PORTFOLIO",
+        "PRESENTATION",
+        "CERTIFICATE",
+        "NOTE",
+        "REPORT"
+      ]
+    },
+    "languageLevel": {
+      "type": "string",
+      "description": "A language proficiency level.",
+      "enum": [
+        "BEGINNER",
+        "ELEMENTARY",
+        "INTERMEDIATE",
+        "UPPER_INTERMEDIATE",
+        "ADVANCED",
+        "NATIVE"
+      ]
+    },
+    "skillLevel": {
+      "type": "string",
+      "description": "A skill competence level.",
+      "enum": [
+        "FOUNDATIONAL",
+        "INTERMEDIATE",
+        "ADVANCED",
+        "EXPERT"
+      ]
+    },
+    "proficiencyLevel": {
+      "type": "string",
+      "description": "A general proficiency level.",
+      "enum": [
+        "NOVICE",
+        "COMPETENT",
+        "PROFICIENT",
+        "EXPERT"
+      ]
+    },
+    "educationLevel": {
+      "type": "string",
+      "description": "An education attainment level.",
+      "enum": [
+        "SECONDARY",
+        "ASSOCIATE",
+        "BACHELOR",
+        "MASTER",
+        "DOCTORATE"
+      ]
+    },
+    "projectStatus": {
+      "type": "string",
+      "description": "The state of a project.",
+      "enum": [
+        "PLANNED",
+        "ACTIVE",
+        "PAUSED",
+        "COMPLETED",
+        "ARCHIVED"
+      ]
+    },
+    "visibility": {
+      "type": "string",
+      "description": "The intended visibility of an entity.",
+      "enum": [
+        "PRIVATE",
+        "PUBLIC",
+        "SHARED"
+      ]
+    },
+    "currencyCode": {
+      "type": "string",
+      "description": "A three-letter currency code.",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "countryCode": {
+      "type": "string",
+      "description": "An ISO country code.",
+      "pattern": "^[A-Z]{2}$"
+    },
+    "regionCode": {
+      "type": "string",
+      "description": "A region or subdivision code.",
+      "pattern": "^[A-Z0-9._-]{1,12}$"
+    },
+    "remotePolicy": {
+      "type": "string",
+      "description": "The remote-work policy for a role.",
+      "enum": [
+        "FULLY_REMOTE",
+        "HYBRID",
+        "ON_SITE_ONLY"
+      ]
+    },
+    "sourceType": {
+      "type": "string",
+      "description": "The source system or origin of an entity.",
+      "enum": [
+        "MANUAL",
+        "IMPORTED",
+        "GENERATED",
+        "SYNCED",
+        "EXTERNAL"
+      ]
+    },
+    "contactType": {
+      "type": "string",
+      "description": "The type of contact channel.",
+      "enum": [
+        "EMAIL",
+        "PHONE",
+        "SMS",
+        "LINKEDIN",
+        "PORTFOLIO",
+        "OTHER"
+      ]
+    },
+    "linkType": {
+      "type": "string",
+      "description": "The category of an external link.",
+      "enum": [
+        "WEBSITE",
+        "SOCIAL",
+        "PORTFOLIO",
+        "DOCUMENT",
+        "VIDEO",
+        "OTHER"
+      ]
+    },
+    "fileType": {
+      "type": "string",
+      "description": "The type of file or attachment.",
+      "enum": [
+        "PDF",
+        "DOCX",
+        "TXT",
+        "PNG",
+        "JPEG",
+        "SVG",
+        "JSON",
+        "YAML",
+        "MARKDOWN",
+        "OTHER"
+      ]
+    },
+    "lifecycleStatus": {
+      "type": "string",
+      "description": "The lifecycle status of a generic entity.",
+      "enum": [
+        "DRAFT",
+        "ACTIVE",
+        "PAUSED",
+        "COMPLETED",
+        "ARCHIVED",
+        "DELETED"
+      ]
+    }
+  }
+}

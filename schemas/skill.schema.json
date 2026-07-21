@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/skill.schema.json",
+  "title": "CareerOS Skill",
+  "description": "A schema for representing a professional skill within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the skill."
+    },
+    "name": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The name of the skill."
+    },
+    "category": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The category or grouping of the skill."
+    },
+    "proficiency": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/proficiencyLevel",
+      "description": "The proficiency level for the skill."
+    },
+    "yearsOfExperience": {
+      "type": "number",
+      "description": "The approximate years of experience with the skill.",
+      "minimum": 0
+    },
+    "lastUsed": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/date",
+      "description": "The most recent date the skill was used."
+    },
+    "relatedCertifications": {
+      "type": "array",
+      "description": "Certifications related to the skill.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference"
+      }
+    },
+    "relatedProjects": {
+      "type": "array",
+      "description": "Projects associated with the skill.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference"
+      }
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the skill record."
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "metadata"
+  ]
+}

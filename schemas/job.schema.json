@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/job.schema.json",
+  "title": "CareerOS Job",
+  "description": "A schema for representing a job opportunity or role within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the job."
+    },
+    "company": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/organizationReference",
+      "description": "The company associated with the job opportunity."
+    },
+    "title": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The title of the job opportunity."
+    },
+    "summary": {
+      "type": "string",
+      "description": "A concise summary of the role and its purpose.",
+      "maxLength": 4000
+    },
+    "responsibilities": {
+      "type": "array",
+      "description": "The responsibilities expected of the role.",
+      "items": {
+        "type": "string",
+        "description": "A single responsibility statement.",
+        "maxLength": 2000
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "description": "The mandatory requirements for the role.",
+      "items": {
+        "type": "string",
+        "description": "A single requirement statement.",
+        "maxLength": 2000
+      }
+    },
+    "preferredQualifications": {
+      "type": "array",
+      "description": "Preferred qualifications or differentiators for the role.",
+      "items": {
+        "type": "string",
+        "description": "A single preferred qualification statement.",
+        "maxLength": 2000
+      }
+    },
+    "technologies": {
+      "type": "array",
+      "description": "Technologies, toolchains, or platforms associated with the role.",
+      "items": {
+        "type": "string",
+        "description": "A technology name.",
+        "maxLength": 200
+      }
+    },
+    "salary": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/money",
+      "description": "The salary or compensation range offered for the role."
+    },
+    "benefits": {
+      "type": "array",
+      "description": "Benefits offered with the role.",
+      "items": {
+        "type": "string",
+        "description": "A benefit description.",
+        "maxLength": 200
+      }
+    },
+    "workMode": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/workMode",
+      "description": "The working arrangement for the role."
+    },
+    "employmentType": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/employmentType",
+      "description": "The employment arrangement for the role."
+    },
+    "location": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/address",
+      "description": "The primary location for the role."
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the job record."
+    }
+  },
+  "required": [
+    "id",
+    "title",
+    "metadata"
+  ]
+}

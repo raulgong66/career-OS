@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/education.schema.json",
+  "title": "CareerOS Education",
+  "description": "A schema for representing educational history within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the education record."
+    },
+    "institution": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The institution where the education took place."
+    },
+    "degree": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The degree or credential earned."
+    },
+    "field": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The field of study."
+    },
+    "dates": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/dateRange",
+      "description": "The attendance or graduation period."
+    },
+    "honors": {
+      "type": "array",
+      "description": "Honors or distinctions received.",
+      "items": {
+        "type": "string",
+        "description": "A single honor description.",
+        "maxLength": 4000
+      }
+    },
+    "courses": {
+      "type": "array",
+      "description": "Coursework or notable courses completed.",
+      "items": {
+        "type": "string",
+        "description": "A course name.",
+        "maxLength": 4000
+      }
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the education record."
+    }
+  },
+  "required": [
+    "id",
+    "institution",
+    "metadata"
+  ]
+}

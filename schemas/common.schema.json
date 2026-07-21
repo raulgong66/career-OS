@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/common.schema.json",
+  "title": "CareerOS Common Schema Definitions",
+  "description": "Reusable structural definitions for common CareerOS entities, values, and references.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "description": "A stable identifier for a CareerOS entity.",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "uuid": {
+      "type": "string",
+      "description": "A UUID value used for globally unique identification.",
+      "format": "uuid"
+    },
+    "version": {
+      "type": "string",
+      "description": "A semantic version string.",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "An RFC 3339 timestamp.",
+      "format": "date-time"
+    },
+    "date": {
+      "type": "string",
+      "description": "A calendar date in RFC 3339 full-date format.",
+      "format": "date"
+    },
+    "dateTime": {
+      "type": "string",
+      "description": "A date-time value in RFC 3339 format.",
+      "format": "date-time"
+    },
+    "dateRange": {
+      "type": "object",
+      "description": "A date interval with optional start and end dates.",
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "$ref": "#/$defs/date"
+        },
+        "end": {
+          "$ref": "#/$defs/date"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        }
+      }
+    },
+    "money": {
+      "type": "object",
+      "description": "A monetary amount with currency.",
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "number",
+          "description": "The monetary amount.",
+          "minimum": 0
+        },
+        "currency": {
+          "$ref": "#/$defs/currency"
+        }
+      },
+      "required": [
+        "amount",
+        "currency"
+      ]
+    },
+    "currency": {
+      "type": "string",
+      "description": "A currency code.",
+      "pattern": "^[A-Z]{3}$"
+    },
+    "percentage": {
+      "type": "number",
+      "description": "A percentage value between 0 and 100.",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "address": {
+      "type": "object",
+      "description": "A postal or physical address.",
+      "additionalProperties": false,
+      "properties": {
+        "street": {
+          "type": "string",
+          "description": "The street address.",
+          "maxLength": 200
+        },
+        "city": {
+          "type": "string",
+          "description": "The city name.",
+          "maxLength": 120
+        },
+        "region": {
+          "type": "string",
+          "description": "The region, state, or province.",
+          "maxLength": 120
+        },
+        "postalCode": {
+          "type": "string",
+          "description": "The postal or ZIP code.",
+          "maxLength": 40
+        },
+        "country": {
+          "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/countryCode"
+        }
+      }
+    },
+    "geoLocation": {
+      "type": "object",
+      "description": "A geographic location.",
+      "additionalProperties": false,
+      "properties": {
+        "latitude": {
+          "type": "number",
+          "description": "The latitude coordinate.",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "description": "The longitude coordinate.",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        }
+      }
+    },
+    "contactInformation": {
+      "type": "object",
+      "description": "A set of contact details for a person or entity.",
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "$ref": "#/$defs/email"
+        },
+        "phone": {
+          "$ref": "#/$defs/phone"
+        },
+        "website": {
+          "$ref": "#/$defs/website"
+        },
+        "socialLinks": {
+          "type": "array",
+          "description": "Social network links associated with the contact.",
+          "items": {
+            "$ref": "#/$defs/socialLink"
+          }
+        },
+        "preferredContactType": {
+          "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/contactType"
+        }
+      }
+    },
+    "email": {
+      "type": "string",
+      "description": "An email address.",
+      "format": "email"
+    },
+    "phone": {
+      "type": "string",
+      "description": "A phone number.",
+      "pattern": "^[+]?[0-9()\\-\\s]{4,20}$"
+    },
+    "website": {
+      "type": "string",
+      "description": "A website URL.",
+      "format": "uri"
+    },
+    "socialLink": {
+      "type": "object",
+      "description": "A link to a social media profile.",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/linkType"
+        },
+        "url": {
+          "$ref": "#/$defs/website"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        }
+      },
+      "required": [
+        "type",
+        "url"
+      ]
+    },
+    "externalLink": {
+      "type": "object",
+      "description": "A general-purpose external reference.",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/linkType"
+        },
+        "url": {
+          "$ref": "#/$defs/website"
+        },
+        "label": {
+          "$ref": "#/$defs/label"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    "attachment": {
+      "type": "object",
+      "description": "A file attachment associated with an entity.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "fileName": {
+          "type": "string",
+          "description": "The file name.",
+          "maxLength": 255
+        },
+        "fileType": {
+          "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/fileType"
+        },
+        "url": {
+          "$ref": "#/$defs/website"
+        },
+        "checksum": {
+          "type": "string",
+          "description": "A cryptographic checksum for the file.",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "id",
+        "fileName"
+      ]
+    },
+    "fileReference": {
+      "type": "object",
+      "description": "A reference to a file stored elsewhere in the system.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "path": {
+          "type": "string",
+          "description": "The repository-relative path to the file.",
+          "maxLength": 1024
+        },
+        "fileType": {
+          "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/fileType"
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ]
+    },
+    "organizationReference": {
+      "type": "object",
+      "description": "A reference to an organization entity.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/label"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "personReference": {
+      "type": "object",
+      "description": "A reference to a person entity.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/label"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "entityReference": {
+      "type": "object",
+      "description": "A generic reference to another CareerOS entity.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "type": {
+          "type": "string",
+          "description": "The target entity type.",
+          "maxLength": 64
+        },
+        "name": {
+          "$ref": "#/$defs/label"
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ]
+    },
+    "tag": {
+      "type": "string",
+      "description": "A simple tag string.",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "label": {
+      "type": "string",
+      "description": "A human-readable label.",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "noteReference": {
+      "type": "object",
+      "description": "A reference to a note entity.",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "title": {
+          "$ref": "#/$defs/label"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    }
+  }
+}

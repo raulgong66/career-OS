@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/language.schema.json",
+  "title": "CareerOS Language",
+  "description": "A schema for representing language proficiency within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the language record."
+    },
+    "language": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "The language name."
+    },
+    "speaking": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/languageLevel",
+      "description": "The speaking proficiency level."
+    },
+    "reading": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/languageLevel",
+      "description": "The reading proficiency level."
+    },
+    "writing": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/languageLevel",
+      "description": "The writing proficiency level."
+    },
+    "listening": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/languageLevel",
+      "description": "The listening proficiency level."
+    },
+    "certification": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/label",
+      "description": "A certification or formal qualification for the language."
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the language record."
+    }
+  },
+  "required": [
+    "id",
+    "language",
+    "metadata"
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/application.schema.json",
+  "title": "CareerOS Application",
+  "description": "A schema for representing a job application within CareerOS.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/identifier",
+      "description": "A stable identifier for the application."
+    },
+    "job": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference",
+      "description": "A reference to the target job."
+    },
+    "company": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference",
+      "description": "A reference to the target company."
+    },
+    "status": {
+      "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/applicationStatus",
+      "description": "The current status of the application."
+    },
+    "submittedAt": {
+      "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/date",
+      "description": "The date the application was submitted."
+    },
+    "timeline": {
+      "type": "array",
+      "description": "Milestones and events related to the application.",
+      "items": {
+        "$ref": "#/$defs/timelineEntry"
+      }
+    },
+    "interviews": {
+      "type": "array",
+      "description": "References to interviews associated with the application.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/entityReference"
+      }
+    },
+    "documents": {
+      "type": "array",
+      "description": "Documents attached to the application.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/fileReference"
+      }
+    },
+    "recruiterContacts": {
+      "type": "array",
+      "description": "Contacts involved in the application process.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/contactInformation"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "description": "Notes attached to the application.",
+      "items": {
+        "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/noteReference"
+      }
+    },
+    "metadata": {
+      "$ref": "https://career-os.local/schemas/metadata.schema.json",
+      "description": "Lifecycle and governance metadata for the application record."
+    }
+  },
+  "required": [
+    "id",
+    "status",
+    "metadata"
+  ],
+  "$defs": {
+    "timelineEntry": {
+      "type": "object",
+      "description": "A milestone in the application's lifecycle.",
+      "additionalProperties": false,
+      "properties": {
+        "date": {
+          "$ref": "https://career-os.local/schemas/common.schema.json#/$defs/date",
+          "description": "The date of the milestone."
+        },
+        "status": {
+          "$ref": "https://career-os.local/schemas/enums.schema.json#/$defs/applicationStatus",
+          "description": "The status at that milestone."
+        },
+        "note": {
+          "type": "string",
+          "description": "A note about the milestone.",
+          "maxLength": 2000
+        }
+      }
+    }
+  }
+}

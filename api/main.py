@@ -8,11 +8,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 import yaml
 
-from careeros import EntityValidator, FileSystemRepository, SchemaLoader
+from careeros import CVOptimizer, EntityValidator, FileSystemRepository, SchemaLoader, generate_artifact, generate_markdown_cv
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
 app = FastAPI(title="CareerOS API", version="1.0.0")
@@ -55,6 +55,29 @@ class SearchRequest(BaseModel):
 
     field: str
     value: str
+
+
+class MarkdownCVRequest(BaseModel):
+    """Request payload for Markdown CV generation."""
+
+    profile_path: Path
+    artifact_id: str
+
+
+class GenerateArtifactRequest(BaseModel):
+    """Request payload for generic artifact generation."""
+
+    profile_path: Path
+    artifact_id: str
+    output_format: str
+
+
+class OptimizeCVRequest(BaseModel):
+    """Request payload for CV optimization recommendations."""
+
+    profile: dict[str, Any] = Field(..., description="The complete canonical profile payload.")
+    artifact_id: str = Field(..., description="ID of the CV artifact to optimize.")
+    job_description: str | None = Field(None, description="Optional job description text to prioritize recommendations.")
 
 
 class EntityResponse(BaseModel):
@@ -147,6 +170,55 @@ def search_entities(entity: str, request: SearchRequest) -> list[EntityResponse]
     return matches
 
 
+@app.post("/generate/markdown-cv", response_class=PlainTextResponse)
+def generate_markdown_cv_endpoint(request: MarkdownCVRequest) -> PlainTextResponse:
+    """Generate a Markdown CV from a profile file and artifact id."""
+    try:
+        markdown = generate_markdown_cv(request.profile_path, request.artifact_id, SCHEMA_LOADER)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return PlainTextResponse(markdown, media_type="text/markdown")
+
+
+@app.post("/generate/artifact")
+def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
+    """Generate an artifact through the generator registry."""
+    try:
+        output = generate_artifact(request.profile_path, request.artifact_id, request.output_format, SCHEMA_LOADER)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    media_type = _media_type_for_format(request.output_format)
+    if isinstance(output, bytes):
+        return Response(content=output, media_type=media_type)
+    return Response(content=output, media_type=media_type)
+
+
+@app.post("/optimize-cv", response_model=list[dict[str, Any]])
+def optimize_cv_endpoint(request: OptimizeCVRequest) -> list[dict[str, Any]]:
+    """Generate structured optimization recommendations for a CV artifact."""
+    try:
+        optimizer = CVOptimizer(request.profile)
+        recommendations = optimizer.optimize_cv(request.artifact_id, request.job_description)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return [rec.to_dict() for rec in recommendations]
+
+
 @app.get("/entities/{entity}", response_model=list[EntityResponse])
 def list_entities(entity: str) -> list[EntityResponse]:
     """List all persisted entities of a given type."""
@@ -230,3 +302,13 @@ def handle_careeros_exception(request: Request, exc: CareerOSException) -> JSONR
 def handle_http_exception(request: Request, exc: HTTPException) -> JSONResponse:
     """Return consistent JSON error responses."""
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+def _media_type_for_format(output_format: str) -> str:
+    """Resolve the response media type for an output format."""
+    normalized_format = output_format.strip().lower()
+    if normalized_format == "markdown":
+        return "text/markdown"
+    if normalized_format == "docx":
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    return "application/octet-stream"
