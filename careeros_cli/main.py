@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import typer
 import yaml
@@ -20,6 +20,7 @@ from careeros import (
     SchemaLoader,
     generate_artifact as run_artifact_pipeline,
     generate_markdown_cv as run_markdown_cv_pipeline,
+    generate_tailored_artifact as run_tailored_artifact_pipeline,
 )
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
@@ -179,7 +180,7 @@ def search_entities(
     entity: str = typer.Argument(..., help="Entity type name."),
     field: str = typer.Argument(..., help="Field to match."),
     value: str = typer.Argument(..., help="Value to search for."),
-    directory: Path | None = typer.Option(None, "--directory", help="Directory to search. Defaults to the current working directory."),
+    directory: Optional[Path] = typer.Option(None, "--directory", help="Directory to search. Defaults to the current working directory."),
 ) -> None:
     """Search entity files for a matching field value."""
     search_directory = (directory or Path.cwd()).expanduser().resolve()
@@ -237,6 +238,45 @@ def generate_artifact(
         raise typer.Exit(code=1) from exc
 
     console.print(f"[bold green]Generated[/bold green] {output_path}")
+
+
+@app.command("tailor")
+def tailor_artifact(
+    profile_file: Path = typer.Argument(..., help="Path to the JSON or YAML profile file."),
+    artifact_id: str = typer.Argument(..., help="ID of the CV artifact to tailor."),
+    output_format: str = typer.Argument(..., help="Output format for the tailored artifact."),
+    output_file: Path = typer.Argument(..., help="Path where the tailored artifact should be written."),
+    job_desc: str = typer.Option(None, "--job-desc", help="Job description text or path to a file containing it."),
+) -> None:
+    """Generate a tailored CV by applying evidence-based ADD recommendations from job description analysis."""
+    schema_loader = SchemaLoader(Path(__file__).resolve().parents[1] / "schemas")
+
+    # Resolve job description if it's a file
+    job_desc_text = None
+    if job_desc:
+        desc_path = Path(job_desc).expanduser().resolve()
+        if desc_path.exists() and desc_path.is_file():
+            try:
+                job_desc_text = desc_path.read_text(encoding="utf-8")
+            except Exception as exc:
+                console.print(f"[bold red]Failed to read job description file: {exc}[/bold red]")
+                raise typer.Exit(code=1)
+        else:
+            job_desc_text = job_desc
+
+    try:
+        output = run_tailored_artifact_pipeline(profile_file, artifact_id, output_format, job_desc_text, schema_loader)
+        output_path = output_file.expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(output, bytes):
+            output_path.write_bytes(output)
+        else:
+            output_path.write_text(output, encoding="utf-8")
+    except (ValidationError, EntityNotFoundError, OSError) as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[bold green]Generated tailored artifact[/bold green] {output_path}")
 
 
 @app.command("optimize-cv")

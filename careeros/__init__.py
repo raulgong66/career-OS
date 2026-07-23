@@ -18,12 +18,13 @@ from .generators import (
     default_generator_registry,
 )
 from .profile_loader import ProfileLoader
-from .pipelines import generate_artifact, generate_markdown_cv
+from .pipelines import generate_artifact, generate_markdown_cv, generate_tailored_artifact
 from .repository import FileSystemRepository
 from .schema_loader import SchemaLoader
 from .validator import EntityValidator
 from .optimizer import CVOptimizer, Recommendation
 from .docx_renderer import CVDocumentRenderer
+from .recommendation_applier import RecommendationApplier
 
 __all__ = [
     "CareerOSException",
@@ -40,6 +41,7 @@ __all__ = [
     "DocxCVGenerator",
     "generate_artifact",
     "generate_markdown_cv",
+    "generate_tailored_artifact",
     "MarkdownCoverLetterGenerator",
     "MarkdownCVGenerator",
     "ProfileLoader",
@@ -51,4 +53,5 @@ __all__ = [
     "CVOptimizer",
     "Recommendation",
     "CVDocumentRenderer",
+    "RecommendationApplier",
 ]
