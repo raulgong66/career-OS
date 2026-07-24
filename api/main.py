@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 import yaml
 
-from careeros import CVOptimizer, EntityValidator, FileSystemRepository, SchemaLoader, generate_artifact, generate_markdown_cv
+from careeros import CVOptimizer, EntityValidator, FileSystemRepository, ProfileLoader, SchemaLoader, generate_artifact, generate_markdown_cv
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
 app = FastAPI(title="CareerOS API", version="1.0.0")
@@ -70,6 +70,7 @@ class GenerateArtifactRequest(BaseModel):
     profile_path: Path
     artifact_id: str
     output_format: str
+    job_description: Optional[str] = Field(None, description="Optional job description text to generate tailored artifact with recommendations.")
 
 
 class OptimizeCVRequest(BaseModel):
@@ -77,7 +78,7 @@ class OptimizeCVRequest(BaseModel):
 
     profile: dict[str, Any] = Field(..., description="The complete canonical profile payload.")
     artifact_id: str = Field(..., description="ID of the CV artifact to optimize.")
-    job_description: str | None = Field(None, description="Optional job description text to prioritize recommendations.")
+    job_description: Optional[str] = Field(None, description="Optional job description text to prioritize recommendations.")
 
 
 class EntityResponse(BaseModel):
@@ -187,9 +188,25 @@ def generate_markdown_cv_endpoint(request: MarkdownCVRequest) -> PlainTextRespon
 
 @app.post("/generate/artifact")
 def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
-    """Generate an artifact through the generator registry."""
+    """Generate an artifact through the generator registry.
+    
+    When job_description is provided, generates a tailored artifact with recommendations applied.
+    Returns recommendations in a custom header when tailoring.
+    """
     try:
-        output = generate_artifact(request.profile_path, request.artifact_id, request.output_format, SCHEMA_LOADER)
+        output = generate_artifact(
+            request.profile_path, 
+            request.artifact_id, 
+            request.output_format, 
+            SCHEMA_LOADER,
+            job_description=request.job_description
+        )
+        
+        recommendations = None
+        if request.job_description:
+            profile = ProfileLoader(SCHEMA_LOADER).load(request.profile_path)
+            optimizer = CVOptimizer(profile)
+            recommendations = optimizer.optimize_cv(request.artifact_id, request.job_description)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValidationError as exc:
@@ -198,9 +215,14 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     media_type = _media_type_for_format(request.output_format)
+    headers = {}
+    
+    if recommendations:
+        headers["X-Recommendations"] = json.dumps([rec.to_dict() for rec in recommendations])
+    
     if isinstance(output, bytes):
-        return Response(content=output, media_type=media_type)
-    return Response(content=output, media_type=media_type)
+        return Response(content=output, media_type=media_type, headers=headers)
+    return Response(content=output, media_type=media_type, headers=headers)
 
 
 @app.post("/optimize-cv", response_model=list[dict[str, Any]])

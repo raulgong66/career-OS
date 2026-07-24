@@ -21,8 +21,16 @@ def generate_artifact(
     output_format: str,
     schema_loader: SchemaLoader,
     registry: Union[GeneratorRegistry, None] = None,
+    job_description: Union[str, None] = None,
 ) -> str:
-    """Generate an artifact from a profile file, artifact id, and output format."""
+    """Generate an artifact from a profile file, artifact id, and output format.
+    
+    When job_description is provided, generates a tailored artifact with recommendations applied.
+    """
+    if job_description:
+        artifact, _ = generate_tailored_artifact(profile_file, artifact_id, output_format, job_description, schema_loader, registry)
+        return artifact
+    
     generator_registry = registry or default_generator_registry()
     profile = ProfileLoader(schema_loader).load(profile_file)
     contract = ExportContractBuilder(schema_loader).build(profile, artifact_id, validate=False)
@@ -43,7 +51,7 @@ def generate_tailored_artifact(
     job_description: Union[str, None],
     schema_loader: SchemaLoader,
     registry: Union[GeneratorRegistry, None] = None,
-) -> str:
+) -> tuple[str, list]:
     """Generate a tailored artifact by applying ADD recommendations from job description analysis.
 
     Args:
@@ -55,7 +63,7 @@ def generate_tailored_artifact(
         registry: Optional generator registry.
 
     Returns:
-        The generated artifact as a string or bytes.
+        Tuple of (generated artifact as string/bytes, list of Recommendation objects).
     """
     generator_registry = registry or default_generator_registry()
     profile = ProfileLoader(schema_loader).load(profile_file)
@@ -91,4 +99,6 @@ def generate_tailored_artifact(
     contract = ExportContractBuilder(schema_loader).build(tailored_profile, artifact_id, validate=False)
     selected_contract = EvidenceSelector().select(contract)
     generator = generator_registry.resolve(selected_contract.artifact_type, output_format)
-    return generator.generate(selected_contract)
+    artifact = generator.generate(selected_contract)
+    
+    return artifact, recommendations
