@@ -31,10 +31,27 @@ export interface Recommendation {
 
 export type OptimizationStatus = 'already_complete' | 'no_matches' | 'recommendations_available';
 
+export interface OptimizationSummary {
+  total_profile_elements: number;
+  included_profile_elements: number;
+  profile_coverage: number;
+  additional_evidence: number;
+  skills_evaluated: number;
+  experiences_evaluated: number;
+  projects_evaluated: number;
+  achievements_evaluated: number;
+  certifications_evaluated: number;
+  education_evaluated: number;
+  requirements_detected: number | null;
+  requirements_matched: number | null;
+  requirement_coverage: number | null;
+}
+
 export interface OptimizationResult {
   status: OptimizationStatus;
   recommendations: Recommendation[];
   message: string;
+  summary: OptimizationSummary | null;
 }
 
 export interface ProfileInfo {

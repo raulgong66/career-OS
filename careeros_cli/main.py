@@ -18,6 +18,7 @@ from careeros import (
     EntityValidator,
     FileSystemRepository,
     OptimizationStatus,
+    OptimizationSummary,
     SchemaLoader,
     generate_artifact as run_artifact_pipeline,
     generate_markdown_cv as run_markdown_cv_pipeline,
@@ -321,11 +322,15 @@ def optimize_cv(
     if result.status == OptimizationStatus.ALREADY_COMPLETE:
         console.print("[bold green]Your CV is already fully optimized for this opportunity.[/bold green]")
         console.print(f"[dim]{result.message}[/dim]")
+        if result.summary:
+            _print_summary(result.summary)
         return
 
     if result.status == OptimizationStatus.NO_MATCHES:
         console.print("[bold yellow]No additions recommended.[/bold yellow]")
         console.print(f"[dim]{result.message}[/dim]")
+        if result.summary:
+            _print_summary(result.summary)
         return
 
     recommendations = result.recommendations
@@ -361,6 +366,9 @@ def optimize_cv(
 
     console.print(table)
 
+    if result.summary:
+        _print_summary(result.summary)
+
     if docx or output:
         if not (docx and output):
             console.print("[bold red]Both --docx and --output options must be provided to render updates.[/bold red]")
@@ -373,6 +381,38 @@ def optimize_cv(
         except Exception as exc:
             console.print(f"[bold red]Failed to write updated DOCX file: {exc}[/bold red]")
             raise typer.Exit(code=1)
+
+
+def _print_summary(summary: Any) -> None:
+    """Display the optimization summary in the terminal."""
+    from careeros import OptimizationSummary
+
+    console.print()
+    console.print("[bold]Optimization Summary[/bold]")
+    console.print()
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Metric", style="dim")
+    table.add_column("Value", style="bold")
+
+    table.add_row("Profile Coverage", f"{summary.profile_coverage:.0f}%")
+    table.add_row("Profile Elements", f"{summary.included_profile_elements} / {summary.total_profile_elements}")
+    table.add_row("Additional Evidence", str(summary.additional_evidence))
+    table.add_row("", "")
+    table.add_row("Skills Evaluated", str(summary.skills_evaluated))
+    table.add_row("Experiences Evaluated", str(summary.experiences_evaluated))
+    table.add_row("Projects Evaluated", str(summary.projects_evaluated))
+    table.add_row("Achievements Evaluated", str(summary.achievements_evaluated))
+    table.add_row("Certifications Evaluated", str(summary.certifications_evaluated))
+    table.add_row("Education Evaluated", str(summary.education_evaluated))
+
+    if summary.requirements_detected is not None:
+        table.add_row("", "")
+        table.add_row("Requirements Detected", str(summary.requirements_detected))
+        table.add_row("Requirements Matched", str(summary.requirements_matched))
+        table.add_row("Requirement Coverage", f"{summary.requirement_coverage:.0f}%")
+
+    console.print(table)
 
 
 def _load_payload(file_path: Path) -> dict[str, Any]:

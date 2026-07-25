@@ -310,3 +310,115 @@ def test_generate_artifact_backward_compat_profile_path(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert "# Jane Doe" in response.text
+
+
+def test_optimization_summary_included_in_tailored_response() -> None:
+    response = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": "raul-gongora-profile",
+            "artifact_id": "cv-english-source",
+            "output_format": "markdown",
+            "job_description": "DevSecOps engineer with Kubernetes experience",
+        },
+    )
+
+    assert response.status_code == 200
+    summary_header = response.headers.get("X-Optimization-Summary")
+    assert summary_header is not None
+    import json
+    summary = json.loads(summary_header)
+    assert "total_profile_elements" in summary
+    assert "included_profile_elements" in summary
+    assert "profile_coverage" in summary
+    assert "additional_evidence" in summary
+    assert "skills_evaluated" in summary
+    assert "experiences_evaluated" in summary
+    assert "projects_evaluated" in summary
+    assert "achievements_evaluated" in summary
+    assert "certifications_evaluated" in summary
+    assert "education_evaluated" in summary
+    assert summary["total_profile_elements"] > 0
+    assert summary["skills_evaluated"] == 6
+    assert summary["experiences_evaluated"] == 6
+
+
+def test_optimization_summary_included_in_optimize_cv_response() -> None:
+    response = client.post(
+        "/optimize-cv",
+        json={
+            "profile": {
+                "profileVersion": "1.0.0",
+                "person": {"id": "person-1", "names": [{"value": "Jane Doe"}]},
+                "skills": [{"id": "skill-1", "name": "Python"}, {"id": "skill-2", "name": "Kubernetes"}],
+                "evidence": [{"id": "ev-1", "relatedRefs": [{"id": "skill-2", "type": "skill"}]}],
+                "artifacts": [
+                    {
+                        "id": "artifact-1",
+                        "artifactType": "CV",
+                        "sourceRefs": [{"id": "skill-1", "type": "skill"}],
+                    }
+                ],
+            },
+            "artifact_id": "artifact-1",
+            "job_description": "Python developer with Kubernetes experience",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "summary" in body
+    summary = body["summary"]
+    assert summary["total_profile_elements"] == 2
+    assert summary["included_profile_elements"] == 1
+    assert summary["profile_coverage"] == 50.0
+    assert summary["additional_evidence"] == 1
+    assert summary["skills_evaluated"] == 2
+    assert summary["requirements_detected"] is not None
+    assert summary["requirements_detected"] > 0
+    assert summary["requirements_matched"] is not None
+    assert summary["requirement_coverage"] is not None
+
+
+def test_optimization_summary_no_job_description() -> None:
+    response = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": "raul-gongora-profile",
+            "artifact_id": "cv-english-source",
+            "output_format": "markdown",
+        },
+    )
+
+    assert response.status_code == 200
+    summary_header = response.headers.get("X-Optimization-Summary")
+    assert summary_header is None
+
+
+def test_optimization_summary_deterministic() -> None:
+    from careeros import CVOptimizer, ProfileLoader, SchemaLoader
+    from pathlib import Path as P
+
+    REPO_ROOT = P(__file__).resolve().parents[1]
+    schema_loader = SchemaLoader(REPO_ROOT / "schemas")
+    profile = ProfileLoader(schema_loader).load(REPO_ROOT / "profiles" / "raul-gongora-profile.yaml")
+
+    optimizer = CVOptimizer(profile)
+    result = optimizer.optimize_cv("cv-english-source", "DevSecOps engineer with Kubernetes experience")
+
+    s = result.summary
+    assert s is not None
+    assert s.total_profile_elements == 23
+    assert s.included_profile_elements == 23
+    assert s.profile_coverage == 100.0
+    assert s.additional_evidence == 0
+    assert s.skills_evaluated == 6
+    assert s.experiences_evaluated == 6
+    assert s.projects_evaluated == 1
+    assert s.achievements_evaluated == 3
+    assert s.certifications_evaluated == 6
+    assert s.education_evaluated == 1
+    assert s.requirements_detected is not None
+    assert s.requirements_detected > 0
+    assert s.requirements_matched is not None
+    assert s.requirement_coverage is not None

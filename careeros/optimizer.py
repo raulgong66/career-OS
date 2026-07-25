@@ -22,6 +22,51 @@ class OptimizationStatus(str, Enum):
 
 
 @dataclass
+class OptimizationSummary:
+    """Factual metrics about the tailoring analysis.
+
+    All fields are computed deterministically from the profile and optimizer
+    algorithm. No values are estimated or fabricated.
+    """
+
+    # Profile coverage
+    total_profile_elements: int
+    included_profile_elements: int
+    profile_coverage: float
+    additional_evidence: int
+
+    # Profile analysis
+    skills_evaluated: int
+    experiences_evaluated: int
+    projects_evaluated: int
+    achievements_evaluated: int
+    certifications_evaluated: int
+    education_evaluated: int
+
+    # Job analysis (only populated when job_description is provided)
+    requirements_detected: int | None = None
+    requirements_matched: int | None = None
+    requirement_coverage: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_profile_elements": self.total_profile_elements,
+            "included_profile_elements": self.included_profile_elements,
+            "profile_coverage": self.profile_coverage,
+            "additional_evidence": self.additional_evidence,
+            "skills_evaluated": self.skills_evaluated,
+            "experiences_evaluated": self.experiences_evaluated,
+            "projects_evaluated": self.projects_evaluated,
+            "achievements_evaluated": self.achievements_evaluated,
+            "certifications_evaluated": self.certifications_evaluated,
+            "education_evaluated": self.education_evaluated,
+            "requirements_detected": self.requirements_detected,
+            "requirements_matched": self.requirements_matched,
+            "requirement_coverage": self.requirement_coverage,
+        }
+
+
+@dataclass
 class Recommendation:
     """A structured recommendation for optimizing a CV."""
 
@@ -53,12 +98,14 @@ class OptimizationResult:
     status: OptimizationStatus
     recommendations: list[Recommendation] = field(default_factory=list)
     message: str = ""
+    summary: OptimizationSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status.value,
             "recommendations": [r.to_dict() for r in self.recommendations],
             "message": self.message,
+            "summary": self.summary.to_dict() if self.summary else None,
         }
 
 
@@ -198,6 +245,14 @@ class CVOptimizer:
         # Sort recommendations by weighted total score descending
         recommendations.sort(key=lambda r: r.scores.get("weighted_total", 0.0), reverse=True)
 
+        # Compute summary
+        summary = self._compute_summary(
+            artifact_id=artifact_id,
+            existing_ids=existing_ids,
+            recommendations=recommendations,
+            jd_keywords=jd_keywords,
+        )
+
         logger.info("Optimization status: %s, total recommendations: %d", status.value, len(recommendations))
         logger.info("=== END DIAGNOSTICS ===")
 
@@ -205,6 +260,7 @@ class CVOptimizer:
             status=status,
             recommendations=recommendations,
             message=message,
+            summary=summary,
         )
 
     def _get_backing_evidence(self, element: dict[str, Any], element_type: str) -> list[dict[str, Any]]:
@@ -308,6 +364,83 @@ class CVOptimizer:
             "evidence_strength": evidence_strength,
             "weighted_total": weighted_total,
         }
+
+    def _compute_summary(
+        self,
+        artifact_id: str,
+        existing_ids: set[str],
+        recommendations: list[Recommendation],
+        jd_keywords: set[str],
+    ) -> OptimizationSummary:
+        """Compute factual summary metrics about the optimization analysis.
+
+        All values are derived deterministically from the profile data and
+        optimizer algorithm. No values are estimated or fabricated.
+        """
+        categories = {
+            "skills": ("skill", []),
+            "experiences": ("experience", []),
+            "projects": ("project", []),
+            "achievements": ("achievement", []),
+            "certifications": ("certification", []),
+            "education": ("education", []),
+        }
+
+        total_profile_elements = 0
+        included_profile_elements = 0
+
+        for list_key, (type_name, _) in categories.items():
+            elements = self.profile.get(list_key, [])
+            for element in elements:
+                element_id = element.get("id")
+                if not element_id:
+                    continue
+                total_profile_elements += 1
+                if element_id in existing_ids:
+                    included_profile_elements += 1
+
+        profile_coverage = (
+            (included_profile_elements / total_profile_elements * 100.0)
+            if total_profile_elements > 0
+            else 0.0
+        )
+
+        # Job analysis: count how many JD keywords are matched in ANY profile element
+        requirements_detected = len(jd_keywords) if jd_keywords else None
+        requirements_matched: int | None = None
+        requirement_coverage: float | None = None
+
+        if jd_keywords:
+            matched_keywords: set[str] = set()
+            # Check all profile elements for keyword matches
+            for list_key in categories:
+                for element in self.profile.get(list_key, []):
+                    element_text = self._collect_element_text(element).lower()
+                    for keyword in jd_keywords:
+                        if keyword in element_text:
+                            matched_keywords.add(keyword)
+            requirements_matched = len(matched_keywords)
+            requirement_coverage = (
+                (requirements_matched / requirements_detected * 100.0)
+                if requirements_detected > 0
+                else 0.0
+            )
+
+        return OptimizationSummary(
+            total_profile_elements=total_profile_elements,
+            included_profile_elements=included_profile_elements,
+            profile_coverage=round(profile_coverage, 1),
+            additional_evidence=len(recommendations),
+            skills_evaluated=len(self.profile.get("skills", [])),
+            experiences_evaluated=len(self.profile.get("experiences", [])),
+            projects_evaluated=len(self.profile.get("projects", [])),
+            achievements_evaluated=len(self.profile.get("achievements", [])),
+            certifications_evaluated=len(self.profile.get("certifications", [])),
+            education_evaluated=len(self.profile.get("education", [])),
+            requirements_detected=requirements_detected,
+            requirements_matched=requirements_matched,
+            requirement_coverage=round(requirement_coverage, 1) if requirement_coverage is not None else None,
+        )
 
     def _collect_element_text(self, element: dict[str, Any]) -> str:
         """Recursively collect all string values in an element to use for keyword matching."""

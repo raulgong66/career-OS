@@ -295,6 +295,8 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
     if optimization_result is not None:
         headers["X-Optimization-Status"] = optimization_result.status.value
         headers["X-Optimization-Message"] = optimization_result.message
+        if optimization_result.summary:
+            headers["X-Optimization-Summary"] = json.dumps(optimization_result.summary.to_dict())
         if optimization_result.recommendations:
             headers["X-Recommendations"] = json.dumps([rec.to_dict() for rec in optimization_result.recommendations])
     

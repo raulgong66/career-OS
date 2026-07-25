@@ -1,9 +1,10 @@
-import type { Recommendation, OptimizationStatus, ProfileInfo } from '../types';
+import type { Recommendation, OptimizationStatus, OptimizationSummary, ProfileInfo } from '../types';
 
 interface GenerateArtifactResponse {
   artifact: string;
   optimizationStatus: OptimizationStatus | null;
   optimizationMessage: string;
+  optimizationSummary: OptimizationSummary | null;
   recommendations: Recommendation[];
 }
 
@@ -56,6 +57,7 @@ export class TailoringService {
       
       const optimizationStatusHeader = response.headers.get('X-Optimization-Status');
       const optimizationMessageHeader = response.headers.get('X-Optimization-Message');
+      const optimizationSummaryHeader = response.headers.get('X-Optimization-Summary');
       const recommendationsHeader = response.headers.get('X-Recommendations');
       
       let recommendations: Recommendation[] = [];
@@ -67,10 +69,20 @@ export class TailoringService {
         }
       }
 
+      let summary: OptimizationSummary | null = null;
+      if (optimizationSummaryHeader) {
+        try {
+          summary = JSON.parse(optimizationSummaryHeader);
+        } catch (e) {
+          console.error('Failed to parse optimization summary header:', e);
+        }
+      }
+
       return {
         artifact,
         optimizationStatus: (optimizationStatusHeader as OptimizationStatus) || null,
         optimizationMessage: optimizationMessageHeader || '',
+        optimizationSummary: summary,
         recommendations,
       };
     } catch (error) {
