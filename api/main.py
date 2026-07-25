@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -15,6 +16,8 @@ import yaml
 
 from careeros import CVOptimizer, EntityValidator, FileSystemRepository, ProfileLoader, SchemaLoader, generate_artifact, generate_markdown_cv
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
+
+logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
 
 app = FastAPI(title="CareerOS API", version="1.0.0")
 app.add_middleware(

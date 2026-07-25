@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Union
 
 from .exceptions import ValidationError, EntityNotFoundError
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -76,6 +79,11 @@ class CVOptimizer:
         source_refs = target_artifact.get("sourceRefs", [])
         existing_ids = {ref.get("id") for ref in source_refs if ref.get("id")}
 
+        logger.info("=== OPTIMIZER DIAGNOSTICS ===")
+        logger.info("Artifact: %s", artifact_id)
+        logger.info("sourceRefs count: %d", len(existing_ids))
+        logger.info("Existing IDs already in CV: %s", sorted(existing_ids))
+
         # Extract target context and keyword emphasis
         target_context_emphases: list[str] = []
         target_context_refs = target_artifact.get("targetContextRefs", [])
@@ -87,6 +95,9 @@ class CVOptimizer:
 
         # Process job description keywords
         jd_keywords = self._extract_keywords(job_description)
+
+        logger.info("Job description keywords extracted: %d", len(jd_keywords))
+        logger.info("Target context emphases: %s", target_context_emphases)
 
         # Categorized candidates from the profile that are not currently in the CV
         categories = {
@@ -102,14 +113,23 @@ class CVOptimizer:
 
         for type_name, list_key in categories.items():
             elements = self.profile.get(list_key, [])
+            skipped_existing = 0
+            skipped_no_id = 0
+            skipped_no_evidence = 0
+            added = 0
             for element in elements:
                 element_id = element.get("id")
-                if not element_id or element_id in existing_ids:
+                if not element_id:
+                    skipped_no_id += 1
+                    continue
+                if element_id in existing_ids:
+                    skipped_existing += 1
                     continue
 
                 # Verify if supported by evidence
                 backing_evidence = self._get_backing_evidence(element, type_name)
                 if not backing_evidence:
+                    skipped_no_evidence += 1
                     continue  # Recommends ONLY additions supported by verified user data
 
                 # Calculate display name
@@ -118,6 +138,7 @@ class CVOptimizer:
                 # Compute weighted relevance scores
                 scores = self._compute_scores(element, type_name, jd_keywords, target_context_emphases, len(backing_evidence))
 
+                added += 1
                 recommendations.append(
                     Recommendation(
                         id=element_id,
@@ -129,6 +150,14 @@ class CVOptimizer:
                         scores=scores,
                     )
                 )
+
+            logger.info(
+                "Category '%s': %d total, %d already in CV, %d no id, %d no evidence, %d added",
+                type_name, len(elements), skipped_existing, skipped_no_id, skipped_no_evidence, added,
+            )
+
+        logger.info("Total recommendations generated: %d", len(recommendations))
+        logger.info("=== END DIAGNOSTICS ===")
 
         # Sort recommendations by weighted total score descending
         recommendations.sort(key=lambda r: r.scores.get("weighted_total", 0.0), reverse=True)
