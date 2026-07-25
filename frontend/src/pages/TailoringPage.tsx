@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { TailoringService } from '../services/TailoringService';
-import type { Recommendation } from '../types';
+import type { Recommendation, OptimizationStatus } from '../types';
 
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 
@@ -12,6 +12,8 @@ export default function TailoringPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [artifact, setArtifact] = useState<string>('');
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [optimizationStatus, setOptimizationStatus] = useState<OptimizationStatus | null>(null);
+  const [optimizationMessage, setOptimizationMessage] = useState('');
 
   const handleGenerate = async () => {
     if (!jobDescription.trim()) {
@@ -24,6 +26,8 @@ export default function TailoringPage() {
     setErrorMessage('');
     setArtifact('');
     setRecommendations([]);
+    setOptimizationStatus(null);
+    setOptimizationMessage('');
 
     const generatingTimeout = setTimeout(() => {
       setStatus('generating');
@@ -42,11 +46,9 @@ export default function TailoringPage() {
       clearTimeout(generatingTimeout);
       setArtifact(response.artifact);
       setRecommendations(response.recommendations);
+      setOptimizationStatus(response.optimizationStatus);
+      setOptimizationMessage(response.optimizationMessage);
       setStatus('success');
-
-      if (response.recommendations.length === 0) {
-        setErrorMessage('No recommendations generated');
-      }
     } catch (error) {
       clearTimeout(generatingTimeout);
       setErrorMessage(
@@ -180,9 +182,15 @@ export default function TailoringPage() {
                 </div>
               )}
 
-              {status === 'success' && recommendations.length === 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-                  <p className="text-sm text-yellow-700">No recommendations were generated for this job description.</p>
+              {status === 'success' && optimizationStatus === 'already_complete' && (
+                <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <p className="text-sm text-green-700">{optimizationMessage}</p>
+                </div>
+              )}
+
+              {status === 'success' && optimizationStatus === 'no_matches' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                  <p className="text-sm text-blue-700">{optimizationMessage}</p>
                 </div>
               )}
             </div>
@@ -248,8 +256,9 @@ export default function TailoringPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
                     </svg>
                     <p className="text-sm">
-                      {status === 'analyzing' || status === 'generating' ? 'Analyzing recommendations...' : 
-                       status === 'success' ? 'No recommendations available' : 
+                      {status === 'analyzing' || status === 'generating' ? 'Analyzing recommendations...' :
+                       status === 'success' && optimizationStatus === 'already_complete' ? 'Resume is already complete' :
+                       status === 'success' && optimizationStatus === 'no_matches' ? 'No additional evidence found' :
                        'AI recommendations will appear here'}
                     </p>
                   </div>

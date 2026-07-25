@@ -17,6 +17,7 @@ from careeros import (
     CVOptimizer,
     EntityValidator,
     FileSystemRepository,
+    OptimizationStatus,
     SchemaLoader,
     generate_artifact as run_artifact_pipeline,
     generate_markdown_cv as run_markdown_cv_pipeline,
@@ -309,7 +310,7 @@ def optimize_cv(
 
     try:
         optimizer = CVOptimizer(profile_data)
-        recommendations = optimizer.optimize_cv(artifact_id, job_desc_text)
+        result = optimizer.optimize_cv(artifact_id, job_desc_text)
     except EntityNotFoundError as exc:
         console.print(f"[bold red]{exc}[/bold red]")
         raise typer.Exit(code=1)
@@ -317,8 +318,19 @@ def optimize_cv(
         console.print(f"[bold red]Optimization error: {exc}[/bold red]")
         raise typer.Exit(code=1)
 
+    if result.status == OptimizationStatus.ALREADY_COMPLETE:
+        console.print("[bold green]Your CV is already fully optimized for this opportunity.[/bold green]")
+        console.print(f"[dim]{result.message}[/dim]")
+        return
+
+    if result.status == OptimizationStatus.NO_MATCHES:
+        console.print("[bold yellow]No additions recommended.[/bold yellow]")
+        console.print(f"[dim]{result.message}[/dim]")
+        return
+
+    recommendations = result.recommendations
     if not recommendations:
-        console.print("[bold yellow]No additions recommended. Your CV is already fully optimized or there is no evidence-backed data to add.[/bold yellow]")
+        console.print("[bold yellow]Optimization completed with no actionable recommendations.[/bold yellow]")
         return
 
     table = Table(title=f"Recommended Additions for CV '{artifact_id}'")

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 import yaml
 
-from careeros import CVOptimizer, EntityValidator, FileSystemRepository, ProfileLoader, SchemaLoader, generate_artifact, generate_markdown_cv
+from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, generate_artifact, generate_markdown_cv
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
@@ -203,7 +203,7 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
     """Generate an artifact through the generator registry.
     
     When job_description is provided, generates a tailored artifact with recommendations applied.
-    Returns recommendations in a custom header when tailoring.
+    Returns optimization status and recommendations in custom headers when tailoring.
     """
     try:
         output = generate_artifact(
@@ -214,11 +214,11 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
             job_description=request.job_description
         )
         
-        recommendations = None
+        optimization_result = None
         if request.job_description:
             profile = ProfileLoader(SCHEMA_LOADER).load(request.profile_path)
             optimizer = CVOptimizer(profile)
-            recommendations = optimizer.optimize_cv(request.artifact_id, request.job_description)
+            optimization_result = optimizer.optimize_cv(request.artifact_id, request.job_description)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValidationError as exc:
@@ -229,20 +229,23 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
     media_type = _media_type_for_format(request.output_format)
     headers = {}
     
-    if recommendations:
-        headers["X-Recommendations"] = json.dumps([rec.to_dict() for rec in recommendations])
+    if optimization_result is not None:
+        headers["X-Optimization-Status"] = optimization_result.status.value
+        headers["X-Optimization-Message"] = optimization_result.message
+        if optimization_result.recommendations:
+            headers["X-Recommendations"] = json.dumps([rec.to_dict() for rec in optimization_result.recommendations])
     
     if isinstance(output, bytes):
         return Response(content=output, media_type=media_type, headers=headers)
     return Response(content=output, media_type=media_type, headers=headers)
 
 
-@app.post("/optimize-cv", response_model=list[dict[str, Any]])
-def optimize_cv_endpoint(request: OptimizeCVRequest) -> list[dict[str, Any]]:
+@app.post("/optimize-cv", response_model=dict[str, Any])
+def optimize_cv_endpoint(request: OptimizeCVRequest) -> dict[str, Any]:
     """Generate structured optimization recommendations for a CV artifact."""
     try:
         optimizer = CVOptimizer(request.profile)
-        recommendations = optimizer.optimize_cv(request.artifact_id, request.job_description)
+        result = optimizer.optimize_cv(request.artifact_id, request.job_description)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValidationError as exc:
@@ -250,7 +253,7 @@ def optimize_cv_endpoint(request: OptimizeCVRequest) -> list[dict[str, Any]]:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return [rec.to_dict() for rec in recommendations]
+    return result.to_dict()
 
 
 @app.get("/entities/{entity}", response_model=list[EntityResponse])

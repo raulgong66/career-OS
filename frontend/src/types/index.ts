@@ -29,6 +29,14 @@ export interface Recommendation {
   scores: Record<string, number>;
 }
 
+export type OptimizationStatus = 'already_complete' | 'no_matches' | 'recommendations_available';
+
+export interface OptimizationResult {
+  status: OptimizationStatus;
+  recommendations: Recommendation[];
+  message: string;
+}
+
 export interface AnalysisResult {
   matchScore: number;
   strengths: string[];

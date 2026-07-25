@@ -5,11 +5,20 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Union
 
 from .exceptions import ValidationError, EntityNotFoundError
 
 logger = logging.getLogger(__name__)
+
+
+class OptimizationStatus(str, Enum):
+    """Semantic status of an optimization result."""
+
+    ALREADY_COMPLETE = "already_complete"
+    NO_MATCHES = "no_matches"
+    RECOMMENDATIONS_AVAILABLE = "recommendations_available"
 
 
 @dataclass
@@ -37,6 +46,22 @@ class Recommendation:
         }
 
 
+@dataclass
+class OptimizationResult:
+    """Structured result of a CV optimization run."""
+
+    status: OptimizationStatus
+    recommendations: list[Recommendation] = field(default_factory=list)
+    message: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status.value,
+            "recommendations": [r.to_dict() for r in self.recommendations],
+            "message": self.message,
+        }
+
+
 class CVOptimizer:
     """Optimizes CV artifacts by matching them against canonical profile elements."""
 
@@ -48,7 +73,7 @@ class CVOptimizer:
         """
         self.profile = profile_data
 
-    def optimize_cv(self, artifact_id: str, job_description: Union[str, None] = None) -> list[Recommendation]:
+    def optimize_cv(self, artifact_id: str, job_description: Union[str, None] = None) -> OptimizationResult:
         """Generate structured recommendations for a CV artifact.
 
         Args:
@@ -56,7 +81,7 @@ class CVOptimizer:
             job_description: Optional job description text to prioritize recommendations.
 
         Returns:
-            A list of Recommendation objects sorted by relevance score descending.
+            An OptimizationResult with status, recommendations, and message.
         """
         # Find the target artifact in the profile
         artifacts = self.profile.get("artifacts", [])
@@ -110,6 +135,7 @@ class CVOptimizer:
         }
 
         recommendations: list[Recommendation] = []
+        has_unreferenced_elements = False
 
         for type_name, list_key in categories.items():
             elements = self.profile.get(list_key, [])
@@ -125,6 +151,8 @@ class CVOptimizer:
                 if element_id in existing_ids:
                     skipped_existing += 1
                     continue
+
+                has_unreferenced_elements = True
 
                 # Verify if supported by evidence
                 backing_evidence = self._get_backing_evidence(element, type_name)
@@ -156,12 +184,28 @@ class CVOptimizer:
                 type_name, len(elements), skipped_existing, skipped_no_id, skipped_no_evidence, added,
             )
 
-        logger.info("Total recommendations generated: %d", len(recommendations))
-        logger.info("=== END DIAGNOSTICS ===")
+        # Determine semantic status
+        if not has_unreferenced_elements:
+            status = OptimizationStatus.ALREADY_COMPLETE
+            message = "This resume already includes all relevant evidence available in your CareerOS profile. No additional skills, experiences, projects, or certifications need to be added for this opportunity."
+        elif not recommendations:
+            status = OptimizationStatus.NO_MATCHES
+            message = "The job description was analyzed successfully, but no additional relevant evidence was found in your CareerOS profile."
+        else:
+            status = OptimizationStatus.RECOMMENDATIONS_AVAILABLE
+            message = ""
 
         # Sort recommendations by weighted total score descending
         recommendations.sort(key=lambda r: r.scores.get("weighted_total", 0.0), reverse=True)
-        return recommendations
+
+        logger.info("Optimization status: %s, total recommendations: %d", status.value, len(recommendations))
+        logger.info("=== END DIAGNOSTICS ===")
+
+        return OptimizationResult(
+            status=status,
+            recommendations=recommendations,
+            message=message,
+        )
 
     def _get_backing_evidence(self, element: dict[str, Any], element_type: str) -> list[dict[str, Any]]:
         """Get all evidence items backing a profile element."""

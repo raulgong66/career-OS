@@ -1,7 +1,9 @@
-import type { Recommendation } from '../types';
+import type { Recommendation, OptimizationStatus } from '../types';
 
 interface GenerateArtifactResponse {
   artifact: string;
+  optimizationStatus: OptimizationStatus | null;
+  optimizationMessage: string;
   recommendations: Recommendation[];
 }
 
@@ -44,9 +46,11 @@ export class TailoringService {
 
       const artifact = await response.text();
       
+      const optimizationStatusHeader = response.headers.get('X-Optimization-Status');
+      const optimizationMessageHeader = response.headers.get('X-Optimization-Message');
       const recommendationsHeader = response.headers.get('X-Recommendations');
-      let recommendations: Recommendation[] = [];
       
+      let recommendations: Recommendation[] = [];
       if (recommendationsHeader) {
         try {
           recommendations = JSON.parse(recommendationsHeader);
@@ -55,7 +59,12 @@ export class TailoringService {
         }
       }
 
-      return { artifact, recommendations };
+      return {
+        artifact,
+        optimizationStatus: (optimizationStatusHeader as OptimizationStatus) || null,
+        optimizationMessage: optimizationMessageHeader || '',
+        recommendations,
+      };
     } catch (error) {
       console.error('Failed to generate tailored artifact:', error);
       throw error;

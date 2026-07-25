@@ -9,7 +9,7 @@ from typing import Union
 from .evidence_selector import EvidenceSelector
 from .export_contract import ExportContractBuilder
 from .generators import GeneratorRegistry, default_generator_registry
-from .optimizer import CVOptimizer
+from .optimizer import CVOptimizer, OptimizationResult
 from .profile_loader import ProfileLoader
 from .recommendation_applier import RecommendationApplier
 from .schema_loader import SchemaLoader
@@ -51,7 +51,7 @@ def generate_tailored_artifact(
     job_description: Union[str, None],
     schema_loader: SchemaLoader,
     registry: Union[GeneratorRegistry, None] = None,
-) -> tuple[str, list]:
+) -> tuple[str, OptimizationResult]:
     """Generate a tailored artifact by applying ADD recommendations from job description analysis.
 
     Args:
@@ -63,14 +63,14 @@ def generate_tailored_artifact(
         registry: Optional generator registry.
 
     Returns:
-        Tuple of (generated artifact as string/bytes, list of Recommendation objects).
+        Tuple of (generated artifact as string/bytes, OptimizationResult).
     """
     generator_registry = registry or default_generator_registry()
     profile = ProfileLoader(schema_loader).load(profile_file)
 
     # Generate recommendations
     optimizer = CVOptimizer(profile)
-    recommendations = optimizer.optimize_cv(artifact_id, job_description)
+    optimization_result = optimizer.optimize_cv(artifact_id, job_description)
 
     # Find the target artifact
     artifacts = profile.get("artifacts", [])
@@ -86,7 +86,7 @@ def generate_tailored_artifact(
 
     # Apply ADD recommendations to create tailored artifact
     applier = RecommendationApplier()
-    tailored_artifact = applier.apply_add_recommendations(target_artifact, recommendations)
+    tailored_artifact = applier.apply_add_recommendations(target_artifact, optimization_result.recommendations)
 
     # Replace the artifact in the profile with the tailored version
     tailored_profile = copy.deepcopy(profile)
@@ -101,4 +101,4 @@ def generate_tailored_artifact(
     generator = generator_registry.resolve(selected_contract.artifact_type, output_format)
     artifact = generator.generate(selected_contract)
     
-    return artifact, recommendations
+    return artifact, optimization_result
