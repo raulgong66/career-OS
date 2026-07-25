@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
-@dataclass(slots=True)
+@dataclass
 class ValidationResult:
     """Structured validation outcome for an entity."""
 
@@ -18,7 +18,7 @@ class ValidationResult:
         return {"is_valid": self.is_valid, "errors": self.errors}
 
 
-@dataclass(slots=True)
+@dataclass
 class EntityRecord:
     """A lightweight record for storing an entity and its payload."""
 

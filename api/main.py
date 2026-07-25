@@ -10,13 +10,22 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
+from fastapi.middleware.cors import CORSMiddleware
 import yaml
 
 from careeros import CVOptimizer, EntityValidator, FileSystemRepository, ProfileLoader, SchemaLoader, generate_artifact, generate_markdown_cv
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
 app = FastAPI(title="CareerOS API", version="1.0.0")
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "schemas"
 SCHEMA_LOADER = SchemaLoader(SCHEMA_ROOT)

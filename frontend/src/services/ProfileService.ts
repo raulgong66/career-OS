@@ -24,7 +24,7 @@ export class ProfileService {
           },
           artifacts: [
             {
-              id: 'cv-1',
+              id: 'cv-english-source',
               type: 'cv',
               name: 'Software Engineer CV',
               sourceRefs: [],
@@ -48,7 +48,7 @@ export class ProfileService {
           },
           artifacts: [
             {
-              id: 'cv-1',
+              id: 'cv-english-source',
               type: 'cv',
               name: 'Software Engineer CV',
               sourceRefs: [],

@@ -6,7 +6,7 @@ type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 
 export default function TailoringPage() {
   const [profilePath, setProfilePath] = useState('/Users/admin/Documents/Codex/2026-07-17/clone-my-github-repository-https-github/career-OS/profiles/raul-gongora-profile.yaml');
-  const [artifactId, setArtifactId] = useState('cv-1');
+  const [artifactId, setArtifactId] = useState('cv-english-source');
   const [jobDescription, setJobDescription] = useState('');
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');

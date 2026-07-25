@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Union
 
 from .exceptions import ValidationError, EntityNotFoundError
 
 
-@dataclass(slots=True)
+@dataclass
 class Recommendation:
     """A structured recommendation for optimizing a CV."""
 
@@ -45,7 +45,7 @@ class CVOptimizer:
         """
         self.profile = profile_data
 
-    def optimize_cv(self, artifact_id: str, job_description: str | None = None) -> list[Recommendation]:
+    def optimize_cv(self, artifact_id: str, job_description: Union[str, None] = None) -> list[Recommendation]:
         """Generate structured recommendations for a CV artifact.
 
         Args:
@@ -255,7 +255,7 @@ class CVOptimizer:
         return " ".join(parts)
 
     @staticmethod
-    def _extract_keywords(text: str | None) -> set[str]:
+    def _extract_keywords(text: Union[str, None]) -> set[str]:
         """Extract alphanumeric keywords from text, ignoring stopwords."""
         if not text:
             return set()

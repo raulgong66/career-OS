@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, Union
 
 from ..exceptions import ValidationError
 from ..export_contract import ExportContract
@@ -14,7 +14,7 @@ from .markdown_cv import MarkdownCVGenerator
 class ArtifactGenerator(Protocol):
     """Protocol implemented by artifact generators."""
 
-    def generate(self, contract: ExportContract) -> str | bytes:
+    def generate(self, contract: ExportContract) -> Union[str, bytes]:
         """Generate an artifact from an export contract."""
         ...
 
