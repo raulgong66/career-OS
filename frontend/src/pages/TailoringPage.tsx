@@ -377,6 +377,50 @@ export default function TailoringPage() {
                 </div>
               )}
 
+              {status === 'success' && optimizationSummary && (optimizationSummary.matched_keywords.length > 0 || optimizationSummary.target_context_emphasis.length > 0) && (
+                <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Job Match Analysis</h2>
+
+                  {optimizationSummary.requirement_coverage !== null && (
+                    <div className="mb-4">
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
+                        optimizationSummary.requirement_coverage >= 80 ? 'bg-green-100 text-green-800' :
+                        optimizationSummary.requirement_coverage >= 50 ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {optimizationSummary.requirement_coverage.toFixed(0)}% of detected requirements matched
+                      </span>
+                    </div>
+                  )}
+
+                  {optimizationSummary.matched_keywords.length > 0 && (
+                    <div className="mb-4">
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Top matched skills</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {optimizationSummary.matched_keywords.map((keyword) => (
+                          <span key={keyword} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {keyword}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {optimizationSummary.target_context_emphasis.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Target context</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {optimizationSummary.target_context_emphasis.map((emphasis) => (
+                          <span key={emphasis} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                            {emphasis}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">{labels.resultHeading}</h2>
                 {artifact ? (

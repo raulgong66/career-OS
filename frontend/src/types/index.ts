@@ -45,6 +45,8 @@ export interface OptimizationSummary {
   requirements_detected: number | null;
   requirements_matched: number | null;
   requirement_coverage: number | null;
+  matched_keywords: string[];
+  target_context_emphasis: string[];
 }
 
 export interface OptimizationResult {

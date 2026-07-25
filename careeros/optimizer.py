@@ -47,6 +47,8 @@ class OptimizationSummary:
     requirements_detected: int | None = None
     requirements_matched: int | None = None
     requirement_coverage: float | None = None
+    matched_keywords: list[str] = field(default_factory=list)
+    target_context_emphasis: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +65,8 @@ class OptimizationSummary:
             "requirements_detected": self.requirements_detected,
             "requirements_matched": self.requirements_matched,
             "requirement_coverage": self.requirement_coverage,
+            "matched_keywords": self.matched_keywords,
+            "target_context_emphasis": self.target_context_emphasis,
         }
 
 
@@ -251,6 +255,7 @@ class CVOptimizer:
             existing_ids=existing_ids,
             recommendations=recommendations,
             jd_keywords=jd_keywords,
+            target_context_emphasis=target_context_emphases,
         )
 
         logger.info("Optimization status: %s, total recommendations: %d", status.value, len(recommendations))
@@ -371,6 +376,7 @@ class CVOptimizer:
         existing_ids: set[str],
         recommendations: list[Recommendation],
         jd_keywords: set[str],
+        target_context_emphasis: list[str],
     ) -> OptimizationSummary:
         """Compute factual summary metrics about the optimization analysis.
 
@@ -426,6 +432,9 @@ class CVOptimizer:
                 else 0.0
             )
 
+        # Collect top matched keywords sorted alphabetically, capped at 10
+        top_matched = sorted(matched_keywords)[:10] if jd_keywords else []
+
         return OptimizationSummary(
             total_profile_elements=total_profile_elements,
             included_profile_elements=included_profile_elements,
@@ -440,6 +449,8 @@ class CVOptimizer:
             requirements_detected=requirements_detected,
             requirements_matched=requirements_matched,
             requirement_coverage=round(requirement_coverage, 1) if requirement_coverage is not None else None,
+            matched_keywords=top_matched,
+            target_context_emphasis=target_context_emphasis,
         )
 
     def _collect_element_text(self, element: dict[str, Any]) -> str:
