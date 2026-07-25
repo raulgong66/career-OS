@@ -377,7 +377,7 @@ export default function TailoringPage() {
                 </div>
               )}
 
-              {status === 'success' && optimizationSummary && (optimizationSummary.matched_keywords.length > 0 || optimizationSummary.target_context_emphasis.length > 0) && (
+              {status === 'success' && optimizationSummary && (optimizationSummary.matched_requirements.length > 0 || optimizationSummary.target_context_emphasis.length > 0) && (
                 <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
                   <h2 className="text-lg font-semibold text-gray-900 mb-4">Job Match Analysis</h2>
 
@@ -393,13 +393,13 @@ export default function TailoringPage() {
                     </div>
                   )}
 
-                  {optimizationSummary.matched_keywords.length > 0 && (
+                  {optimizationSummary.matched_requirements.length > 0 && (
                     <div className="mb-4">
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Top matched skills</h3>
+                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Top matched requirements</h3>
                       <div className="flex flex-wrap gap-2">
-                        {optimizationSummary.matched_keywords.map((keyword) => (
-                          <span key={keyword} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {keyword}
+                        {optimizationSummary.matched_requirements.map((req) => (
+                          <span key={req} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {req}
                           </span>
                         ))}
                       </div>

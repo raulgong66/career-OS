@@ -12,6 +12,151 @@ from .exceptions import ValidationError, EntityNotFoundError
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Requirement extraction configuration
+# ---------------------------------------------------------------------------
+
+# Structural phrase patterns (generic, not hardcoded phrases)
+_SLASH_COMPOUND_RE = re.compile(r"\b[\w]+/[\w/]+\b")  # CI/CD, ML/AI
+_CAPITALIZED_SEQUENCE_RE = re.compile(
+    r"\b([A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)+)\b"
+)  # Azure DevOps, Zero Trust
+
+# Curated vocabulary: common multi-word technical phrases (lowercased).
+# Kept small — generic patterns above catch most phrases.
+_KNOWN_PHRASES: list[str] = [
+    "infrastructure as code",
+    "site reliability engineering",
+    "machine learning",
+    "deep learning",
+    "natural language processing",
+    "computer vision",
+    "platform engineering",
+    "incident management",
+    "vulnerability management",
+    "threat modeling",
+    "penetration testing",
+    "identity and access management",
+    "continuous integration",
+    "continuous deployment",
+    "continuous delivery",
+    "application security",
+    "cloud security",
+    "network security",
+    "container orchestration",
+    "software engineering",
+    "data engineering",
+    "data science",
+]
+
+# Alias normalization: maps tokens / phrases to their canonical form.
+_REQUIREMENT_ALIASES: dict[str, str] = {
+    "k8s": "kubernetes",
+    "python3": "python",
+    "js": "javascript",
+    "ts": "typescript",
+    "gcp": "google cloud platform",
+    "aws": "amazon web services",
+    "iac": "infrastructure as code",
+    "sre": "site reliability engineering",
+    "iam": "identity and access management",
+    "ml": "machine learning",
+    "dl": "deep learning",
+    "nlp": "natural language processing",
+    "cv": "computer vision",
+    "devops": "devops",
+    "devsecops": "devsecops",
+    "mlops": "machine learning operations",
+    "gitops": "gitops",
+    "infra": "infrastructure",
+    "microservices": "microservices",
+    "observability": "observability",
+}
+
+# Stop words: common English + JD filler terms that are not meaningful requirements.
+_STOP_WORDS: set[str] = {
+    # Standard English stop words
+    "the", "and", "a", "an", "of", "to", "in", "for", "with", "on", "at",
+    "by", "from", "about", "as", "into", "like", "through", "after", "before",
+    "are", "is", "was", "were", "be", "been", "being", "have", "has", "had",
+    "having", "do", "does", "did", "doing", "can", "could", "will", "would",
+    "should", "shall", "must", "may", "might", "or", "but", "if", "then",
+    "else", "when", "where", "why", "how", "all", "any", "both", "each",
+    "few", "more", "most", "other", "some", "such", "no", "nor", "not",
+    "only", "own", "same", "so", "than", "too", "very", "just", "now",
+    "this", "that", "your", "their", "its", "our", "you", "they", "them",
+    "we", "him", "her", "his", "hers", "us", "me", "i", "my", "myself",
+    # JD filler — words that appear in job descriptions but are not requirements
+    "experience", "knowledge", "ability", "abilities", "skills", "skill",
+    "required", "preferred", "qualifications", "responsibilities",
+    "looking", "role", "position", "team", "work", "working",
+    "years", "year", "plus", "bonus", "etc", "well", "also", "including",
+    "strong", "understanding", "familiar", "proficient", "excellent",
+    "demonstrated", "proven", "minimum", "bachelor", "master", "degree",
+    "certification", "competitive", "benefits", "salary", "compensation",
+    "company", "about", "join", "apply", "interested", "ideal",
+    "candidates", "candidate", "individual", "individuals",
+    "opportunity", "opportunities", "environment", "environments",
+    "across", "within", "alongside", "between",
+    "new", "existing", "multiple", "various", "different",
+    "best", "practices", "practice",
+    "ability", "track", "record", "related", "field",
+    "least", "equivalent",
+    "senior", "junior", "lead", "principal", "staff",
+    "engineer", "engineers", "engineering",
+    "developer", "developers", "development",
+    "architect", "architecture", "architectures",
+    "specialist", "analyst", "manager", "director",
+    "familiarity", "exposure", "background",
+    "verbal", "written", "communication",
+    "problem", "solving", "analytical",
+    "self", "motivated", "detail", "oriented",
+    "fast", "paced", "deadline", "deadlines",
+    "pipeline", "pipelines", "tooling", "toolchain",
+    "platforms", "toolsets", "toolsets",
+    # Swedish stop words (common function words)
+    "och", "att", "det", "i", "en", "ett", "som", "är", "för", "med",
+    "till", "av", "den", "har", "de", "inte", "om", "var", "men", "kan",
+    "ska", "vi", "du", "han", "hon", "sig", "så", "nu", "här", "där",
+    "upp", "ner", "ut", "in", "över", "under", "mellan", "från", "efter",
+    "innan", "också", "bara", "redan", "än", "vad", "vem", "hur", "då",
+    "dock", "tyvärr", "även", "alltså", "själv", "samt", "helt",
+    "andra", "mycket", "mer", "än", "samma", "egen",
+    # Swedish JD filler
+    "erfarenhet", "kunskap", "kunskaper", "vana", "goda", "god",
+    "flera", "år", "dokumenterad", "förmåga", "behärskar",
+    "obehindrat", "praktisk", "djup", "omfattande",
+    "sök", "ansök", "rollen", "tjänsten", "arbetsuppgifter",
+    "kvalifikationer", "krav", "önskvärt", "meriterande",
+    # Swedish JD responsibility verbs (duties, not requirements)
+    "ansvara", "ansvarig", "arbeta", "arbetar", "bygga", "bygger",
+    "coacha", "driva", "driver", "etablera", "etablerar",
+    "implementera", "implementerar", "införa", "inför",
+    "säkerställa", "säkerställer", "vidareutveckla", "vidareutvecklar",
+    "utvärdera", "utvärderar", "sprida", "sprider",
+    "samarbeta", "samarbetar", "kommunicera", "kommunicerar",
+    "hantera", "hanterar", "delta", "deltar",
+    "efterlevs", "efterleva",
+    "omvärldsbevaka", "omvärldsbevakar",
+    "förbättringsprojekt", "förändringsprojekt",
+    "leveransprocess", "utvecklingsflödet",
+    "systemutveckling", "principer", "ceremonier",
+    "relaterade", "beroenden",
+    "skalbar", "effektiv", "modern", "komplexa",
+    "trygg", "behörig",
+}
+
+# Words that may start a sentence or job title but are not requirements.
+_SEQUENCE_BLACKLIST: set[str] = {
+    "senior", "junior", "lead", "principal", "staff", "associate",
+    "we", "our", "the", "this", "you", "they", "he", "she",
+    "looking", "seeking", "finding", "someone", "who",
+}
+
+# Regex for extracting single-word tokens from text.
+# Uses \w to support Unicode word characters (Swedish ä, ö, å, etc.).
+_TOKEN_RE = re.compile(r"\w{3,}")
+
 
 class OptimizationStatus(str, Enum):
     """Semantic status of an optimization result."""
@@ -47,7 +192,7 @@ class OptimizationSummary:
     requirements_detected: int | None = None
     requirements_matched: int | None = None
     requirement_coverage: float | None = None
-    matched_keywords: list[str] = field(default_factory=list)
+    matched_requirements: list[str] = field(default_factory=list)
     target_context_emphasis: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,7 +210,7 @@ class OptimizationSummary:
             "requirements_detected": self.requirements_detected,
             "requirements_matched": self.requirements_matched,
             "requirement_coverage": self.requirement_coverage,
-            "matched_keywords": self.matched_keywords,
+            "matched_requirements": self.matched_requirements,
             "target_context_emphasis": self.target_context_emphasis,
         }
 
@@ -169,10 +314,10 @@ class CVOptimizer:
                 if ctx.get("id") in ctx_ids:
                     target_context_emphases.extend(ctx.get("emphasis") or [])
 
-        # Process job description keywords
-        jd_keywords = self._extract_keywords(job_description)
+        # Process job description requirements
+        jd_requirements = self._extract_requirements(job_description)
 
-        logger.info("Job description keywords extracted: %d", len(jd_keywords))
+        logger.info("Job description requirements extracted: %d", len(jd_requirements))
         logger.info("Target context emphases: %s", target_context_emphases)
 
         # Categorized candidates from the profile that are not currently in the CV
@@ -215,7 +360,7 @@ class CVOptimizer:
                 display_name = self._get_display_name(element, type_name)
 
                 # Compute weighted relevance scores
-                scores = self._compute_scores(element, type_name, jd_keywords, target_context_emphases, len(backing_evidence))
+                scores = self._compute_scores(element, type_name, jd_requirements, target_context_emphases, len(backing_evidence))
 
                 added += 1
                 recommendations.append(
@@ -254,7 +399,7 @@ class CVOptimizer:
             artifact_id=artifact_id,
             existing_ids=existing_ids,
             recommendations=recommendations,
-            jd_keywords=jd_keywords,
+            jd_requirements=jd_requirements,
             target_context_emphasis=target_context_emphases,
         )
 
@@ -334,7 +479,7 @@ class CVOptimizer:
         self,
         element: dict[str, Any],
         element_type: str,
-        jd_keywords: set[str],
+        jd_requirements: list[str],
         target_context_emphases: list[str],
         evidence_count: int,
     ) -> dict[str, float]:
@@ -344,10 +489,9 @@ class CVOptimizer:
 
         # 1. Job Description Match
         jd_match = 0.0
-        if jd_keywords:
-            matched_words = sum(1.0 for keyword in jd_keywords if keyword in element_text)
-            # Normalize or return raw count (let's keep it as raw matches capped or scaled)
-            jd_match = matched_words
+        if jd_requirements:
+            matched_count = sum(1.0 for req in jd_requirements if req in element_text)
+            jd_match = matched_count
 
         # 2. Target Context Match
         context_match = 0.0
@@ -375,7 +519,7 @@ class CVOptimizer:
         artifact_id: str,
         existing_ids: set[str],
         recommendations: list[Recommendation],
-        jd_keywords: set[str],
+        jd_requirements: list[str],
         target_context_emphasis: list[str],
     ) -> OptimizationSummary:
         """Compute factual summary metrics about the optimization analysis.
@@ -411,29 +555,29 @@ class CVOptimizer:
             else 0.0
         )
 
-        # Job analysis: count how many JD keywords are matched in ANY profile element
-        requirements_detected = len(jd_keywords) if jd_keywords else None
+        # Job analysis: count how many JD requirements are matched in ANY profile element
+        requirements_detected = len(jd_requirements) if jd_requirements else None
         requirements_matched: int | None = None
         requirement_coverage: float | None = None
+        matched_reqs: set[str] = set()
 
-        if jd_keywords:
-            matched_keywords: set[str] = set()
-            # Check all profile elements for keyword matches
+        if jd_requirements:
+            # Check all profile elements for requirement matches
             for list_key in categories:
                 for element in self.profile.get(list_key, []):
                     element_text = self._collect_element_text(element).lower()
-                    for keyword in jd_keywords:
-                        if keyword in element_text:
-                            matched_keywords.add(keyword)
-            requirements_matched = len(matched_keywords)
+                    for req in jd_requirements:
+                        if req in element_text:
+                            matched_reqs.add(req)
+            requirements_matched = len(matched_reqs)
             requirement_coverage = (
                 (requirements_matched / requirements_detected * 100.0)
                 if requirements_detected > 0
                 else 0.0
             )
 
-        # Collect top matched keywords sorted alphabetically, capped at 10
-        top_matched = sorted(matched_keywords)[:10] if jd_keywords else []
+        # Collect top matched requirements sorted alphabetically, capped at 10
+        top_matched = sorted(matched_reqs)[:10] if jd_requirements else []
 
         return OptimizationSummary(
             total_profile_elements=total_profile_elements,
@@ -449,7 +593,7 @@ class CVOptimizer:
             requirements_detected=requirements_detected,
             requirements_matched=requirements_matched,
             requirement_coverage=round(requirement_coverage, 1) if requirement_coverage is not None else None,
-            matched_keywords=top_matched,
+            matched_requirements=top_matched,
             target_context_emphasis=target_context_emphasis,
         )
 
@@ -472,21 +616,77 @@ class CVOptimizer:
         return " ".join(parts)
 
     @staticmethod
-    def _extract_keywords(text: Union[str, None]) -> set[str]:
-        """Extract alphanumeric keywords from text, ignoring stopwords."""
+    def _extract_requirements(text: Union[str, None]) -> list[str]:
+        """Extract normalized job requirements from text.
+
+        Detection strategy (generic patterns + small curated vocabulary):
+        1. Structural phrases — slash-compounds (CI/CD) and capitalized
+           multi-word sequences (Azure DevOps) are extracted generically.
+        2. Known phrases — a small curated list catches common lowercase
+           technical phrases (infrastructure as code, machine learning).
+        3. Single tokens — remaining words are filtered through an expanded
+           stop-word list and normalized via an alias map.
+
+        Returns a sorted, deduplicated list of requirement strings.
+        """
         if not text:
-            return set()
-        tokens = re.findall(r"[a-zA-Z0-9_]{3,}", text.lower())
-        stopwords = {
-            "the", "and", "a", "an", "of", "to", "in", "for", "with", "on", "at", 
-            "by", "from", "about", "as", "into", "like", "through", "after", "before", 
-            "are", "is", "was", "were", "be", "been", "being", "have", "has", "had", 
-            "having", "do", "does", "did", "doing", "can", "could", "will", "would", 
-            "should", "shall", "must", "may", "might", "or", "but", "if", "then", 
-            "else", "when", "where", "why", "how", "all", "any", "both", "each", 
-            "few", "more", "most", "other", "some", "such", "no", "nor", "not", 
-            "only", "own", "same", "so", "than", "too", "very", "just", "now",
-            "this", "that", "your", "their", "its", "our", "you", "they", "them",
-            "we", "him", "her", "his", "hers", "us", "me", "i", "my", "myself"
-        }
-        return {token for token in tokens if token not in stopwords}
+            return []
+
+        lowered = text.lower()
+
+        # --- Phase 1: structural phrase extraction ---
+        phrase_spans: list[tuple[int, int]] = []
+        requirements: set[str] = set()
+
+        # Slash-compounds: CI/CD, ML/AI, Terraform/Bicep/ARM
+        for match in _SLASH_COMPOUND_RE.finditer(text):
+            phrase_spans.append((match.start(), match.end()))
+            token = match.group().lower()
+            normalized = _REQUIREMENT_ALIASES.get(token, token)
+            requirements.add(normalized)
+            # Also emit individual components so they can match profile text
+            for part in token.split("/"):
+                part = part.strip()
+                if len(part) >= 3 and part not in _STOP_WORDS:
+                    part_norm = _REQUIREMENT_ALIASES.get(part, part)
+                    requirements.add(part_norm)
+
+        # Capitalized multi-word sequences: Azure DevOps, Zero Trust
+        for match in _CAPITALIZED_SEQUENCE_RE.finditer(text):
+            phrase_text = match.group()
+            first_word = phrase_text.split()[0].lower()
+            if first_word in _SEQUENCE_BLACKLIST:
+                continue
+            phrase_spans.append((match.start(), match.end()))
+            token = phrase_text.lower()
+            normalized = _REQUIREMENT_ALIASES.get(token, token)
+            requirements.add(normalized)
+
+        # --- Phase 2: known phrase extraction ---
+        for phrase in _KNOWN_PHRASES:
+            idx = lowered.find(phrase)
+            while idx != -1:
+                phrase_spans.append((idx, idx + len(phrase)))
+                normalized = _REQUIREMENT_ALIASES.get(phrase, phrase)
+                requirements.add(normalized)
+                idx = lowered.find(phrase, idx + 1)
+
+        # --- Phase 3: single-token extraction from remainder ---
+        # Build a masked version of the lowered text where phrase spans are blanked.
+        if phrase_spans:
+            phrase_spans.sort()
+            masked = list(lowered)
+            for start, end in phrase_spans:
+                for i in range(start, min(end, len(masked))):
+                    masked[i] = " "
+            masked_text = "".join(masked)
+        else:
+            masked_text = lowered
+
+        for token in _TOKEN_RE.findall(masked_text):
+            if token in _STOP_WORDS:
+                continue
+            normalized = _REQUIREMENT_ALIASES.get(token, token)
+            requirements.add(normalized)
+
+        return sorted(requirements)
