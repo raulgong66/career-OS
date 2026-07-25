@@ -5,7 +5,7 @@ import type { Recommendation } from '../types';
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 
 export default function TailoringPage() {
-  const [profilePath, setProfilePath] = useState('/Users/admin/Documents/Codex/2026-07-17/clone-my-github-repository-https-github/career-OS/profiles/raul-gongora-profile.yaml');
+  const [profilePath, setProfilePath] = useState('C:\\Users\\raul\\AI\\careeros\\career-OS\\profiles\\raul-gongora-profile.yaml');
   const [artifactId, setArtifactId] = useState('cv-english-source');
   const [jobDescription, setJobDescription] = useState('');
   const [status, setStatus] = useState<RequestStatus>('idle');
@@ -25,12 +25,12 @@ export default function TailoringPage() {
     setArtifact('');
     setRecommendations([]);
 
+    const generatingTimeout = setTimeout(() => {
+      setStatus('generating');
+    }, 800);
+
     try {
       const service = TailoringService.getInstance();
-      
-      setTimeout(() => {
-        setStatus('generating');
-      }, 800);
 
       const response = await service.generateTailoredArtifact(
         profilePath,
@@ -39,6 +39,7 @@ export default function TailoringPage() {
         jobDescription
       );
 
+      clearTimeout(generatingTimeout);
       setArtifact(response.artifact);
       setRecommendations(response.recommendations);
       setStatus('success');
@@ -47,6 +48,7 @@ export default function TailoringPage() {
         setErrorMessage('No recommendations generated');
       }
     } catch (error) {
+      clearTimeout(generatingTimeout);
       setErrorMessage(
         error instanceof Error && error.message.includes('Failed to fetch')
           ? 'Unable to connect to the server. Please ensure the backend is running.'
