@@ -7,7 +7,8 @@ type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 export default function TailoringPage() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
-  const [artifactId, setArtifactId] = useState('');
+  const [availableArtifacts, setAvailableArtifacts] = useState<string[]>([]);
+  const [selectedArtifactId, setSelectedArtifactId] = useState('');
   const [jobDescription, setJobDescription] = useState('');
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -23,8 +24,9 @@ export default function TailoringPage() {
       setProfiles(profiles);
       if (profiles.length > 0) {
         setSelectedProfileId(profiles[0].id);
-        if (profiles[0].artifactCount > 0) {
-          setArtifactId('cv-english-source');
+        setAvailableArtifacts(profiles[0].artifactIds);
+        if (profiles[0].artifactIds.length === 1) {
+          setSelectedArtifactId(profiles[0].artifactIds[0]);
         }
       }
     }).catch(() => {
@@ -32,7 +34,25 @@ export default function TailoringPage() {
     });
   }, []);
 
+  const handleProfileChange = (profileId: string) => {
+    setSelectedProfileId(profileId);
+    const profile = profiles.find(p => p.id === profileId);
+    if (profile) {
+      setAvailableArtifacts(profile.artifactIds);
+      if (profile.artifactIds.length === 1) {
+        setSelectedArtifactId(profile.artifactIds[0]);
+      } else {
+        setSelectedArtifactId('');
+      }
+    }
+  };
+
   const handleGenerate = async () => {
+    if (!selectedArtifactId) {
+      setErrorMessage('Please select an artifact');
+      setStatus('error');
+      return;
+    }
     if (!jobDescription.trim()) {
       setErrorMessage('Please enter a job description');
       setStatus('error');
@@ -56,7 +76,7 @@ export default function TailoringPage() {
 
       const response = await service.generateTailoredArtifact(
         selectedProfileId,
-        artifactId,
+        selectedArtifactId,
         'markdown',
         jobDescription
       );
@@ -152,7 +172,7 @@ export default function TailoringPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Profile</label>
                     <select
                       value={selectedProfileId}
-                      onChange={(e) => setSelectedProfileId(e.target.value)}
+                      onChange={(e) => handleProfileChange(e.target.value)}
                       className="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       {profiles.length === 0 && <option value="">Loading profiles...</option>}
@@ -162,13 +182,18 @@ export default function TailoringPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Artifact ID</label>
-                    <input
-                      type="text"
-                      value={artifactId}
-                      onChange={(e) => setArtifactId(e.target.value)}
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Artifact</label>
+                    <select
+                      value={selectedArtifactId}
+                      onChange={(e) => setSelectedArtifactId(e.target.value)}
+                      disabled={availableArtifacts.length === 0}
+                      className="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                    >
+                      {availableArtifacts.length === 0 && <option value="">Select a profile first</option>}
+                      {availableArtifacts.map((id) => (
+                        <option key={id} value={id}>{id}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -185,7 +210,7 @@ export default function TailoringPage() {
 
               <button
                 onClick={handleGenerate}
-                disabled={status === 'analyzing' || status === 'generating' || !jobDescription.trim()}
+                disabled={status === 'analyzing' || status === 'generating' || !selectedArtifactId || !jobDescription.trim()}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-md transition-colors duration-200"
               >
                 {status === 'analyzing' || status === 'generating' ? (

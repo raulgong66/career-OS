@@ -249,6 +249,10 @@ def test_list_profiles_endpoint() -> None:
     raul = next(p for p in profiles if p["id"] == "raul-gongora-profile")
     assert "name" in raul
     assert "artifactCount" in raul
+    assert "artifactIds" in raul
+    assert isinstance(raul["artifactIds"], list)
+    assert len(raul["artifactIds"]) >= 1
+    assert "cv-english-source" in raul["artifactIds"]
     assert raul["artifactCount"] >= 1
 
 

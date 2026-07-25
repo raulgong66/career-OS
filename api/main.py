@@ -116,6 +116,7 @@ class ProfileInfo(BaseModel):
     id: str = Field(description="Profile identifier (filename without extension).")
     name: str = Field(description="Human-readable profile name.")
     artifactCount: int = Field(description="Number of artifacts defined in the profile.")
+    artifactIds: list[str] = Field(description="IDs of artifacts defined in the profile.")
 
 
 def resolve_profile_path(profile_id: str) -> Path:
@@ -170,11 +171,13 @@ def list_profiles() -> list[ProfileInfo]:
         names = person.get("names", [])
         name = names[0].get("value", profile_id) if names else profile_id
         artifacts = data.get("artifacts", [])
+        artifact_ids = [a.get("id") for a in artifacts if a.get("id")]
 
         profiles.append(ProfileInfo(
             id=profile_id,
             name=name,
             artifactCount=len(artifacts),
+            artifactIds=artifact_ids,
         ))
 
     return profiles

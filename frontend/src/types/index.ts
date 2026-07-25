@@ -58,6 +58,7 @@ export interface ProfileInfo {
   id: string;
   name: string;
   artifactCount: number;
+  artifactIds: string[];
 }
 
 export interface AnalysisResult {
