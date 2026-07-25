@@ -4,6 +4,49 @@ import type { Recommendation, OptimizationStatus, OptimizationSummary, ProfileIn
 
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 
+interface ArtifactLabels {
+  generateButton: string;
+  generatingStatus: string;
+  errorFallback: string;
+  resultHeading: string;
+  emptyState: string;
+  completeMessage: string;
+}
+
+const ARTIFACT_LABELS: Record<string, ArtifactLabels> = {
+  cv: {
+    generateButton: 'Generate Tailored Resume',
+    generatingStatus: 'Generating tailored resume...',
+    errorFallback: 'Failed to generate tailored resume',
+    resultHeading: 'Tailored Resume',
+    emptyState: 'Your tailored resume will appear here',
+    completeMessage: 'Resume is already complete',
+  },
+  'cover-letter': {
+    generateButton: 'Generate Tailored Cover Letter',
+    generatingStatus: 'Generating tailored cover letter...',
+    errorFallback: 'Failed to generate tailored cover letter',
+    resultHeading: 'Tailored Cover Letter',
+    emptyState: 'Your tailored cover letter will appear here',
+    completeMessage: 'Cover letter is already complete',
+  },
+};
+
+const DEFAULT_LABELS: ArtifactLabels = {
+  generateButton: 'Generate Tailored Document',
+  generatingStatus: 'Generating tailored document...',
+  errorFallback: 'Failed to generate tailored document',
+  resultHeading: 'Tailored Document',
+  emptyState: 'Your tailored document will appear here',
+  completeMessage: 'Document is already complete',
+};
+
+function getArtifactLabels(artifactId: string): ArtifactLabels {
+  if (artifactId.startsWith('cover-letter')) return ARTIFACT_LABELS['cover-letter'];
+  if (artifactId.startsWith('cv')) return ARTIFACT_LABELS['cv'];
+  return DEFAULT_LABELS;
+}
+
 export default function TailoringPage() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
@@ -95,7 +138,7 @@ export default function TailoringPage() {
           ? 'Unable to connect to the server. Please ensure the backend is running.'
           : error instanceof Error
           ? error.message
-          : 'Failed to generate tailored resume'
+          : labels.errorFallback
       );
       setStatus('error');
     }
@@ -153,6 +196,8 @@ export default function TailoringPage() {
     return null;
   };
 
+  const labels = getArtifactLabels(selectedArtifactId);
+
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-6 py-4">
@@ -166,7 +211,7 @@ export default function TailoringPage() {
           <div className="border-r border-gray-200 bg-white p-6 overflow-y-auto">
             <div className="max-w-xl mx-auto space-y-6">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload Resume</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Source Profile</h2>
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Profile</label>
@@ -219,9 +264,9 @@ export default function TailoringPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    {status === 'analyzing' ? 'Analyzing job description...' : 'Generating tailored resume...'}
+                    {status === 'analyzing' ? 'Analyzing job description...' : labels.generatingStatus}
                   </span>
-                ) : 'Generate Tailored Resume'}
+                ) : labels.generateButton}
               </button>
 
               {status === 'error' && (
@@ -333,7 +378,7 @@ export default function TailoringPage() {
               )}
 
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Tailored Resume</h2>
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">{labels.resultHeading}</h2>
                 {artifact ? (
                   <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
                     <div className="prose prose-sm max-w-none">
@@ -345,7 +390,7 @@ export default function TailoringPage() {
                     <svg className="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
-                    <p className="text-sm">Your tailored resume will appear here</p>
+                    <p className="text-sm">{labels.emptyState}</p>
                   </div>
                 )}
               </div>
@@ -390,7 +435,7 @@ export default function TailoringPage() {
                     </svg>
                     <p className="text-sm">
                       {status === 'analyzing' || status === 'generating' ? 'Analyzing recommendations...' :
-                       status === 'success' && optimizationStatus === 'already_complete' ? 'Resume is already complete' :
+                       status === 'success' && optimizationStatus === 'already_complete' ? labels.completeMessage :
                        status === 'success' && optimizationStatus === 'no_matches' ? 'No additional evidence found' :
                        'AI recommendations will appear here'}
                     </p>
