@@ -22,7 +22,7 @@ from .pipelines import generate_artifact, generate_markdown_cv, generate_tailore
 from .repository import FileSystemRepository
 from .schema_loader import SchemaLoader
 from .validator import EntityValidator
-from .optimizer import CVOptimizer, OptimizationResult, OptimizationStatus, OptimizationSummary, Recommendation
+from .optimizer import CVOptimizer, OptimizationResult, OptimizationStatus, OptimizationSummary, Recommendation, RequirementConcept, CONCEPT_TAXONOMY
 from .docx_renderer import CVDocumentRenderer
 from .recommendation_applier import RecommendationApplier
 
@@ -55,6 +55,8 @@ __all__ = [
     "OptimizationStatus",
     "OptimizationSummary",
     "Recommendation",
+    "RequirementConcept",
+    "CONCEPT_TAXONOMY",
     "CVDocumentRenderer",
     "RecommendationApplier",
 ]

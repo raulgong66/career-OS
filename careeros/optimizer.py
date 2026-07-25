@@ -158,6 +158,249 @@ _SEQUENCE_BLACKLIST: set[str] = {
 _TOKEN_RE = re.compile(r"\w{3,}")
 
 
+# ---------------------------------------------------------------------------
+# Canonical requirement concepts
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class RequirementConcept:
+    """A canonical capability concept.
+
+    Matching is alias-based: any string in ``aliases`` that matches a
+    normalized requirement resolves to this concept's ``id``.  To add a
+    new concept, append one entry to ``CONCEPT_TAXONOMY`` — no logic
+    changes are needed.
+    """
+
+    id: str
+    name: str
+    aliases: list[str]
+    category: str
+
+
+# fmt: off
+CONCEPT_TAXONOMY: list[RequirementConcept] = [
+    # --- Infrastructure & Cloud ---
+    RequirementConcept(
+        id="cloud-platform",
+        name="Cloud Platform",
+        aliases=[
+            "aws", "amazon web services", "gcp", "google cloud platform",
+            "azure", "cloud", "cloud native",
+        ],
+        category="infrastructure",
+    ),
+    RequirementConcept(
+        id="infrastructure-as-code",
+        name="Infrastructure as Code",
+        aliases=[
+            "infrastructure as code", "iac", "terraform", "bicep",
+            "arm templates", "pulumi", "infrastruktur som kod",
+        ],
+        category="infrastructure",
+    ),
+    RequirementConcept(
+        id="container-platform",
+        name="Container Platform",
+        aliases=[
+            "kubernetes", "docker", "container orchestration",
+            "containerbaserade lösningar", "openshift", "docker swarm",
+            "k8s", "helm",
+        ],
+        category="infrastructure",
+    ),
+
+    # --- DevOps & Delivery ---
+    RequirementConcept(
+        id="cicd",
+        name="CI/CD",
+        aliases=[
+            "ci/cd", "continuous integration", "continuous deployment",
+            "continuous delivery", "cicd",
+        ],
+        category="devops",
+    ),
+    RequirementConcept(
+        id="devsecops",
+        name="DevSecOps",
+        aliases=[
+            "devsecops", "devops", "dev sec ops",
+        ],
+        category="devops",
+    ),
+    RequirementConcept(
+        id="gitops",
+        name="GitOps",
+        aliases=["gitops", "git ops"],
+        category="devops",
+    ),
+    RequirementConcept(
+        id="monitoring",
+        name="Monitoring & Observability",
+        aliases=[
+            "monitoring", "observability", "monitorering",
+            "elk", "prometheus", "grafana", "datadog", "splunk",
+        ],
+        category="devops",
+    ),
+    RequirementConcept(
+        id="deployment",
+        name="Deployment & Release",
+        aliases=[
+            "deployment", "release management", "deployment automation",
+        ],
+        category="devops",
+    ),
+    RequirementConcept(
+        id="sre",
+        name="Site Reliability Engineering",
+        aliases=[
+            "site reliability engineering", "sre",
+        ],
+        category="devops",
+    ),
+
+    # --- Security ---
+    RequirementConcept(
+        id="application-security",
+        name="Application Security",
+        aliases=[
+            "application security", "appsec",
+            "sast", "dast", "secrets management",
+            "dependency scanning", "säkerhetsverktyg",
+        ],
+        category="security",
+    ),
+    RequirementConcept(
+        id="cloud-security",
+        name="Cloud Security",
+        aliases=[
+            "cloud security", "zero trust", "nätverkssäkerhet",
+            "network security", "informationssäkerhet",
+        ],
+        category="security",
+    ),
+    RequirementConcept(
+        id="security-general",
+        name="Security",
+        aliases=[
+            "security", "säkerhet", "cybersecurity",
+            "säkerhetsaspekter", "säkerhetskontroller",
+        ],
+        category="security",
+    ),
+    RequirementConcept(
+        id="vulnerability-management",
+        name="Vulnerability Management",
+        aliases=[
+            "vulnerability management", "vulnerability scanning",
+            "penetration testing", "threat modeling",
+        ],
+        category="security",
+    ),
+    RequirementConcept(
+        id="iam",
+        name="Identity & Access Management",
+        aliases=[
+            "identity and access management", "iam",
+            "identity management", "access control",
+        ],
+        category="security",
+    ),
+
+    # --- Programming & Data ---
+    RequirementConcept(
+        id="python",
+        name="Python",
+        aliases=["python", "python3"],
+        category="programming",
+    ),
+    RequirementConcept(
+        id="javascript",
+        name="JavaScript / TypeScript",
+        aliases=[
+            "javascript", "typescript", "js", "ts", "nodejs", "node.js",
+        ],
+        category="programming",
+    ),
+    RequirementConcept(
+        id="machine-learning",
+        name="Machine Learning & AI",
+        aliases=[
+            "machine learning", "deep learning", "ml", "dl",
+            "artificial intelligence", "ai", "nlp",
+            "natural language processing", "computer vision",
+            "agentic ai", "llm",
+        ],
+        category="data",
+    ),
+    RequirementConcept(
+        id="data-engineering",
+        name="Data Engineering",
+        aliases=[
+            "data engineering", "data science", "etl",
+            "data pipelines", "big data",
+        ],
+        category="data",
+    ),
+
+    # --- Methodologies ---
+    RequirementConcept(
+        id="agile",
+        name="Agile & SAFe",
+        aliases=[
+            "agile", "safe", "scrum", "kanban",
+            "safe agile", "pi planning",
+        ],
+        category="methodology",
+    ),
+    RequirementConcept(
+        id="platform-engineering",
+        name="Platform Engineering",
+        aliases=["platform engineering", "platform team"],
+        category="methodology",
+    ),
+
+    # --- Domain knowledge ---
+    RequirementConcept(
+        id="saas",
+        name="SaaS / Cloud Services",
+        aliases=[
+            "saas", "paas", "iaas", "cloud services",
+        ],
+        category="domain",
+    ),
+    RequirementConcept(
+        id="microservices",
+        name="Microservices Architecture",
+        aliases=[
+            "microservices", "microservices architecture",
+            "service mesh", "api gateway",
+        ],
+        category="architecture",
+    ),
+    RequirementConcept(
+        id="incident-management",
+        name="Incident Management",
+        aliases=[
+            "incident management", "incident response",
+            "on-call", "incident",
+        ],
+        category="operations",
+    ),
+]
+# fmt: on
+
+# Reverse index: alias (lowered) → RequirementConcept
+_CONCEPT_INDEX: dict[str, RequirementConcept] = {}
+for _c in CONCEPT_TAXONOMY:
+    for _alias in _c.aliases:
+        _CONCEPT_INDEX[_alias.lower()] = _c
+
+# Forward index: concept id → concept name (for display)
+_CONCEPT_NAMES: dict[str, str] = {c.id: c.name for c in CONCEPT_TAXONOMY}
+
+
 class OptimizationStatus(str, Enum):
     """Semantic status of an optimization result."""
 
@@ -316,8 +559,10 @@ class CVOptimizer:
 
         # Process job description requirements
         jd_requirements = self._extract_requirements(job_description)
+        jd_concepts = self._resolve_concepts(jd_requirements)
 
         logger.info("Job description requirements extracted: %d", len(jd_requirements))
+        logger.info("Job description concepts resolved: %d", len(jd_concepts))
         logger.info("Target context emphases: %s", target_context_emphases)
 
         # Categorized candidates from the profile that are not currently in the CV
@@ -360,7 +605,7 @@ class CVOptimizer:
                 display_name = self._get_display_name(element, type_name)
 
                 # Compute weighted relevance scores
-                scores = self._compute_scores(element, type_name, jd_requirements, target_context_emphases, len(backing_evidence))
+                scores = self._compute_scores(element, type_name, jd_concepts, target_context_emphases, len(backing_evidence))
 
                 added += 1
                 recommendations.append(
@@ -399,7 +644,7 @@ class CVOptimizer:
             artifact_id=artifact_id,
             existing_ids=existing_ids,
             recommendations=recommendations,
-            jd_requirements=jd_requirements,
+            jd_concepts=jd_concepts,
             target_context_emphasis=target_context_emphases,
         )
 
@@ -479,19 +724,16 @@ class CVOptimizer:
         self,
         element: dict[str, Any],
         element_type: str,
-        jd_requirements: list[str],
+        jd_concepts: set[str],
         target_context_emphases: list[str],
         evidence_count: int,
     ) -> dict[str, float]:
         """Compute the weighted scores for the recommendation."""
-        # Aggregate all textual content in this element
-        element_text = self._collect_element_text(element).lower()
-
-        # 1. Job Description Match
+        # 1. Job Description Match (concept-level)
         jd_match = 0.0
-        if jd_requirements:
-            matched_count = sum(1.0 for req in jd_requirements if req in element_text)
-            jd_match = matched_count
+        if jd_concepts:
+            elem_concepts = self._element_concepts(element)
+            jd_match = float(len(jd_concepts & elem_concepts))
 
         # 2. Target Context Match
         context_match = 0.0
@@ -519,7 +761,7 @@ class CVOptimizer:
         artifact_id: str,
         existing_ids: set[str],
         recommendations: list[Recommendation],
-        jd_requirements: list[str],
+        jd_concepts: set[str],
         target_context_emphasis: list[str],
     ) -> OptimizationSummary:
         """Compute factual summary metrics about the optimization analysis.
@@ -555,29 +797,29 @@ class CVOptimizer:
             else 0.0
         )
 
-        # Job analysis: count how many JD requirements are matched in ANY profile element
-        requirements_detected = len(jd_requirements) if jd_requirements else None
+        # Job analysis: count how many JD concepts are covered by profile elements
+        requirements_detected = len(jd_concepts) if jd_concepts else None
         requirements_matched: int | None = None
         requirement_coverage: float | None = None
-        matched_reqs: set[str] = set()
+        matched_concept_ids: set[str] = set()
 
-        if jd_requirements:
-            # Check all profile elements for requirement matches
+        if jd_concepts:
+            # Check all profile elements for concept matches
             for list_key in categories:
                 for element in self.profile.get(list_key, []):
-                    element_text = self._collect_element_text(element).lower()
-                    for req in jd_requirements:
-                        if req in element_text:
-                            matched_reqs.add(req)
-            requirements_matched = len(matched_reqs)
+                    elem_concepts = self._element_concepts(element)
+                    matched_concept_ids.update(jd_concepts & elem_concepts)
+            requirements_matched = len(matched_concept_ids)
             requirement_coverage = (
                 (requirements_matched / requirements_detected * 100.0)
                 if requirements_detected > 0
                 else 0.0
             )
 
-        # Collect top matched requirements sorted alphabetically, capped at 10
-        top_matched = sorted(matched_reqs)[:10] if jd_requirements else []
+        # Map matched concept IDs to human-readable names
+        top_matched = sorted(
+            {_CONCEPT_NAMES[cid] for cid in matched_concept_ids}
+        )[:10] if jd_concepts else []
 
         return OptimizationSummary(
             total_profile_elements=total_profile_elements,
@@ -614,6 +856,22 @@ class CVOptimizer:
 
         recurse(element)
         return " ".join(parts)
+
+    @staticmethod
+    def _resolve_concepts(requirements: list[str]) -> set[str]:
+        """Resolve normalized requirement strings to canonical concept IDs."""
+        concepts: set[str] = set()
+        for req in requirements:
+            concept = _CONCEPT_INDEX.get(req.lower())
+            if concept:
+                concepts.add(concept.id)
+        return concepts
+
+    def _element_concepts(self, element: dict[str, Any]) -> set[str]:
+        """Extract canonical concept IDs from a profile element."""
+        text = self._collect_element_text(element)
+        reqs = self._extract_requirements(text)
+        return self._resolve_concepts(reqs)
 
     @staticmethod
     def _extract_requirements(text: Union[str, None]) -> list[str]:
