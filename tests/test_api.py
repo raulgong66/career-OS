@@ -8,6 +8,8 @@ from api.main import app
 
 client = TestClient(app)
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_health_endpoint() -> None:
     response = client.get("/health")
@@ -234,3 +236,77 @@ def test_generate_artifact_endpoint_reports_unregistered_format(tmp_path: Path) 
 
     assert response.status_code == 422
     assert "No generator registered" in response.json()["detail"]
+
+
+def test_list_profiles_endpoint() -> None:
+    response = client.get("/profiles")
+    assert response.status_code == 200
+    profiles = response.json()
+    assert isinstance(profiles, list)
+    assert len(profiles) >= 1
+    ids = [p["id"] for p in profiles]
+    assert "raul-gongora-profile" in ids
+    raul = next(p for p in profiles if p["id"] == "raul-gongora-profile")
+    assert "name" in raul
+    assert "artifactCount" in raul
+    assert raul["artifactCount"] >= 1
+
+
+def test_generate_artifact_with_profile_id() -> None:
+    response = client.post(
+        "/generate/artifact",
+        json={"profile_id": "raul-gongora-profile", "artifact_id": "cv-english-source", "output_format": "markdown"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert len(response.text) > 0
+
+
+def test_generate_artifact_with_profile_id_reports_missing() -> None:
+    response = client.post(
+        "/generate/artifact",
+        json={"profile_id": "nonexistent-profile", "artifact_id": "cv-english-source", "output_format": "markdown"},
+    )
+
+    assert response.status_code == 404
+    assert "Profile not found" in response.json()["detail"]
+
+
+def test_generate_markdown_cv_with_profile_id() -> None:
+    response = client.post(
+        "/generate/markdown-cv",
+        json={"profile_id": "raul-gongora-profile", "artifact_id": "cv-english-source"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+
+
+def test_generate_artifact_backward_compat_profile_path(tmp_path: Path) -> None:
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text(
+        yaml.safe_dump(
+            {
+                "profileVersion": "1.0.0",
+                "person": {"id": "person-1", "names": [{"value": "Jane Doe"}]},
+                "skills": [{"id": "skill-1", "name": "AI workflow design"}],
+                "artifacts": [
+                    {
+                        "id": "artifact-1",
+                        "artifactType": "CV",
+                        "sourceRefs": [{"id": "skill-1", "type": "skill"}],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    response = client.post(
+        "/generate/artifact",
+        json={"profile_id": "dummy", "profile_path": str(profile_file), "artifact_id": "artifact-1", "output_format": "markdown"},
+    )
+
+    assert response.status_code == 200
+    assert "# Jane Doe" in response.text

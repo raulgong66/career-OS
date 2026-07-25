@@ -31,6 +31,7 @@ app.add_middleware(
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "schemas"
+PROFILES_ROOT = REPO_ROOT / "profiles"
 SCHEMA_LOADER = SchemaLoader(SCHEMA_ROOT)
 VALIDATOR = EntityValidator(SCHEMA_LOADER)
 REPOSITORY = FileSystemRepository(REPO_ROOT / "data", SCHEMA_LOADER)
@@ -72,14 +73,16 @@ class SearchRequest(BaseModel):
 class MarkdownCVRequest(BaseModel):
     """Request payload for Markdown CV generation."""
 
-    profile_path: Path
+    profile_id: Optional[str] = Field(None, description="Profile identifier (filename without extension). Preferred over profile_path.")
+    profile_path: Optional[Path] = Field(None, description="Deprecated: use profile_id instead.")
     artifact_id: str
 
 
 class GenerateArtifactRequest(BaseModel):
     """Request payload for generic artifact generation."""
 
-    profile_path: Path
+    profile_id: Optional[str] = Field(None, description="Profile identifier (filename without extension). Preferred over profile_path.")
+    profile_path: Optional[Path] = Field(None, description="Deprecated: use profile_id instead.")
     artifact_id: str
     output_format: str
     job_description: Optional[str] = Field(None, description="Optional job description text to generate tailored artifact with recommendations.")
@@ -107,6 +110,26 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+class ProfileInfo(BaseModel):
+    """Metadata for an available profile."""
+
+    id: str = Field(description="Profile identifier (filename without extension).")
+    name: str = Field(description="Human-readable profile name.")
+    artifactCount: int = Field(description="Number of artifacts defined in the profile.")
+
+
+def resolve_profile_path(profile_id: str) -> Path:
+    """Resolve a profile_id to its filesystem path under the profiles directory."""
+    profile_path = PROFILES_ROOT / f"{profile_id}.yaml"
+    if not profile_path.exists():
+        profile_path = PROFILES_ROOT / f"{profile_id}.yml"
+    if not profile_path.exists():
+        profile_path = PROFILES_ROOT / f"{profile_id}.json"
+    if not profile_path.exists():
+        raise EntityNotFoundError(f"Profile not found: {profile_id}")
+    return profile_path
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     """Return the health status of the API."""
@@ -117,6 +140,44 @@ def health() -> HealthResponse:
 def version() -> VersionResponse:
     """Return the API version."""
     return VersionResponse(version="1.0.0")
+
+
+@app.get("/profiles", response_model=list[ProfileInfo])
+def list_profiles() -> list[ProfileInfo]:
+    """Return metadata for all available profiles."""
+    profiles: list[ProfileInfo] = []
+    if not PROFILES_ROOT.exists():
+        return profiles
+
+    for path in sorted(PROFILES_ROOT.glob("*")):
+        if path.suffix not in {".yaml", ".yml", ".json"} or not path.is_file():
+            continue
+        profile_id = path.stem
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                if path.suffix == ".json":
+                    import json as _json
+                    data = _json.load(handle)
+                else:
+                    data = yaml.safe_load(handle)
+        except Exception:
+            continue
+
+        if not isinstance(data, dict):
+            continue
+
+        person = data.get("person", {})
+        names = person.get("names", [])
+        name = names[0].get("value", profile_id) if names else profile_id
+        artifacts = data.get("artifacts", [])
+
+        profiles.append(ProfileInfo(
+            id=profile_id,
+            name=name,
+            artifactCount=len(artifacts),
+        ))
+
+    return profiles
 
 
 @app.get("/schemas", response_model=list[str])
@@ -187,7 +248,8 @@ def search_entities(entity: str, request: SearchRequest) -> list[EntityResponse]
 def generate_markdown_cv_endpoint(request: MarkdownCVRequest) -> PlainTextResponse:
     """Generate a Markdown CV from a profile file and artifact id."""
     try:
-        markdown = generate_markdown_cv(request.profile_path, request.artifact_id, SCHEMA_LOADER)
+        profile_path = request.profile_path or resolve_profile_path(request.profile_id)
+        markdown = generate_markdown_cv(profile_path, request.artifact_id, SCHEMA_LOADER)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValidationError as exc:
@@ -206,8 +268,9 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
     Returns optimization status and recommendations in custom headers when tailoring.
     """
     try:
+        profile_path = request.profile_path or resolve_profile_path(request.profile_id)
         output = generate_artifact(
-            request.profile_path, 
+            profile_path, 
             request.artifact_id, 
             request.output_format, 
             SCHEMA_LOADER,
@@ -216,7 +279,7 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
         
         optimization_result = None
         if request.job_description:
-            profile = ProfileLoader(SCHEMA_LOADER).load(request.profile_path)
+            profile = ProfileLoader(SCHEMA_LOADER).load(profile_path)
             optimizer = CVOptimizer(profile)
             optimization_result = optimizer.optimize_cv(request.artifact_id, request.job_description)
     except EntityNotFoundError as exc:

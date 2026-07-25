@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TailoringService } from '../services/TailoringService';
-import type { Recommendation, OptimizationStatus } from '../types';
+import type { Recommendation, OptimizationStatus, ProfileInfo } from '../types';
 
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 
 export default function TailoringPage() {
-  const [profilePath, setProfilePath] = useState('C:\\Users\\raul\\AI\\careeros\\career-OS\\profiles\\raul-gongora-profile.yaml');
-  const [artifactId, setArtifactId] = useState('cv-english-source');
+  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [artifactId, setArtifactId] = useState('');
   const [jobDescription, setJobDescription] = useState('');
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -14,6 +15,21 @@ export default function TailoringPage() {
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [optimizationStatus, setOptimizationStatus] = useState<OptimizationStatus | null>(null);
   const [optimizationMessage, setOptimizationMessage] = useState('');
+
+  useEffect(() => {
+    const service = TailoringService.getInstance();
+    service.getProfiles().then((profiles) => {
+      setProfiles(profiles);
+      if (profiles.length > 0) {
+        setSelectedProfileId(profiles[0].id);
+        if (profiles[0].artifactCount > 0) {
+          setArtifactId('cv-english-source');
+        }
+      }
+    }).catch(() => {
+      setErrorMessage('Unable to load profiles. Please ensure the backend is running.');
+    });
+  }, []);
 
   const handleGenerate = async () => {
     if (!jobDescription.trim()) {
@@ -37,7 +53,7 @@ export default function TailoringPage() {
       const service = TailoringService.getInstance();
 
       const response = await service.generateTailoredArtifact(
-        profilePath,
+        selectedProfileId,
         artifactId,
         'markdown',
         jobDescription
@@ -130,13 +146,17 @@ export default function TailoringPage() {
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Upload Resume</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Profile Path</label>
-                    <input
-                      type="text"
-                      value={profilePath}
-                      onChange={(e) => setProfilePath(e.target.value)}
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Profile</label>
+                    <select
+                      value={selectedProfileId}
+                      onChange={(e) => setSelectedProfileId(e.target.value)}
                       className="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    >
+                      {profiles.length === 0 && <option value="">Loading profiles...</option>}
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Artifact ID</label>

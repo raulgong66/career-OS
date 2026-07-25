@@ -37,6 +37,12 @@ export interface OptimizationResult {
   message: string;
 }
 
+export interface ProfileInfo {
+  id: string;
+  name: string;
+  artifactCount: number;
+}
+
 export interface AnalysisResult {
   matchScore: number;
   strengths: string[];

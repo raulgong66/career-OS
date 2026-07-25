@@ -1,4 +1,4 @@
-import type { Recommendation, OptimizationStatus } from '../types';
+import type { Recommendation, OptimizationStatus, ProfileInfo } from '../types';
 
 interface GenerateArtifactResponse {
   artifact: string;
@@ -20,8 +20,16 @@ export class TailoringService {
     return TailoringService.instance;
   }
 
+  async getProfiles(): Promise<ProfileInfo[]> {
+    const response = await fetch(`${this.API_BASE_URL}/profiles`);
+    if (!response.ok) {
+      throw new Error(`Failed to load profiles: ${response.status}`);
+    }
+    return response.json();
+  }
+
   async generateTailoredArtifact(
-    profilePath: string,
+    profileId: string,
     artifactId: string,
     outputFormat: string,
     jobDescription: string
@@ -33,7 +41,7 @@ export class TailoringService {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          profile_path: profilePath,
+          profile_id: profileId,
           artifact_id: artifactId,
           output_format: outputFormat,
           job_description: jobDescription,
