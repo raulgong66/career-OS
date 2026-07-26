@@ -28,6 +28,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-Optimization-Status",
+        "X-Optimization-Message",
+        "X-Optimization-Summary",
+        "X-Recommendations",
+    ],
 )
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "schemas"
