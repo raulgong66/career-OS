@@ -274,78 +274,117 @@ export default function TailoringPage() {
                   <p className="text-sm text-red-700">{errorMessage}</p>
                 </div>
               )}
-
-              {status === 'success' && optimizationStatus === 'already_complete' && (
-                <div className="bg-green-50 border border-green-200 rounded-md p-4">
-                  <p className="text-sm text-green-700">{optimizationMessage}</p>
-                </div>
-              )}
-
-              {status === 'success' && optimizationStatus === 'no_matches' && (
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                  <p className="text-sm text-blue-700">{optimizationMessage}</p>
-                </div>
-              )}
             </div>
           </div>
 
           {/* Right Panel */}
           <div className="bg-gray-50 p-6 overflow-y-auto">
             <div className="max-w-2xl mx-auto space-y-6">
-              {status === 'success' && optimizationSummary && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
-                      <p className="text-3xl font-bold text-green-600">{optimizationSummary.profile_coverage.toFixed(0)}%</p>
-                      <p className="text-sm text-gray-500 mt-1">Profile Coverage</p>
-                    </div>
-                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
-                      <p className="text-3xl font-bold text-blue-600">{optimizationSummary.requirement_coverage?.toFixed(0) ?? '—'}%</p>
-                      <p className="text-sm text-gray-500 mt-1">Job Match</p>
-                    </div>
-                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
-                      <p className="text-3xl font-bold text-purple-600">{optimizationSummary.requirements_detected ?? '—'}</p>
-                      <p className="text-sm text-gray-500 mt-1">Requirements</p>
-                    </div>
-                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
-                      <p className="text-3xl font-bold text-orange-600">{optimizationSummary.matched_requirements.length}</p>
-                      <p className="text-sm text-gray-500 mt-1">Matched Concepts</p>
-                    </div>
-                  </div>
 
-                  <div className="bg-white border border-gray-200 rounded-md p-4 shadow-sm">
-                    <div className="flex items-start gap-2">
-                      {optimizationStatus === 'already_complete' && (
-                        <span className="text-green-500 mt-0.5">&#10003;</span>
-                      )}
-                      <p className="text-sm text-gray-700">{optimizationMessage}</p>
+              {/* ── Status Banner ── */}
+              {status === 'success' && optimizationStatus === 'already_complete' && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h2 className="text-base font-semibold text-green-800">Optimization Complete</h2>
+                      <p className="mt-1 text-sm text-green-700 leading-relaxed">
+                        Your CV already contains all verified evidence relevant to this opportunity.
+                        No additional profile information needs to be incorporated.
+                      </p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {status === 'success' && optimizationSummary && (optimizationSummary.matched_requirements.length > 0 || optimizationSummary.target_context_emphasis.length > 0) && (
-                <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
-                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Job Match Analysis</h2>
-
-                  {optimizationSummary.requirement_coverage !== null && (
-                    <div className="mb-4">
-                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${
-                        optimizationSummary.requirement_coverage >= 80 ? 'bg-green-100 text-green-800' :
-                        optimizationSummary.requirement_coverage >= 50 ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {optimizationSummary.requirement_coverage.toFixed(0)}% of detected requirements matched
-                      </span>
+              {status === 'success' && optimizationStatus === 'no_matches' && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg className="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
+                      </svg>
                     </div>
-                  )}
+                    <div>
+                      <h2 className="text-base font-semibold text-blue-800">Analysis Complete</h2>
+                      <p className="mt-1 text-sm text-blue-700 leading-relaxed">{optimizationMessage}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Metric Cards ── */}
+              {status === 'success' && optimizationSummary && (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Profile Coverage</span>
+                      <svg className="h-4 w-4 text-green-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+                      </svg>
+                    </div>
+                    <p className="text-3xl font-bold text-green-600">{optimizationSummary.profile_coverage.toFixed(0)}<span className="text-lg font-semibold">%</span></p>
+                    <p className="mt-1.5 text-xs text-gray-500">All profile evidence included</p>
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Job Match</span>
+                      <svg className="h-4 w-4 text-blue-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605" />
+                      </svg>
+                    </div>
+                    <p className="text-3xl font-bold text-blue-600">{optimizationSummary.requirement_coverage?.toFixed(0) ?? '—'}<span className="text-lg font-semibold">%</span></p>
+                    <p className="mt-1.5 text-xs text-gray-500">Requirements satisfied</p>
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Job Requirements</span>
+                      <svg className="h-4 w-4 text-purple-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                      </svg>
+                    </div>
+                    <p className="text-3xl font-bold text-purple-600">{optimizationSummary.requirements_detected ?? '—'}</p>
+                    <p className="mt-1.5 text-xs text-gray-500">Requirements identified</p>
+                  </div>
+
+                  <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Matching Competencies</span>
+                      <svg className="h-4 w-4 text-orange-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+                      </svg>
+                    </div>
+                    <p className="text-3xl font-bold text-orange-600">{optimizationSummary.matched_requirements.length}</p>
+                    <p className="mt-1.5 text-xs text-gray-500">Relevant competencies found</p>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Analysis Explanation ── */}
+              {status === 'success' && optimizationSummary && (
+                <p className="text-sm text-gray-500 leading-relaxed border-l-2 border-gray-200 pl-4">
+                  The AI analyzed the job description, compared it with the canonical professional profile,
+                  and generated this tailored artifact using verified profile evidence.
+                </p>
+              )}
+
+              {/* ── Job Match Analysis ── */}
+              {status === 'success' && optimizationSummary && (optimizationSummary.matched_requirements.length > 0 || optimizationSummary.target_context_emphasis.length > 0) && (
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h2 className="text-base font-semibold text-gray-900 mb-4">Job Match Analysis</h2>
 
                   {optimizationSummary.matched_requirements.length > 0 && (
-                    <div className="mb-4">
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Top matched requirements</h3>
+                    <div className="mb-5">
+                      <h3 className="text-sm font-medium text-gray-700 mb-2.5">Matching Competencies</h3>
                       <div className="flex flex-wrap gap-2">
                         {optimizationSummary.matched_requirements.map((req) => (
-                          <span key={req} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span key={req} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
                             {req}
                           </span>
                         ))}
@@ -355,10 +394,10 @@ export default function TailoringPage() {
 
                   {optimizationSummary.target_context_emphasis.length > 0 && (
                     <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Target context</h3>
+                      <h3 className="text-sm font-medium text-gray-700 mb-2.5">Target Context</h3>
                       <div className="flex flex-wrap gap-2">
                         {optimizationSummary.target_context_emphasis.map((emphasis) => (
-                          <span key={emphasis} className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                          <span key={emphasis} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
                             {emphasis}
                           </span>
                         ))}
@@ -368,16 +407,17 @@ export default function TailoringPage() {
                 </div>
               )}
 
+              {/* ── Generated Artifact ── */}
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">{labels.resultHeading}</h2>
+                <h2 className="text-base font-semibold text-gray-900 mb-3">{labels.resultHeading}</h2>
                 {artifact ? (
-                  <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
+                  <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                     <div className="prose prose-sm max-w-none">
                       {renderResume(artifact)}
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-white border border-gray-200 rounded-md p-12 shadow-sm flex flex-col items-center justify-center text-gray-400">
+                  <div className="bg-white border border-gray-200 rounded-lg p-12 shadow-sm flex flex-col items-center justify-center text-gray-400">
                     <svg className="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                     </svg>
@@ -386,14 +426,15 @@ export default function TailoringPage() {
                 )}
               </div>
 
+              {/* ── AI Recommendations ── */}
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                <h2 className="text-base font-semibold text-gray-900 mb-3">
                   AI Recommendations {recommendations.length > 0 && `(${recommendations.length})`}
                 </h2>
                 {recommendations.length > 0 ? (
                   <div className="space-y-3">
                     {recommendations.map((rec) => (
-                      <div key={rec.id} className="bg-white border border-gray-200 rounded-md p-4 shadow-sm">
+                      <div key={rec.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                         <div className="flex items-start justify-between">
                           <h3 className="font-semibold text-gray-900">{rec.displayName}</h3>
                           {getRecommendationConfidence(rec) !== null && (
@@ -420,7 +461,7 @@ export default function TailoringPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="bg-white border border-gray-200 rounded-md p-12 shadow-sm flex flex-col items-center justify-center text-gray-400">
+                  <div className="bg-white border border-gray-200 rounded-lg p-12 shadow-sm flex flex-col items-center justify-center text-gray-400">
                     <svg className="w-12 h-12 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
                     </svg>
