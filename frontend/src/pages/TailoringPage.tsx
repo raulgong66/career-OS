@@ -293,85 +293,32 @@ export default function TailoringPage() {
           <div className="bg-gray-50 p-6 overflow-y-auto">
             <div className="max-w-2xl mx-auto space-y-6">
               {status === 'success' && optimizationSummary && (
-                <div className="bg-white border border-gray-200 rounded-md p-6 shadow-sm">
-                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Optimization Summary</h2>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Profile Coverage</h3>
-                      <div className="grid grid-cols-3 gap-4">
-                        <div>
-                          <p className="text-2xl font-bold text-gray-900">{optimizationSummary.profile_coverage.toFixed(0)}%</p>
-                          <p className="text-xs text-gray-500">Coverage</p>
-                        </div>
-                        <div>
-                          <p className="text-2xl font-bold text-gray-900">{optimizationSummary.included_profile_elements} / {optimizationSummary.total_profile_elements}</p>
-                          <p className="text-xs text-gray-500">Profile elements</p>
-                        </div>
-                        <div>
-                          <p className="text-2xl font-bold text-gray-900">{optimizationSummary.additional_evidence}</p>
-                          <p className="text-xs text-gray-500">Additional evidence</p>
-                        </div>
-                      </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
+                      <p className="text-3xl font-bold text-green-600">{optimizationSummary.profile_coverage.toFixed(0)}%</p>
+                      <p className="text-sm text-gray-500 mt-1">Profile Coverage</p>
                     </div>
-
-                    <div className="border-t border-gray-100 pt-4">
-                      <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Profile Analysis</h3>
-                      <div className="grid grid-cols-3 gap-3 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Skills</span>
-                          <span className="font-medium text-gray-900">{optimizationSummary.skills_evaluated}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Experiences</span>
-                          <span className="font-medium text-gray-900">{optimizationSummary.experiences_evaluated}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Projects</span>
-                          <span className="font-medium text-gray-900">{optimizationSummary.projects_evaluated}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Achievements</span>
-                          <span className="font-medium text-gray-900">{optimizationSummary.achievements_evaluated}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Certifications</span>
-                          <span className="font-medium text-gray-900">{optimizationSummary.certifications_evaluated}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Education</span>
-                          <span className="font-medium text-gray-900">{optimizationSummary.education_evaluated}</span>
-                        </div>
-                      </div>
+                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
+                      <p className="text-3xl font-bold text-blue-600">{optimizationSummary.requirement_coverage?.toFixed(0) ?? '—'}%</p>
+                      <p className="text-sm text-gray-500 mt-1">Job Match</p>
                     </div>
+                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
+                      <p className="text-3xl font-bold text-purple-600">{optimizationSummary.requirements_detected ?? '—'}</p>
+                      <p className="text-sm text-gray-500 mt-1">Requirements</p>
+                    </div>
+                    <div className="bg-white border border-gray-200 rounded-md p-5 shadow-sm flex flex-col items-center text-center">
+                      <p className="text-3xl font-bold text-orange-600">{optimizationSummary.matched_requirements.length}</p>
+                      <p className="text-sm text-gray-500 mt-1">Matched Concepts</p>
+                    </div>
+                  </div>
 
-                    {optimizationSummary.requirements_detected !== null && (
-                      <div className="border-t border-gray-100 pt-4">
-                        <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">Job Analysis</h3>
-                        <div className="grid grid-cols-3 gap-4">
-                          <div>
-                            <p className="text-2xl font-bold text-gray-900">{optimizationSummary.requirements_detected}</p>
-                            <p className="text-xs text-gray-500">Requirements detected</p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-gray-900">{optimizationSummary.requirements_matched}</p>
-                            <p className="text-xs text-gray-500">Requirements matched</p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold text-gray-900">{optimizationSummary.requirement_coverage?.toFixed(0)}%</p>
-                            <p className="text-xs text-gray-500">Coverage</p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="border-t border-gray-100 pt-4">
-                      <div className="flex items-start gap-2">
-                        {optimizationStatus === 'already_complete' && (
-                          <span className="text-green-500 mt-0.5">&#10003;</span>
-                        )}
-                        <p className="text-sm text-gray-700">{optimizationMessage}</p>
-                      </div>
+                  <div className="bg-white border border-gray-200 rounded-md p-4 shadow-sm">
+                    <div className="flex items-start gap-2">
+                      {optimizationStatus === 'already_complete' && (
+                        <span className="text-green-500 mt-0.5">&#10003;</span>
+                      )}
+                      <p className="text-sm text-gray-700">{optimizationMessage}</p>
                     </div>
                   </div>
                 </div>
