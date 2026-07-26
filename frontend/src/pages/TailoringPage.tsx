@@ -68,7 +68,7 @@ export default function TailoringPage() {
       if (profiles.length > 0) {
         setSelectedProfileId(profiles[0].id);
         setAvailableArtifacts(profiles[0].artifactIds);
-        if (profiles[0].artifactIds.length === 1) {
+        if (profiles[0].artifactIds.length > 0) {
           setSelectedArtifactId(profiles[0].artifactIds[0]);
         }
       }
@@ -82,7 +82,7 @@ export default function TailoringPage() {
     const profile = profiles.find(p => p.id === profileId);
     if (profile) {
       setAvailableArtifacts(profile.artifactIds);
-      if (profile.artifactIds.length === 1) {
+      if (profile.artifactIds.length > 0) {
         setSelectedArtifactId(profile.artifactIds[0]);
       } else {
         setSelectedArtifactId('');
