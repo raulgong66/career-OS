@@ -1,3 +1,7 @@
+import pytest
+
+pytest.importorskip("fastapi", reason="fastapi is not installed — API tests require it")
+
 from pathlib import Path
 
 from fastapi.testclient import TestClient

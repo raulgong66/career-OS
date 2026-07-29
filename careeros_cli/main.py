@@ -21,6 +21,7 @@ from careeros import (
     generate_artifact as run_artifact_pipeline,
     generate_markdown_cv as run_markdown_cv_pipeline,
 )
+from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
 app = typer.Typer(
@@ -321,6 +322,28 @@ def optimize_cv(
         except Exception as exc:
             console.print(f"[bold red]Failed to write updated DOCX file: {exc}[/bold red]")
             raise typer.Exit(code=1)
+
+
+@app.command("acquire-profile")
+def acquire_profile(
+    source: Path = typer.Argument(..., help="Path to the source document (DOCX)."),
+    output: Path = typer.Option(None, "--output", "-o", help="Output path for the generated profile YAML."),
+) -> None:
+    """Acquire a canonical profile from a source document.
+
+    Parses the document, extracts person information using an LLM,
+    builds a canonical profile, validates it against the schema,
+    and writes the result to the profiles/ directory.
+    """
+    pipeline = AcquisitionPipeline()
+    try:
+        output_path = pipeline.run(source, output)
+    except (DocumentReadError, PipelineError) as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[bold green]Profile acquired[/bold green] {output_path}")
+    console.print("[green]To validate:[/green] careeros validate profile " + str(output_path))
 
 
 def _load_payload(file_path: Path) -> dict[str, Any]:

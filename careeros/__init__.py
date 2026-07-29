@@ -25,6 +25,17 @@ from .validator import EntityValidator
 from .optimizer import CVOptimizer, Recommendation
 from .docx_renderer import CVDocumentRenderer
 
+from .acquisition import (
+    AcquisitionPipeline,
+    CanonicalProfileBuilder,
+    DocumentReader,
+    LLMExtractor,
+    OpenAILLMExtractor,
+    PersonData,
+    TextExtractor,
+    YamlWriter,
+)
+
 __all__ = [
     "CareerOSException",
     "EntityNotFoundError",
@@ -51,4 +62,12 @@ __all__ = [
     "CVOptimizer",
     "Recommendation",
     "CVDocumentRenderer",
+    "AcquisitionPipeline",
+    "CanonicalProfileBuilder",
+    "DocumentReader",
+    "LLMExtractor",
+    "OpenAILLMExtractor",
+    "PersonData",
+    "TextExtractor",
+    "YamlWriter",
 ]
