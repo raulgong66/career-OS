@@ -1,10 +1,44 @@
-export interface Profile {
+export interface ProfileSummary {
+  id: string;
+  name: string;
+  headline: string;
+  artifactCount: number;
+  artifactIds: string[];
+  importedAt: string;
+}
+
+export interface ProfileDetails {
   id: string;
   person: {
     firstName: string;
     lastName: string;
+    headline: string;
+    city: string | null;
+    country: string | null;
+    languages: Array<{ name: string; proficiency: string }>;
   };
-  artifacts: Artifact[];
+  artifacts: Array<{
+    id: string;
+    type: string;
+    name: string;
+    sourceCount: number;
+  }>;
+  summary: string | null;
+  importedAt: string;
+}
+
+export interface ImportResponse {
+  profileId: string;
+  profile: ProfileSummary;
+}
+
+export interface ProfileInfo {
+  id: string;
+  name: string;
+  artifactCount: number;
+  artifactIds: string[];
+  headline: string;
+  importedAt: string;
 }
 
 export interface Artifact {
@@ -54,31 +88,4 @@ export interface OptimizationResult {
   recommendations: Recommendation[];
   message: string;
   summary: OptimizationSummary | null;
-}
-
-export interface ProfileInfo {
-  id: string;
-  name: string;
-  artifactCount: number;
-  artifactIds: string[];
-}
-
-export interface AnalysisResult {
-  matchScore: number;
-  strengths: string[];
-  missingSkills: string[];
-  recommendations: Recommendation[];
-  timeline: TimelineStep[];
-}
-
-export interface TimelineStep {
-  id: string;
-  label: string;
-  status: 'pending' | 'processing' | 'completed';
-}
-
-export interface TailorRequest {
-  profile: Profile;
-  artifactId: string;
-  jobDescription: string;
 }

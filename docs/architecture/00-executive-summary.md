@@ -4,7 +4,7 @@
 
 CareerOS is a Python 3.11+ command-line toolkit and REST API for managing professional career data. It ingests source documents (DOCX), extracts structured profile data (optionally via LLM), validates against a JSON Schema-defined canonical profile, runs deterministic reasoning rules over the data, and generates career artifacts (CVs, cover letters) in Markdown and DOCX formats.
 
-The system is implemented as a single Python package (`careeros/`) with two entry-point applications (`careeros-cli`, `careeros-api`), ~18 JSON Schema files, 14 reasoning rules, 3 artifact generators, and 422 tests.
+The system is implemented as a single Python package (`careeros/`) with two entry-point applications (`careeros-cli`, `careeros-api`), ~18 JSON Schema files, 14 reasoning rules, 3 artifact generators, and 555 tests.
 
 ## What Problem Does It Solve?
 
@@ -37,4 +37,4 @@ No external dependencies beyond stdlib `dataclasses` for domain models. All reas
 | CLI | `careeros_cli/main.py` | Typer-based command-line interface |
 | API | `api/main.py` | FastAPI-based REST interface |
 | Frontend | `frontend/dist/` | Built React SPA (deployment artifact) |
-| Tests | `tests/` | 422 tests across 19 files |
+| Tests | `tests/` | 555 tests across 21 files |

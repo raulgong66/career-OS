@@ -97,12 +97,12 @@ Applies optimization recommendations to an existing DOCX CV file by inserting ne
 
 #### CLI (`careeros_cli/main.py`)
 
-13 commands built with Typer + Rich, covering validation, schema inspection, artifact generation, optimization, and profile acquisition. Nearly all API functionality is mirrored in the CLI.
+15 commands built with Typer + Rich, covering validation, schema inspection, artifact generation, optimization, profile acquisition, and analysis. Nearly all API functionality is mirrored in the CLI.
 
 #### REST API (`api/main.py`)
 
-14 endpoints built with FastAPI 1.0.0, covering health, schemas, validation, CRUD entity operations, artifact generation, and CV optimization. Uses Pydantic models for request/response validation.
+20 endpoints built with FastAPI 1.0.0, covering health, version, schemas, validation, CRUD entity operations, profile management (import, list, get, delete), artifact generation, CV optimization, and profile analysis. Uses Pydantic models for request/response validation.
 
-#### Frontend (`frontend/dist/`)
+#### Frontend (`frontend/src/`, `frontend/dist/`)
 
-A built React/Vite single-page application. Only the compiled `dist/` directory exists in the repository — no frontend source code is present.
+A React 19 / Vite single-page application with TypeScript source code under `frontend/src/`. Built artifacts are output to `frontend/dist/`.

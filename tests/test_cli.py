@@ -183,8 +183,15 @@ def test_generate_markdown_cv_command_filters_context_specific_sources(tmp_path:
 
     assert result.exit_code == 0
     markdown = output_file.read_text(encoding="utf-8")
-    assert "Matching skill" in markdown
-    assert "Other skill" not in markdown
+
+    # The Sources section must only include context-matching skills
+    skills_section_start = markdown.index("## Skills")
+    after_skills = markdown[skills_section_start:]
+    assert "Matching skill" in after_skills
+    assert "Other skill" not in after_skills
+
+    # The reasoning section may include profile-wide skill analysis
+    assert "Strongest Skills:" in markdown
 
 
 def test_generate_artifact_command_writes_markdown_output_file(tmp_path: Path) -> None:
@@ -240,3 +247,141 @@ def test_generate_artifact_command_writes_docx_output_file(tmp_path: Path) -> No
 
     assert result.exit_code == 0
     assert output_file.read_bytes().startswith(b"PK")
+
+
+def test_analyze_profile_command_prints_report_json(tmp_path: Path) -> None:
+    """careeros analyze-profile <file> prints the report as JSON to stdout."""
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text(
+        yaml.safe_dump({
+            "profileVersion": "1.0.0",
+            "person": {"id": "test-person"},
+            "experiences": [],
+            "skills": [],
+            "education": [],
+            "organizations": [],
+            "professionalSummaries": [],
+            "projects": [],
+            "achievements": [],
+            "evidence": [],
+            "certifications": [],
+            "artifacts": [],
+            "targetContexts": [],
+        }),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["analyze-profile", str(profile_file)])
+
+    assert result.exit_code == 0
+    import json
+    report = json.loads(result.stdout)
+    assert report["engine_version"] == "1.0.0"
+    assert report["profile_id"] == "test-person"
+    assert "findings" in report
+    assert "findings_by_type" in report
+    assert "summary" in report
+    assert "execution_stats" in report
+
+
+def test_analyze_profile_command_writes_output_file(tmp_path: Path) -> None:
+    """careeros analyze-profile <file> --output writes the report to a file."""
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text(
+        yaml.safe_dump({
+            "profileVersion": "1.0.0",
+            "person": {"id": "test-person"},
+            "experiences": [],
+            "skills": [],
+            "education": [],
+            "organizations": [],
+            "professionalSummaries": [],
+            "projects": [],
+            "achievements": [],
+            "evidence": [],
+            "certifications": [],
+            "artifacts": [],
+            "targetContexts": [],
+        }),
+        encoding="utf-8",
+    )
+    output_file = tmp_path / "report.json"
+
+    result = runner.invoke(app, ["analyze-profile", str(profile_file), "--output", str(output_file)])
+
+    assert result.exit_code == 0
+    assert output_file.exists()
+    import json
+    report = json.loads(output_file.read_text(encoding="utf-8"))
+    assert report["profile_id"] == "test-person"
+
+
+def test_analyze_profile_command_summary_flag(tmp_path: Path) -> None:
+    """careeros analyze-profile <file> --summary prints a short summary."""
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text(
+        yaml.safe_dump({
+            "profileVersion": "1.0.0",
+            "person": {"id": "test-person"},
+            "experiences": [],
+            "skills": [],
+            "education": [],
+            "organizations": [],
+            "professionalSummaries": [],
+            "projects": [],
+            "achievements": [],
+            "evidence": [],
+            "certifications": [],
+            "artifacts": [],
+            "targetContexts": [],
+        }),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["analyze-profile", str(profile_file), "--summary"])
+
+    assert result.exit_code == 0
+    assert "Total Findings:" in result.stdout
+    assert "Rules Executed:" in result.stdout
+    assert "Execution Time:" in result.stdout
+
+
+def test_analyze_profile_command_pretty_flag(tmp_path: Path) -> None:
+    """careeros analyze-profile <file> --pretty prints a human-readable summary."""
+    profile_file = tmp_path / "profile.yaml"
+    profile_file.write_text(
+        yaml.safe_dump({
+            "profileVersion": "1.0.0",
+            "person": {"id": "test-person"},
+            "experiences": [],
+            "skills": [],
+            "education": [],
+            "organizations": [],
+            "professionalSummaries": [],
+            "projects": [],
+            "achievements": [],
+            "evidence": [],
+            "certifications": [],
+            "artifacts": [],
+            "targetContexts": [],
+        }),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["analyze-profile", str(profile_file), "--pretty"])
+
+    assert result.exit_code == 0
+    assert "Reasoning Report" in result.stdout
+    assert "Engine Version:" in result.stdout
+    assert "Profile ID:" in result.stdout
+    assert "Total Findings:" in result.stdout
+
+
+def test_analyze_profile_command_missing_file(tmp_path: Path) -> None:
+    """careeros analyze-profile with a non-existent file exits with error."""
+    missing = tmp_path / "does-not-exist.yaml"
+
+    result = runner.invoke(app, ["analyze-profile", str(missing)])
+
+    assert result.exit_code == 1
+    assert "Failed to load" in result.stdout

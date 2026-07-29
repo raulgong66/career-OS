@@ -406,6 +406,67 @@ def acquire_profile(
     console.print("[green]To validate:[/green] careeros validate profile " + str(output_path))
 
 
+@app.command("analyze-profile")
+def analyze_profile(
+    profile_file: Path = typer.Argument(..., help="Path to the JSON or YAML profile file."),
+    output: Optional[Path] = typer.Option(None, "--output", help="Write the report as JSON to a file."),
+    pretty: bool = typer.Option(False, "--pretty", help="Print a human-readable summary to the console."),
+    summary: bool = typer.Option(False, "--summary", help="Print only the summary section."),
+) -> None:
+    """Run a deterministic analysis of a canonical profile using the Reasoning Engine."""
+    try:
+        profile_data = _load_payload(profile_file)
+    except Exception as exc:
+        console.print(f"[bold red]Failed to load profile file: {exc}[/bold red]")
+        raise typer.Exit(code=1)
+
+    from careeros.reasoning import ReasoningEngine, create_default_registry
+
+    try:
+        registry = create_default_registry()
+        engine = ReasoningEngine(registry)
+        report = engine.analyze(profile_data)
+    except Exception as exc:
+        console.print(f"[bold red]Analysis error: {exc}[/bold red]")
+        raise typer.Exit(code=1)
+
+    if output:
+        output_path = output.expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(report.to_json(), encoding="utf-8")
+        console.print(f"[bold green]Report written[/bold green] {output_path}")
+        return
+
+    if pretty:
+        s = report.summary
+        console.print(f"[bold]Reasoning Report[/bold]")
+        console.print(f"  Engine Version: {report.engine_version}")
+        console.print(f"  Profile ID:     {report.profile_id}")
+        console.print(f"  Generated At:   {report.generated_at.isoformat()}")
+        console.print(f"  Total Findings: {s.get('total_findings', 0)}")
+        console.print(f"  Rules Executed: {s.get('total_rules_executed', 0)}")
+        console.print(f"  Execution Time: {s.get('execution_time_seconds', 0):.2f}s")
+        if s.get("findings_by_type_count"):
+            console.print(f"  Findings by Type:")
+            for ftype, count in s["findings_by_type_count"].items():
+                console.print(f"    {ftype}: {count}")
+        if s.get("confidence_distribution"):
+            console.print(f"  Confidence Distribution:")
+            for level, count in sorted(s["confidence_distribution"].items()):
+                console.print(f"    {level}: {count}")
+        return
+
+    if summary:
+        s = report.summary
+        console.print(f"Profile ID:     {report.profile_id}")
+        console.print(f"Total Findings: {s.get('total_findings', 0)}")
+        console.print(f"Rules Executed: {s.get('total_rules_executed', 0)}")
+        console.print(f"Execution Time: {s.get('execution_time_seconds', 0):.2f}s")
+        return
+
+    console.print_json(report.to_json())
+
+
 def _print_summary(summary: Any) -> None:
     """Display the optimization summary in the terminal."""
     from careeros import OptimizationSummary

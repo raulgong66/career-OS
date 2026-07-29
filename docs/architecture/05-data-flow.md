@@ -13,19 +13,20 @@ flowchart LR
         Validator["EntityValidator<br/>validate(profile)"]
     end
 
-    subgraph Contract["Contract"]
-        ExportBuilder["ExportContractBuilder<br/>build(profile, artifact_id)"]
-        ExportContract["ExportContract"]
-        EvidenceSelector["EvidenceSelector<br/>select(contract)"]
-    end
-
     subgraph ReasoningFlow["Reasoning"]
         KG["KnowledgeGraphBuilder<br/>build(profile)"]
         KG_Graph["KnowledgeGraph"]
         Engine["ReasoningEngine<br/>analyze(profile)"]
         Report["ReasoningReport"]
+        Findings["ReasoningFindings<br/>from_report(report)"]
         Assembler["EvidencePackageAssembler<br/>assemble(analysis)"]
         Package["EvidencePackage"]
+    end
+
+    subgraph Contract["Contract"]
+        ExportBuilder["ExportContractBuilder<br/>build(profile, artifact_id, reasoning=findings)"]
+        ExportContract["ExportContract<br/>+reasoning: ReasoningFindings"]
+        EvidenceSelector["EvidenceSelector<br/>select(contract)"]
     end
 
     subgraph GenerationFlow["Generation"]
@@ -34,13 +35,19 @@ flowchart LR
     end
 
     subgraph Output["Output"]
-        MD["Markdown CV (.md)"]
+        MD["Markdown CV (.md) + reasoning sections"]
         DOCX["DOCX CV (.docx)"]
         CL["Cover Letter (.md)"]
     end
 
     ProfileFile --> ProfileLoader
     ProfileLoader --> Validator
+    Validator --> KG
+    KG --> KG_Graph
+    KG_Graph --> Engine
+    Engine --> Report
+    Report --> Findings
+    Findings --> ExportBuilder
     Validator --> ExportBuilder
     ExportBuilder --> ExportContract
     ExportContract --> EvidenceSelector
@@ -49,13 +56,6 @@ flowchart LR
     Generator --> MD
     Generator --> DOCX
     Generator --> CL
-
-    ProfileLoader -.-> KG
-    KG --> KG_Graph
-    KG_Graph --> Engine
-    Engine --> Report
-    Report --> Assembler
-    Assembler --> Package
 ```
 
 ## Acquisition Flow: Source Document → Profile
@@ -128,7 +128,7 @@ flowchart TB
 
 ## API Request Flows
 
-### Artifact Generation
+### Artifact Generation (Reasoning-Aware)
 
 ```mermaid
 sequenceDiagram
@@ -136,16 +136,23 @@ sequenceDiagram
     API->>+ProfileLoader: load profile
     ProfileLoader->>ProfileLoader: validate against schema
     ProfileLoader-->>-API: profile dict
-    API->>+ExportContractBuilder: build(profile, artifact_id)
+    API->>+ReasoningEngine: analyze(profile)
+    ReasoningEngine->>ReasoningEngine: build KnowledgeGraph
+    ReasoningEngine->>ReasoningEngine: execute 23 rules in dependency order
+    ReasoningEngine-->>-API: ReasoningReport
+    API->>+ReasoningFindings: from_report(report)
+    ReasoningFindings-->>-API: ReasoningFindings
+    API->>+ExportContractBuilder: build(profile, artifact_id, reasoning=findings)
     ExportContractBuilder->>ExportContractBuilder: resolve artifact, contexts, sources
-    ExportContractBuilder-->>-API: ExportContract
+    ExportContractBuilder-->>-API: ExportContract (with .reasoning)
     API->>+EvidenceSelector: select(contract)
     EvidenceSelector-->>-API: filtered contract
     API->>+GeneratorRegistry: resolve(artifact_type, format)
     GeneratorRegistry-->>-API: generator instance
     API->>+Generator: generate(contract)
-    Generator-->>-API: output (str/bytes)
-    API-->>-Client: response with generated artifact
+    Generator->>Generator: render reasoning sections from contract.reasoning
+    Generator-->>-API: output (str/bytes) with deterministic insights
+    API-->>-Client: response with reasoning-augmented artifact
 ```
 
 ### CV Optimization
@@ -161,6 +168,36 @@ sequenceDiagram
     CVOptimizer-->>-API: list[Recommendation]
     API-->>-Client: optimization recommendations
 ```
+
+## Reasoning–Generation Integration (PA-004)
+
+The pipeline entry point `generate_artifact()` in `careeros/pipelines.py` now runs reasoning exactly once per call:
+
+1. **Profile loaded** via `ProfileLoader`
+2. **Reasoning executed** via `ReasoningEngine.analyze(profile)` → `ReasoningReport`
+3. **Findings extracted** via `ReasoningFindings.from_report(report)` — a lightweight DTO with only the fields generators need
+4. **Contract built** via `ExportContractBuilder.build(..., reasoning=findings)` — attaches findings to `ExportContract.reasoning`
+5. **Sources filtered** via `EvidenceSelector.select(contract)` — unchanged, operates on sources only
+6. **Generator renders** — checks `contract.reasoning` and includes deterministic insights when present
+
+### ReasoningFindings fields exposed to generators
+
+| Field | Source Finding Type | Description |
+|---|---|---|
+| `strongest_skills` | `strongest_skills` | Ranked skill names |
+| `core_competencies` | `core_competencies` | Core competency names |
+| `strongest_experience` | `strongest_experience` | Top experience dict |
+| `leadership_indicators` | `leadership_experience` | Leadership evidence dicts |
+| `technology_breadth` | `technology_breadth` | Technology area names |
+| `domain_expertise` | `domain_experience` | Domain names |
+| `career_highlights` | `career_highlights` | Highlight dicts |
+| `career_stage` | `career_stage_classification` | Stage label (e.g. "Senior") |
+
+### Backward Compatibility
+
+- If no `ReasoningFindings` is attached, `contract.reasoning` is `None` and generators render identically to previous behavior.
+- The `to_dict()` method on `ExportContract` intentionally omits the `reasoning` field to avoid serialization changes.
+- All existing tests pass without modification.
 
 ## Reasoning Data Types (per-rule)
 

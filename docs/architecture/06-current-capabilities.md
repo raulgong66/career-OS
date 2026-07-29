@@ -47,7 +47,9 @@
 |---|---|---|
 | Markdown CV generation | Implemented | `MarkdownCVGenerator` — section-based CV |
 | DOCX CV generation | Implemented | `DocxCVGenerator` — delegates to Markdown, converts to DOCX |
-| Markdown cover letter | Implemented | `MarkdownCoverLetterGenerator` |
+| Markdown cover letter (generic) | Implemented | `MarkdownCoverLetterGenerator` — artifact-only output |
+| Markdown cover letter (JD-aware) | Implemented | Same generator; set `job_description` on `ExportContract` for deterministic requirement matching and evidence reordering |
+| Reasoning-aware generation | Implemented | `ReasoningFindings` on `ExportContract` consumed by CV + cover letter generators |
 | Export contract building | Implemented | `ExportContractBuilder` resolves artifact, contexts, sources |
 | Evidence selection | Implemented | `EvidenceSelector` filters sources by target context |
 | Generator registry | Implemented | `GeneratorRegistry` with `default_generator_registry()` |
@@ -100,22 +102,22 @@
 | Capability | Status | Details |
 |---|---|---|
 | SPA deployment artifact | Implemented | Built `index.html`, JS, CSS in `frontend/dist/` |
-| Frontend source | Not in repo | No `package.json` or source files exist |
+| Frontend source | Implemented | `frontend/src/` with TypeScript/React source, `frontend/package.json`, Vite config, Tailwind CSS, and type definitions |
 
 ### Testing
 
 | Capability | Status | Details |
 |---|---|---|
-| Total tests | 422 | 19 files across all modules |
-| Reasoning rules | 228 tests (54%) | Largest test area |
-| Profile & knowledge | 94 tests (22%) | |
-| Acquisition | 34 tests (8%) | |
-| Core library | 15 tests (4%) | |
-| API & CLI | 21 tests (5%) | |
-| Export & generators | 30 tests (7%) | |
+| Total tests | 555 | 21 files across all modules |
+| Reasoning rules | 228 tests (41%) | Largest test area |
+| Profile & knowledge | 94 tests (17%) | |
+| Acquisition | 34 tests (6%) | |
+| Core library | 15 tests (3%) | |
+| API & CLI | 65 tests (12%) | 21 CLI + 44 REST API (fastapi) |
+| Export & generators | 30 tests (5%) | |
 | Test framework | pytest | `TestClient` for API, `CliRunner` for CLI |
 | Integration tests | Partial | End-to-end acquisition (2 tests), pipeline integration |
-| Mock usage | None | Tests run against real filesystem and schemas |
+| Mock usage | Minimal | `MockLLMExtractor` used in 2 acquisition integration tests to provide deterministic fake data; all other tests run against real filesystem and schemas |
 
 ## Capability Summary
 
@@ -129,7 +131,7 @@
 | Reasoning (Engine) | Complete | 65 tests |
 | Markdown CV Generation | Complete | 3 tests |
 | DOCX CV Generation | Complete | 3 tests |
-| Cover Letter Generation | Complete | 3 tests |
+| Cover Letter Generation | Complete | 12 tests |
 | Evidence Selection | Complete | 5 tests |
 | Export Contract | Complete | 6 tests |
 | CV Optimization | Complete | (part of pipeline tests) |

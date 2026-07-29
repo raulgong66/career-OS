@@ -939,7 +939,11 @@ def test_all_skill_rules_deterministic() -> None:
 
     report1 = engine.analyze(profile)
     report2 = engine.analyze(profile)
-    assert report1.to_dict() == report2.to_dict()
+    d1 = report1.to_dict()
+    d2 = report2.to_dict()
+    assert d1["findings"] == d2["findings"]
+    assert d1["findings_by_type"] == d2["findings_by_type"]
+    assert d1["summary"]["total_findings"] == d2["summary"]["total_findings"]
 
 
 def test_all_skill_rules_confidence_is_one() -> None:

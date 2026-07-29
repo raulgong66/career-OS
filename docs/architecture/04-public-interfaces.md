@@ -42,6 +42,8 @@ The `careeros/__init__.py` re-exports symbols from all submodules, forming the p
 | `Rule` | Abstract base class | 0.1.0 | Extend to create rules |
 | `RuleRegistry` | Class | 0.1.0 | Register/lookup rules |
 | `ReasoningEngine` | Class | 0.1.0 | `run()` and `analyze()` methods |
+| `ReasoningFindings` | Dataclass | 0.1.0 | Generator-safe DTO extracted from ReasoningReport |
+| `create_default_registry` | Function | 0.1.0 | Builds a RuleRegistry pre-loaded with all 23 built-in rules |
 | `EvidencePackageAssembler` | Class | 0.1.0 | Transforms analysis to package |
 | `RegistryError` | Exception | 0.1.0 | Base for registry errors |
 | `DuplicateRuleError` | Exception | 0.1.0 | Duplicate rule registration |
@@ -75,24 +77,29 @@ The `careeros/__init__.py` re-exports symbols from all submodules, forming the p
 **Framework**: FastAPI 1.0.0, served via `uvicorn api.main:app`
 
 | Method | Path | Purpose | Request | Response |
-|---|---|---|---|---|
+|---|---|---|---|---|---|
 | GET | `/health` | Health check | — | `{"status": "ok"}` |
 | GET | `/version` | API version | — | `{"version": "1.0.0"}` |
+| GET | `/profiles` | List all profiles | — | `[ProfileInfo]` |
+| POST | `/profiles/import` | Import CV and create profile | Multipart file upload | `ImportResponse` |
+| GET | `/profiles/{profile_id}` | Get full profile detail | — | `ProfileDetails` |
+| DELETE | `/profiles/{profile_id}` | Delete a profile | — | 204 No Content |
+| POST | `/analyze` | Deterministic profile analysis via Reasoning Engine | `{profileId, parameters?}` | ReasoningReport |
 | GET | `/schemas` | List schema entities | — | `["profile", "skill", ...]` |
 | GET | `/schemas/{entity}` | Schema metadata | — | `{title, description, version}` |
 | POST | `/validate/{entity}` | Validate payload | JSON body | `{valid: bool, errors: [...]}` |
 | POST | `/create/{entity}` | Create entity (legacy) | JSON body | `EntityRecord` |
 | POST | `/search/{entity}` | Search entities | `{field, value}` | `[EntityRecord]` |
-| POST | `/generate/markdown-cv` | Generate Markdown CV | `{profile_file, artifact_id}` | Markdown text |
-| POST | `/generate/artifact` | Generate any artifact | `{profile_file, artifact_id, output_format}` | Generated content |
-| POST | `/optimize-cv` | CV optimization | `{profile_file, artifact_id, job_description?}` | `[Recommendation]` |
+| POST | `/generate/markdown-cv` | Generate Markdown CV | `{profile_id, artifact_id}` | Markdown text |
+| POST | `/generate/artifact` | Generate any artifact | `{profile_id, artifact_id, output_format}` | Generated content |
+| POST | `/optimize-cv` | CV optimization | `{profile, artifact_id, job_description?}` | `[Recommendation]` |
 | GET | `/entities/{entity}` | List entities | — | `[EntityRecord]` |
 | GET | `/entities/{entity}/{id}` | Get entity | — | `EntityRecord` |
 | POST | `/entities/{entity}` | Create entity (201) | JSON body | `EntityRecord` |
 | PUT | `/entities/{entity}/{id}` | Update entity | JSON body | `EntityRecord` |
 | DELETE | `/entities/{entity}/{id}` | Delete entity | — | 204 No Content |
 
-**Note**: Both `POST /create/{entity}` (legacy) and `POST /entities/{entity}` create entities, with the latter returning HTTP 201.
+**Note**: Both `POST /create/{entity}` (legacy) and `POST /entities/{entity}` create entities, with the latter returning HTTP 201. Profile management endpoints (`/profiles`, `/profiles/import`, `/profiles/{profile_id}`) use the consistent `ApiErrorResponse` error format; legacy endpoints use plain string errors.
 
 ## CLI Commands
 
@@ -101,7 +108,7 @@ The `careeros/__init__.py` re-exports symbols from all submodules, forming the p
 Entry point: `careeros` (defined in `pyproject.toml` as `careeros = "careeros_cli.main:app"`)
 
 | Command | Arguments | Options | Purpose |
-|---|---|---|---|
+|---|---|---|---|---|
 | `version` | — | — | Print version |
 | `doctor` | — | — | Validate installation |
 | `schemas` | — | — | List schemas |
@@ -112,9 +119,11 @@ Entry point: `careeros` (defined in `pyproject.toml` as `careeros = "careeros_cl
 | `list` | `entity`, `directory` | — | List entity files |
 | `search` | `entity`, `field`, `value` | `--directory` | Search profiles |
 | `generate-markdown-cv` | `profile_file`, `artifact_id`, `output_file` | — | Generate Markdown CV |
+| `tailor` | `profile_file`, `artifact_id`, `output_format`, `output_file` | `--job-desc` | Generate tailored artifact |
 | `generate-artifact` | `profile_file`, `artifact_id`, `output_format`, `output_file` | — | Generate any artifact |
 | `optimize-cv` | `profile_file`, `artifact_id` | `--job-desc`, `--docx`, `--output` | Optimization |
 | `acquire-profile` | `source` | `--output` | Acquire from DOCX |
+| `analyze-profile` | `profile_file` | `--output`, `--pretty`, `--summary` | Run Reasoning Engine analysis |
 
 ## Extension Points
 
@@ -131,6 +140,19 @@ class MyRule(Rule):
 
 registry.register(MyRule())
 ```
+
+### ExportContract.reasoning (New)
+
+`ExportContract` has an optional `.reasoning` field of type `ReasoningFindings | None`:
+
+```python
+contract = ExportContractBuilder(...).build(profile, artifact_id, reasoning=findings)
+if contract.reasoning:
+    skills = contract.reasoning.core_competencies
+    stage = contract.reasoning.career_stage
+```
+
+Generators check this field when rendering. If `None`, they render identically to previous behavior.
 
 ### Generator Registry (Stable)
 
@@ -158,10 +180,10 @@ The `LLMExtractor` abstract class allows alternative LLM providers. Only `OpenAI
 |---|---|---|
 | Python core library exports | Stable | Backward-compatible since 0.1.0 |
 | CLI commands | Stable | All commands functional |
-| REST API endpoints | Stable | 14 endpoints, overlapping legacy paths |
+| REST API endpoints | Stable | 20 endpoints, overlapping legacy paths |
 | Rule API (`Rule` base class) | Stable | 14 concrete implementations |
 | Generator API (`ArtifactGenerator` protocol) | Stable | 3 concrete implementations |
 | `ReasoningReport` | New (0.1.0) | Added in PKR-006.5 |
 | Builder API (`BaseBuilder`) | Internal | Used only in acquisition |
 | `LLMExtractor` API | Internal | Abstract but only one implementation |
-| Frontend API | Unknown | No source code in repo |
+| Frontend API | Stable | React 19 SPA with TypeScript source under `frontend/src/` |

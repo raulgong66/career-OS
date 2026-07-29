@@ -1,4 +1,6 @@
-import type { Profile } from '../types';
+import type { ImportResponse, ProfileDetails, ProfileSummary } from '../types';
+
+const BASE = '';
 
 export class ProfileService {
   private static instance: ProfileService;
@@ -12,51 +14,53 @@ export class ProfileService {
     return ProfileService.instance;
   }
 
-  async uploadProfile(_file: File): Promise<Profile> {
-    // Mock implementation - in production this would call the backend API
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockProfile: Profile = {
-          id: 'mock-profile-1',
-          person: {
-            firstName: 'John',
-            lastName: 'Doe',
-          },
-          artifacts: [
-            {
-              id: 'cv-english-source',
-              type: 'cv',
-              name: 'Software Engineer CV',
-              sourceRefs: [],
-            },
-          ],
-        };
-        resolve(mockProfile);
-      }, 500);
+  async uploadProfile(file: File): Promise<ImportResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await fetch(`${BASE}/profiles/import`, {
+      method: 'POST',
+      body: formData,
     });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to import profile');
+    }
+
+    return response.json();
   }
 
-  async getProfile(profileId: string): Promise<Profile> {
-    // Mock implementation
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockProfile: Profile = {
-          id: profileId,
-          person: {
-            firstName: 'John',
-            lastName: 'Doe',
-          },
-          artifacts: [
-            {
-              id: 'cv-english-source',
-              type: 'cv',
-              name: 'Software Engineer CV',
-              sourceRefs: [],
-            },
-          ],
-        };
-        resolve(mockProfile);
-      }, 300);
+  async getProfile(profileId: string): Promise<ProfileDetails> {
+    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch profile');
+    }
+
+    return response.json();
+  }
+
+  async getProfiles(): Promise<ProfileSummary[]> {
+    const response = await fetch(`${BASE}/profiles`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch profiles');
+    }
+
+    return response.json();
+  }
+
+  async deleteProfile(profileId: string): Promise<void> {
+    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}`, {
+      method: 'DELETE',
     });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to delete profile');
+    }
   }
 }

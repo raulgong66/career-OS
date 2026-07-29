@@ -1,3 +1,5 @@
+const BASE = '';
+
 export class DocumentService {
   private static instance: DocumentService;
 
@@ -10,24 +12,40 @@ export class DocumentService {
     return DocumentService.instance;
   }
 
-  async downloadDocx(_artifactId: string): Promise<Blob> {
-    // Mock implementation - in production this would call the backend API
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockBlob = new Blob(['Mock DOCX content'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-        resolve(mockBlob);
-      }, 500);
+  async downloadDocx(profileId: string, artifactId: string): Promise<Blob> {
+    const response = await fetch(`${BASE}/generate/artifact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        profile_id: profileId,
+        artifact_id: artifactId,
+        output_format: 'docx',
+      }),
     });
+
+    if (!response.ok) {
+      throw new Error(`Failed to generate DOCX: ${response.status} ${response.statusText}`);
+    }
+
+    return response.blob();
   }
 
-  async downloadPdf(_artifactId: string): Promise<Blob> {
-    // Mock implementation - in production this would call the backend API
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        const mockBlob = new Blob(['Mock PDF content'], { type: 'application/pdf' });
-        resolve(mockBlob);
-      }, 500);
+  async downloadPdf(profileId: string, artifactId: string): Promise<Blob> {
+    const response = await fetch(`${BASE}/generate/artifact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        profile_id: profileId,
+        artifact_id: artifactId,
+        output_format: 'docx',
+      }),
     });
+
+    if (!response.ok) {
+      throw new Error(`Failed to generate PDF: ${response.status} ${response.statusText}`);
+    }
+
+    return response.blob();
   }
 
   downloadBlob(blob: Blob, filename: string): void {

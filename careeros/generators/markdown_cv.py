@@ -14,7 +14,12 @@ class MarkdownCVGenerator:
     supported_artifact_types = {"CV", "RESUME"}
 
     def generate(self, contract: ExportContract) -> str:
-        """Generate Markdown using only the provided export contract."""
+        """Generate Markdown using the provided export contract.
+
+        When reasoning findings are present on the contract, deterministic
+        insights (strongest skills, core competencies, career stage, etc.)
+        are included in the output.
+        """
         artifact_type = contract.artifact_type.upper()
         if artifact_type not in self.supported_artifact_types:
             raise ValidationError(f"Unsupported artifact type for Markdown CV: {contract.artifact_type}")
@@ -22,6 +27,7 @@ class MarkdownCVGenerator:
         lines: list[str] = []
         lines.extend(self._render_header(contract))
         lines.extend(self._render_target_context(contract))
+        lines.extend(self._render_reasoning(contract))
 
         grouped = self._group_sources(contract.sources)
         sections = [
@@ -41,6 +47,53 @@ class MarkdownCVGenerator:
 
         lines.append(f"_Derived from profile version: {contract.profile_version}_")
         return "\n".join(lines).strip() + "\n"
+
+    def _render_reasoning(self, contract: ExportContract) -> list[str]:
+        """Render reasoning-derived sections when findings are available."""
+        r = contract.reasoning
+        if r is None:
+            return []
+
+        lines: list[str] = []
+
+        if r.career_stage:
+            lines.append(f"**Career Stage:** {r.career_stage}")
+
+        if r.core_competencies:
+            items = ", ".join(r.core_competencies)
+            lines.append(f"**Core Competencies:** {items}")
+
+        if r.technology_breadth:
+            items = ", ".join(r.technology_breadth)
+            lines.append(f"**Technology Breadth:** {items}")
+
+        if r.strongest_skills:
+            items = ", ".join(r.strongest_skills)
+            lines.append(f"**Strongest Skills:** {items}")
+
+        if r.strongest_experience:
+            title = r.strongest_experience.get("title") or r.strongest_experience.get("role", "")
+            org = r.strongest_experience.get("organization") or r.strongest_experience.get("employer", "")
+            if title:
+                parts = [f"**Strongest Experience:** {title}"]
+                if org:
+                    parts.append(f"at {org}")
+                lines.append(" ".join(parts))
+
+        if r.career_highlights:
+            highlights = []
+            for h in r.career_highlights:
+                text = h.get("highlight") or h.get("title") or h.get("summary", "")
+                if text:
+                    highlights.append(str(text))
+            if highlights:
+                lines.append("**Career Highlights:** " + "; ".join(highlights))
+
+        if lines:
+            lines.insert(0, "")
+            lines.append("")
+
+        return lines
 
     def _render_header(self, contract: ExportContract) -> list[str]:
         """Render the CV heading from person and artifact data."""

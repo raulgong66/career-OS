@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { TailoringService } from '../services/TailoringService';
+import { DocumentService } from '../services/DocumentService';
 import type { Recommendation, OptimizationStatus, OptimizationSummary, ProfileInfo } from '../types';
 
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
@@ -412,6 +413,22 @@ export default function TailoringPage() {
                 <h2 className="text-base font-semibold text-gray-900 mb-3">{labels.resultHeading}</h2>
                 {artifact ? (
                   <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                    <div className="flex items-center justify-end gap-2 mb-4 pb-3 border-b border-gray-100">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const docService = DocumentService.getInstance();
+                            const blob = await docService.downloadDocx(selectedProfileId, selectedArtifactId);
+                            docService.downloadBlob(blob, `${selectedArtifactId}.docx`);
+                          } catch (err) {
+                            setErrorMessage(err instanceof Error ? err.message : 'Download failed');
+                          }
+                        }}
+                        className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                      >
+                        Download DOCX
+                      </button>
+                    </div>
                     <div className="prose prose-sm max-w-none">
                       {renderResume(artifact)}
                     </div>

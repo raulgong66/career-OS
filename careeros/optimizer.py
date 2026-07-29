@@ -477,6 +477,7 @@ class Recommendation:
             "type": self.type,
             "operation": self.operation,
             "display_name": self.display_name,
+            "displayName": self.display_name,
             "details": self.details,
             "evidence": self.evidence,
             "scores": self.scores,
@@ -737,6 +738,7 @@ class CVOptimizer:
 
         # 2. Target Context Match
         context_match = 0.0
+        element_text = self._collect_element_text(element)
         for emphasis in target_context_emphases:
             if emphasis.lower() in element_text:
                 context_match += 1.0

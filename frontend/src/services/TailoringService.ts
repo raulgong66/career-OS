@@ -10,7 +10,7 @@ interface GenerateArtifactResponse {
 
 export class TailoringService {
   private static instance: TailoringService;
-  private readonly API_BASE_URL = 'http://localhost:8000';
+  private readonly BASE = '';
 
   private constructor() {}
 
@@ -22,7 +22,7 @@ export class TailoringService {
   }
 
   async getProfiles(): Promise<ProfileInfo[]> {
-    const response = await fetch(`${this.API_BASE_URL}/profiles`);
+    const response = await fetch(`${this.BASE}/profiles`);
     if (!response.ok) {
       throw new Error(`Failed to load profiles: ${response.status}`);
     }
@@ -36,7 +36,7 @@ export class TailoringService {
     jobDescription: string
   ): Promise<GenerateArtifactResponse> {
     try {
-      const response = await fetch(`${this.API_BASE_URL}/generate/artifact`, {
+      const response = await fetch(`${this.BASE}/generate/artifact`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
