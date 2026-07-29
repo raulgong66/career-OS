@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import yaml
 from jsonschema import Draft202012Validator, ValidationError
@@ -39,7 +39,7 @@ def load_profile(profile_path: Path) -> Any:
         return yaml.safe_load(text)
 
 
-def format_path(path: list[str | int]) -> str:
+def format_path(path: list[Union[str, int]]) -> str:
     if not path:
         return "$"
     rendered = "$"

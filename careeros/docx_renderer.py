@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Union
 
 import docx
 from docx.oxml import OxmlElement
@@ -23,8 +23,8 @@ class CVDocumentRenderer:
 
     def apply_recommendations(
         self,
-        docx_path: str | Path,
-        output_path: str | Path,
+        docx_path: Union[str, Path],
+        output_path: Union[str, Path],
         recommendations: list[Recommendation],
     ) -> None:
         """Apply recommended additions to a DOCX document.

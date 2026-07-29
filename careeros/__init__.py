@@ -18,12 +18,13 @@ from .generators import (
     default_generator_registry,
 )
 from .profile_loader import ProfileLoader
-from .pipelines import generate_artifact, generate_markdown_cv
+from .pipelines import generate_artifact, generate_markdown_cv, generate_tailored_artifact
 from .repository import FileSystemRepository
 from .schema_loader import SchemaLoader
 from .validator import EntityValidator
-from .optimizer import CVOptimizer, Recommendation
+from .optimizer import CVOptimizer, OptimizationResult, OptimizationStatus, OptimizationSummary, Recommendation, RequirementConcept, CONCEPT_TAXONOMY
 from .docx_renderer import CVDocumentRenderer
+from .recommendation_applier import RecommendationApplier
 
 from .acquisition import (
     AcquisitionPipeline,
@@ -51,6 +52,7 @@ __all__ = [
     "DocxCVGenerator",
     "generate_artifact",
     "generate_markdown_cv",
+    "generate_tailored_artifact",
     "MarkdownCoverLetterGenerator",
     "MarkdownCVGenerator",
     "ProfileLoader",
@@ -60,8 +62,14 @@ __all__ = [
     "ValidationError",
     "ValidationResult",
     "CVOptimizer",
+    "OptimizationResult",
+    "OptimizationStatus",
+    "OptimizationSummary",
     "Recommendation",
+    "RequirementConcept",
+    "CONCEPT_TAXONOMY",
     "CVDocumentRenderer",
+    "RecommendationApplier",
     "AcquisitionPipeline",
     "CanonicalProfileBuilder",
     "DocumentReader",

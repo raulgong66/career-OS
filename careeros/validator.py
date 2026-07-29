@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import yaml
 from jsonschema import Draft202012Validator
@@ -58,7 +58,7 @@ class EntityValidator:
         return registry
 
     @staticmethod
-    def validate_file(file_path: str | Path, entity_name: str, schema_loader: SchemaLoader) -> ValidationResult:
+    def validate_file(file_path: Union[str, Path], entity_name: str, schema_loader: SchemaLoader) -> ValidationResult:
         """Load and validate an entity from a JSON or YAML file."""
         path = Path(file_path).expanduser().resolve()
         if not path.exists():
@@ -76,7 +76,7 @@ class EntityValidator:
         return validator.validate_entity(payload, entity_name)
 
     @staticmethod
-    def _format_path(path: list[str | int]) -> str:
+    def _format_path(path: list[Union[str, int]]) -> str:
         """Render an error path in a stable, human-readable format."""
         if not path:
             return "$"

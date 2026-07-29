@@ -26,7 +26,7 @@ _SOURCE_COLLECTIONS = {
 }
 
 
-@dataclass(slots=True)
+@dataclass
 class ExportSource:
     """A resolved canonical profile element selected for export."""
 
@@ -40,7 +40,7 @@ class ExportSource:
         return {"type": self.type, "id": self.id, "data": self.data, "ref": self.ref}
 
 
-@dataclass(slots=True)
+@dataclass
 class ExportContract:
     """Provider-agnostic input contract for generated career artifacts."""
 

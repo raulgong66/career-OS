@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import typer
 import yaml
@@ -17,9 +17,12 @@ from careeros import (
     CVOptimizer,
     EntityValidator,
     FileSystemRepository,
+    OptimizationStatus,
+    OptimizationSummary,
     SchemaLoader,
     generate_artifact as run_artifact_pipeline,
     generate_markdown_cv as run_markdown_cv_pipeline,
+    generate_tailored_artifact as run_tailored_artifact_pipeline,
 )
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
@@ -180,7 +183,7 @@ def search_entities(
     entity: str = typer.Argument(..., help="Entity type name."),
     field: str = typer.Argument(..., help="Field to match."),
     value: str = typer.Argument(..., help="Value to search for."),
-    directory: Path | None = typer.Option(None, "--directory", help="Directory to search. Defaults to the current working directory."),
+    directory: Optional[Path] = typer.Option(None, "--directory", help="Directory to search. Defaults to the current working directory."),
 ) -> None:
     """Search entity files for a matching field value."""
     search_directory = (directory or Path.cwd()).expanduser().resolve()
@@ -240,6 +243,45 @@ def generate_artifact(
     console.print(f"[bold green]Generated[/bold green] {output_path}")
 
 
+@app.command("tailor")
+def tailor_artifact(
+    profile_file: Path = typer.Argument(..., help="Path to the JSON or YAML profile file."),
+    artifact_id: str = typer.Argument(..., help="ID of the CV artifact to tailor."),
+    output_format: str = typer.Argument(..., help="Output format for the tailored artifact."),
+    output_file: Path = typer.Argument(..., help="Path where the tailored artifact should be written."),
+    job_desc: str = typer.Option(None, "--job-desc", help="Job description text or path to a file containing it."),
+) -> None:
+    """Generate a tailored CV by applying evidence-based ADD recommendations from job description analysis."""
+    schema_loader = SchemaLoader(Path(__file__).resolve().parents[1] / "schemas")
+
+    # Resolve job description if it's a file
+    job_desc_text = None
+    if job_desc:
+        desc_path = Path(job_desc).expanduser().resolve()
+        if desc_path.exists() and desc_path.is_file():
+            try:
+                job_desc_text = desc_path.read_text(encoding="utf-8")
+            except Exception as exc:
+                console.print(f"[bold red]Failed to read job description file: {exc}[/bold red]")
+                raise typer.Exit(code=1)
+        else:
+            job_desc_text = job_desc
+
+    try:
+        output = run_tailored_artifact_pipeline(profile_file, artifact_id, output_format, job_desc_text, schema_loader)
+        output_path = output_file.expanduser().resolve()
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(output, bytes):
+            output_path.write_bytes(output)
+        else:
+            output_path.write_text(output, encoding="utf-8")
+    except (ValidationError, EntityNotFoundError, OSError) as exc:
+        console.print(f"[bold red]{exc}[/bold red]")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[bold green]Generated tailored artifact[/bold green] {output_path}")
+
+
 @app.command("optimize-cv")
 def optimize_cv(
     profile_file: Path = typer.Argument(..., help="Path to the JSON or YAML profile file."),
@@ -270,7 +312,7 @@ def optimize_cv(
 
     try:
         optimizer = CVOptimizer(profile_data)
-        recommendations = optimizer.optimize_cv(artifact_id, job_desc_text)
+        result = optimizer.optimize_cv(artifact_id, job_desc_text)
     except EntityNotFoundError as exc:
         console.print(f"[bold red]{exc}[/bold red]")
         raise typer.Exit(code=1)
@@ -278,8 +320,23 @@ def optimize_cv(
         console.print(f"[bold red]Optimization error: {exc}[/bold red]")
         raise typer.Exit(code=1)
 
+    if result.status == OptimizationStatus.ALREADY_COMPLETE:
+        console.print("[bold green]Your CV is already fully optimized for this opportunity.[/bold green]")
+        console.print(f"[dim]{result.message}[/dim]")
+        if result.summary:
+            _print_summary(result.summary)
+        return
+
+    if result.status == OptimizationStatus.NO_MATCHES:
+        console.print("[bold yellow]No additions recommended.[/bold yellow]")
+        console.print(f"[dim]{result.message}[/dim]")
+        if result.summary:
+            _print_summary(result.summary)
+        return
+
+    recommendations = result.recommendations
     if not recommendations:
-        console.print("[bold yellow]No additions recommended. Your CV is already fully optimized or there is no evidence-backed data to add.[/bold yellow]")
+        console.print("[bold yellow]Optimization completed with no actionable recommendations.[/bold yellow]")
         return
 
     table = Table(title=f"Recommended Additions for CV '{artifact_id}'")
@@ -309,6 +366,9 @@ def optimize_cv(
         )
 
     console.print(table)
+
+    if result.summary:
+        _print_summary(result.summary)
 
     if docx or output:
         if not (docx and output):
@@ -344,6 +404,38 @@ def acquire_profile(
 
     console.print(f"[bold green]Profile acquired[/bold green] {output_path}")
     console.print("[green]To validate:[/green] careeros validate profile " + str(output_path))
+
+
+def _print_summary(summary: Any) -> None:
+    """Display the optimization summary in the terminal."""
+    from careeros import OptimizationSummary
+
+    console.print()
+    console.print("[bold]Optimization Summary[/bold]")
+    console.print()
+
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Metric", style="dim")
+    table.add_column("Value", style="bold")
+
+    table.add_row("Profile Coverage", f"{summary.profile_coverage:.0f}%")
+    table.add_row("Profile Elements", f"{summary.included_profile_elements} / {summary.total_profile_elements}")
+    table.add_row("Additional Evidence", str(summary.additional_evidence))
+    table.add_row("", "")
+    table.add_row("Skills Evaluated", str(summary.skills_evaluated))
+    table.add_row("Experiences Evaluated", str(summary.experiences_evaluated))
+    table.add_row("Projects Evaluated", str(summary.projects_evaluated))
+    table.add_row("Achievements Evaluated", str(summary.achievements_evaluated))
+    table.add_row("Certifications Evaluated", str(summary.certifications_evaluated))
+    table.add_row("Education Evaluated", str(summary.education_evaluated))
+
+    if summary.requirements_detected is not None:
+        table.add_row("", "")
+        table.add_row("Requirements Detected", str(summary.requirements_detected))
+        table.add_row("Requirements Matched", str(summary.requirements_matched))
+        table.add_row("Requirement Coverage", f"{summary.requirement_coverage:.0f}%")
+
+    console.print(table)
 
 
 def _load_payload(file_path: Path) -> dict[str, Any]:
