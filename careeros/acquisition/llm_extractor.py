@@ -10,6 +10,10 @@ from careeros.exceptions import CareerOSException
 from .person_data import EducationData, ExperienceData, ExtractionResult, PersonData, SkillData
 
 
+class LLMConfigurationError(CareerOSException):
+    pass
+
+
 class LLMExtractionError(CareerOSException):
     pass
 
@@ -211,7 +215,7 @@ class OpenAILLMExtractor(LLMExtractor):
     ) -> None:
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self.api_key:
-            raise LLMExtractionError(
+            raise LLMConfigurationError(
                 "OpenAI API key is required. Set the OPENAI_API_KEY environment variable "
                 "or pass api_key to OpenAILLMExtractor."
             )
@@ -251,3 +255,55 @@ class OpenAILLMExtractor(LLMExtractor):
         content = choices[0].get("message", {}).get("content", "")
         data = self.parse_response(content)
         return self.to_result(data)
+
+
+class OllamaLLMExtractor(LLMExtractor):
+    def __init__(
+        self,
+        host: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        self.host = (host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")).rstrip("/")
+        self.model = model or os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+
+    def extract(
+        self, text: str, schema: dict[str, Any] | None = None
+    ) -> ExtractionResult:
+        import httpx
+
+        prompt = self.build_prompt(text, schema)
+        body = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.1},
+        }
+        try:
+            with httpx.Client(timeout=300) as client:
+                response = client.post(
+                    f"{self.host}/api/generate",
+                    json=body,
+                )
+                response.raise_for_status()
+                result = response.json()
+        except Exception as exc:
+            raise LLMExtractionError(f"Ollama API call failed: {exc}") from exc
+
+        content = result.get("response", "")
+        if not content:
+            raise LLMExtractionError("Ollama returned empty response")
+
+        data = self.parse_response(content)
+        return self.to_result(data)
+
+
+def create_llm_extractor() -> LLMExtractor:
+    provider = os.environ.get("LLM_PROVIDER", "openai").strip().lower()
+    if provider == "openai":
+        return OpenAILLMExtractor()
+    elif provider == "ollama":
+        return OllamaLLMExtractor()
+    else:
+        raise LLMConfigurationError(
+            f"Unknown LLM_PROVIDER: {provider}. Expected 'openai' or 'ollama'."
+        )

@@ -19,6 +19,7 @@ import yaml
 from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, generate_artifact, generate_markdown_cv
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
+from careeros.profile_repository import ProfileRepository, ProfileState
 
 from .dto import to_import_response, to_profile_details, to_profile_summary
 
@@ -43,6 +44,7 @@ app.add_middleware(
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = REPO_ROOT / "schemas"
 PROFILES_ROOT = REPO_ROOT / "profiles"
+PROFILE_REPOSITORY = ProfileRepository(PROFILES_ROOT)
 SCHEMA_LOADER = SchemaLoader(SCHEMA_ROOT)
 VALIDATOR = EntityValidator(SCHEMA_LOADER)
 REPOSITORY = FileSystemRepository(REPO_ROOT / "data", SCHEMA_LOADER)
@@ -130,6 +132,7 @@ class ProfileInfo(BaseModel):
     artifactIds: list[str] = Field(description="IDs of artifacts defined in the profile.")
     headline: str = Field(default="", description="Professional headline.")
     importedAt: str = Field(default="", description="ISO 8601 import timestamp.")
+    state: str = Field(default="canonical", description="Current profile state (staging, canonical, archived).")
 
 
 class ImportResponse(BaseModel):
@@ -154,16 +157,7 @@ class ApiErrorResponse(BaseModel):
     processingErrors: list[str] | None = Field(default=None, description="Optional list of processing errors.")
 
 
-def resolve_profile_path(profile_id: str) -> Path:
-    """Resolve a profile_id to its filesystem path under the profiles directory."""
-    profile_path = PROFILES_ROOT / f"{profile_id}.yaml"
-    if not profile_path.exists():
-        profile_path = PROFILES_ROOT / f"{profile_id}.yml"
-    if not profile_path.exists():
-        profile_path = PROFILES_ROOT / f"{profile_id}.json"
-    if not profile_path.exists():
-        raise EntityNotFoundError(f"Profile not found: {profile_id}")
-    return profile_path
+
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -194,24 +188,11 @@ def list_profiles() -> list[ProfileInfo]:
     if not PROFILES_ROOT.exists():
         return profiles
 
-    for path in sorted(PROFILES_ROOT.glob("*")):
-        if path.suffix not in {".yaml", ".yml", ".json"} or not path.is_file():
-            continue
-        profile_id = path.stem
-        try:
-            with path.open("r", encoding="utf-8") as handle:
-                if path.suffix == ".json":
-                    import json as _json
-                    data = _json.load(handle)
-                else:
-                    data = yaml.safe_load(handle)
-        except Exception:
+    for record in PROFILE_REPOSITORY.list():
+        if not isinstance(record.data, dict):
             continue
 
-        if not isinstance(data, dict):
-            continue
-
-        summary = to_profile_summary(data, profile_id)
+        summary = to_profile_summary(record.data, record.profile_id, state=record.state)
 
         profiles.append(ProfileInfo(
             id=summary["id"],
@@ -220,6 +201,7 @@ def list_profiles() -> list[ProfileInfo]:
             artifactIds=summary["artifactIds"],
             headline=summary["headline"],
             importedAt=summary["importedAt"],
+            state=summary["state"],
         ))
 
     return profiles
@@ -295,7 +277,7 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
 
     return ImportResponse(
         profileId=profile_id,
-        profile=ProfileInfo(**to_profile_summary(data, profile_id)),
+        profile=ProfileInfo(**to_profile_summary(data, profile_id, state=ProfileState.STAGING)),
     )
 
 
@@ -303,21 +285,14 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
 def get_profile(profile_id: str) -> dict[str, Any]:
     """Return the full profile detail DTO for a given profile."""
     try:
-        profile_path = resolve_profile_path(profile_id)
+        record = PROFILE_REPOSITORY.get(profile_id)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=ApiErrorResponse(
             error="NOT_FOUND",
             detail=str(exc),
         ).model_dump())
 
-    try:
-        with profile_path.open("r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=ApiErrorResponse(
-            error="INTERNAL_ERROR",
-            detail=f"Failed to read profile: {exc}",
-        ).model_dump())
+    data = record.data
 
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail=ApiErrorResponse(
@@ -325,22 +300,19 @@ def get_profile(profile_id: str) -> dict[str, Any]:
             detail="Profile data is malformed.",
         ).model_dump())
 
-    return to_profile_details(data, profile_id)
+    return to_profile_details(data, profile_id, state=record.state)
 
 
 @app.delete("/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_profile(profile_id: str) -> None:
     """Delete a profile and its associated data from the filesystem."""
     try:
-        profile_path = resolve_profile_path(profile_id)
+        PROFILE_REPOSITORY.delete(profile_id)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=ApiErrorResponse(
             error="NOT_FOUND",
             detail=str(exc),
         ).model_dump())
-
-    try:
-        profile_path.unlink()
     except OSError as exc:
         raise HTTPException(status_code=500, detail=ApiErrorResponse(
             error="INTERNAL_ERROR",
@@ -356,21 +328,14 @@ def analyze_profile(request: AnalyzeRequest) -> dict[str, Any]:
     a summary, and execution statistics — all without generating any artifacts.
     """
     try:
-        profile_path = resolve_profile_path(request.profileId)
+        record = PROFILE_REPOSITORY.get(request.profileId)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=ApiErrorResponse(
             error="NOT_FOUND",
             detail=str(exc),
         ).model_dump())
 
-    try:
-        with profile_path.open("r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=ApiErrorResponse(
-            error="INTERNAL_ERROR",
-            detail=f"Failed to read profile: {exc}",
-        ).model_dump())
+    data = record.data
 
     if not isinstance(data, dict):
         raise HTTPException(status_code=500, detail=ApiErrorResponse(
@@ -461,7 +426,10 @@ def search_entities(entity: str, request: SearchRequest) -> list[EntityResponse]
 def generate_markdown_cv_endpoint(request: MarkdownCVRequest) -> PlainTextResponse:
     """Generate a Markdown CV from a profile file and artifact id."""
     try:
-        profile_path = request.profile_path or resolve_profile_path(request.profile_id)
+        if request.profile_path:
+            profile_path = request.profile_path
+        else:
+            profile_path = PROFILE_REPOSITORY.get(request.profile_id).path
         markdown = generate_markdown_cv(profile_path, request.artifact_id, SCHEMA_LOADER)
     except EntityNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -481,7 +449,10 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
     Returns optimization status and recommendations in custom headers when tailoring.
     """
     try:
-        profile_path = request.profile_path or resolve_profile_path(request.profile_id)
+        if request.profile_path:
+            profile_path = request.profile_path
+        else:
+            profile_path = PROFILE_REPOSITORY.get(request.profile_id).path
         result = generate_artifact(
             profile_path, 
             request.artifact_id, 

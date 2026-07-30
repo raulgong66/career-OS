@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from careeros.profile_repository import ProfileState
+
 
 def _get_name(data: dict[str, Any]) -> str:
     """Extract the professional name from a canonical profile."""
@@ -42,7 +44,7 @@ def profile_id_from_name(full_name: str) -> str:
     return name_id if name_id else "untitled-profile"
 
 
-def to_profile_summary(data: dict[str, Any], profile_id: str) -> dict[str, Any]:
+def to_profile_summary(data: dict[str, Any], profile_id: str, state: ProfileState | None = None) -> dict[str, Any]:
     """Map a canonical profile dict to a ProfileSummary DTO."""
     name = _get_name(data)
     person = data.get("person", {})
@@ -52,7 +54,7 @@ def to_profile_summary(data: dict[str, Any], profile_id: str) -> dict[str, Any]:
     extensions = data.get("extensions", {})
     imported_at = extensions.get("importedAt", "")
 
-    return {
+    result: dict[str, Any] = {
         "id": profile_id,
         "name": name,
         "headline": positioning.get("headline", ""),
@@ -60,9 +62,12 @@ def to_profile_summary(data: dict[str, Any], profile_id: str) -> dict[str, Any]:
         "artifactIds": artifact_ids,
         "importedAt": imported_at,
     }
+    if state is not None:
+        result["state"] = state.value
+    return result
 
 
-def to_profile_details(data: dict[str, Any], profile_id: str) -> dict[str, Any]:
+def to_profile_details(data: dict[str, Any], profile_id: str, state: ProfileState | None = None) -> dict[str, Any]:
     """Map a canonical profile dict to a ProfileDetails DTO."""
     name = _get_name(data)
     first_name, last_name = _split_name(name)
@@ -83,7 +88,7 @@ def to_profile_details(data: dict[str, Any], profile_id: str) -> dict[str, Any]:
             "sourceCount": len(art.get("sourceRefs", [])),
         })
 
-    return {
+    result: dict[str, Any] = {
         "id": profile_id,
         "person": {
             "firstName": first_name,
@@ -97,11 +102,14 @@ def to_profile_details(data: dict[str, Any], profile_id: str) -> dict[str, Any]:
         "summary": summaries[0].get("text") if summaries else None,
         "importedAt": imported_at,
     }
+    if state is not None:
+        result["state"] = state.value
+    return result
 
 
-def to_import_response(data: dict[str, Any], profile_id: str) -> dict[str, Any]:
+def to_import_response(data: dict[str, Any], profile_id: str, state: ProfileState | None = None) -> dict[str, Any]:
     """Map a canonical profile dict to an ImportResponse DTO."""
-    profile = to_profile_summary(data, profile_id)
+    profile = to_profile_summary(data, profile_id, state=state)
     return {
         "profileId": profile_id,
         "profile": profile,

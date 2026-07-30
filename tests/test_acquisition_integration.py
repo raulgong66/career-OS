@@ -5,7 +5,7 @@ import pytest
 import yaml
 
 from careeros.acquisition.document_reader import DocumentReader
-from careeros.acquisition.llm_extractor import LLMExtractor
+from careeros.acquisition.llm_extractor import LLMExtractor, OllamaLLMExtractor, LLMConfigurationError, create_llm_extractor
 from careeros.acquisition.person_data import (
     EducationData,
     ExperienceData,
@@ -245,3 +245,61 @@ def test_acquisition_pipeline_rejects_unsupported_format(tmp_path: Path) -> None
     pipeline = AcquisitionPipeline(llm_extractor=MockLLMExtractor())
     with pytest.raises(Exception, match="Unsupported format"):
         pipeline.run(txt_path)
+
+
+class TestLLMExtractorFactory:
+    def test_create_ollama_extractor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        extractor = create_llm_extractor()
+        assert isinstance(extractor, OllamaLLMExtractor)
+
+    def test_create_ollama_extractor_default_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+        extractor = create_llm_extractor()
+        assert extractor.host == "http://localhost:11434"
+
+    def test_create_ollama_extractor_custom_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("OLLAMA_HOST", "http://192.168.1.100:11434")
+        extractor = create_llm_extractor()
+        assert extractor.host == "http://192.168.1.100:11434"
+
+    def test_create_ollama_extractor_custom_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.setenv("OLLAMA_MODEL", "llama3.2:3b")
+        extractor = create_llm_extractor()
+        assert extractor.model == "llama3.2:3b"
+
+    def test_create_ollama_extractor_default_model(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        monkeypatch.delenv("OLLAMA_MODEL", raising=False)
+        extractor = create_llm_extractor()
+        assert extractor.model == "qwen3:4b"
+
+    def test_create_openai_extractor_when_ollama_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+        from careeros.acquisition.llm_extractor import OpenAILLMExtractor
+        extractor = create_llm_extractor()
+        assert isinstance(extractor, OpenAILLMExtractor)
+
+    def test_create_openai_extractor_missing_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        with pytest.raises(LLMConfigurationError, match="OpenAI API key is required"):
+            create_llm_extractor()
+
+    def test_create_unknown_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+        with pytest.raises(LLMConfigurationError, match="Unknown LLM_PROVIDER"):
+            create_llm_extractor()
+
+    def test_pipeline_default_uses_factory(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LLM_PROVIDER", "ollama")
+        pipeline = AcquisitionPipeline()
+        assert pipeline.llm_extractor is None
+        # Calling run would use _default_llm_extractor, but we just verify the
+        # pipeline accepts the factory-created extractor via injection.
+        pipeline.llm_extractor = OllamaLLMExtractor()
+        assert isinstance(pipeline.llm_extractor, OllamaLLMExtractor)

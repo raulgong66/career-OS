@@ -2,7 +2,7 @@ from .builders import BaseBuilder, BuilderRegistry, EducationBuilder, Experience
 from .person_data import EducationData, ExperienceData, ExtractionResult, PersonData, SkillData
 from .document_reader import DocumentReader, DocumentReadError
 from .text_extractor import TextExtractor
-from .llm_extractor import LLMExtractor, OpenAILLMExtractor, LLMExtractionError
+from .llm_extractor import LLMExtractor, OpenAILLMExtractor, OllamaLLMExtractor, LLMExtractionError, LLMConfigurationError, create_llm_extractor
 from .profile_builder import CanonicalProfileBuilder
 from .utils import normalize_company, normalize_date
 from .yaml_writer import YamlWriter
@@ -26,7 +26,10 @@ __all__ = [
     "TextExtractor",
     "LLMExtractor",
     "OpenAILLMExtractor",
+    "OllamaLLMExtractor",
     "LLMExtractionError",
+    "LLMConfigurationError",
+    "create_llm_extractor",
     "CanonicalProfileBuilder",
     "YamlWriter",
     "AcquisitionPipeline",

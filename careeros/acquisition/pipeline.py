@@ -9,7 +9,7 @@ from careeros.schema_loader import SchemaLoader
 from careeros.validator import EntityValidator
 
 from .document_reader import DocumentReader
-from .llm_extractor import LLMExtractor, OpenAILLMExtractor
+from .llm_extractor import LLMExtractor, create_llm_extractor
 from .person_data import ExtractionResult
 from .profile_builder import CanonicalProfileBuilder
 from .text_extractor import TextExtractor
@@ -113,4 +113,4 @@ class AcquisitionPipeline:
 
     @staticmethod
     def _default_llm_extractor() -> LLMExtractor:
-        return OpenAILLMExtractor()
+        return create_llm_extractor()

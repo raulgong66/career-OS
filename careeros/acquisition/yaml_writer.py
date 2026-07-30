@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 
 from careeros.exceptions import CareerOSException
+from careeros.profile_repository import ProfileState, STATE_DIR_MAP
 
 
 class YamlWriteError(CareerOSException):
@@ -17,7 +18,7 @@ class YamlWriter:
     # before Human Review approval. Only reviewed and approved profiles
     # should be moved to the canonical profiles/ directory.
     # This prevents unverified data from entering the delivery pipeline.
-    DEFAULT_OUTPUT_DIR = Path("profiles/staging")
+    DEFAULT_OUTPUT_DIR = Path("profiles") / STATE_DIR_MAP[ProfileState.STAGING]
 
     def write(
         self,
