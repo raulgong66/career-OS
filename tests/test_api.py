@@ -859,6 +859,22 @@ def test_analyze_profile_returns_reasoning_report(analyze_profile: str) -> None:
     assert "execution_stats" in body
 
 
+def test_analyze_profile_exposes_recommendations(analyze_profile: str) -> None:
+    """POST /analyze returns deterministic profile recommendations."""
+    response = client.post("/analyze", json={"profileId": analyze_profile})
+    assert response.status_code == 200
+    body = response.json()
+    assert "recommendations" in body
+    assert isinstance(body["recommendations"], list)
+    assert len(body["recommendations"]) >= 1
+    for rec in body["recommendations"]:
+        assert rec["id"]
+        assert rec["title"]
+        assert rec["reason"]
+        assert rec["confidence"] in ("high", "medium", "low")
+        assert "future_evidence" in rec
+
+
 def test_analyze_profile_not_found() -> None:
     """POST /analyze returns 404 for non-existent profile."""
     response = client.post("/analyze", json={"profileId": "non-existent-profile"})

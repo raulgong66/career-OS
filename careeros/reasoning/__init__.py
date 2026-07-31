@@ -1,7 +1,16 @@
 from .assembler import EvidencePackageAssembler
 from .engine import ReasoningEngine
-from .findings import ReasoningFindings
-from .models import AnalysisModel, Evidence, EvidencePackage, EvidenceSet, ReasoningReport, ReasoningResult, RuleContext
+from .findings import ProfileRecommendations, ReasoningFindings
+from .models import (
+    AnalysisModel,
+    Evidence,
+    EvidencePackage,
+    EvidenceSet,
+    ProfileRecommendation,
+    ReasoningReport,
+    ReasoningResult,
+    RuleContext,
+)
 from .registry import CircularDependencyError, DuplicateRuleError, MissingDependencyError, RegistryError, RuleRegistry
 from .rule import Rule
 
@@ -12,20 +21,28 @@ def create_default_registry() -> RuleRegistry:
         CareerHighlightsRule,
         CareerProgressionRule,
         CareerStageRule,
+        CertificationUnreferencedRule,
         CloudExperienceRule,
         CoreCompetenciesRule,
         CurrentEmployerRule,
         CurrentRoleRule,
         DomainExperienceRule,
+        DuplicateSkillsRule,
         EmergingSkillsRule,
         EmploymentGapRule,
+        ExperienceNoTechnologiesRule,
+        GenericSummaryRule,
         LeadershipExperienceRule,
         LongestTenureRule,
+        MissingBusinessOutcomeRule,
+        NoMeasurableAchievementRule,
+        ProjectWithoutSkillsRule,
         RareSkillsRule,
         SeniorResponsibilityRule,
         SkillCategoryBalanceRule,
         SkillEvidenceStrengthRule,
         SkillProgressionRule,
+        SkillWithoutExperienceRule,
         SpecializedSkillsRule,
         StrongestExperienceRule,
         StrongestSkillsRule,
@@ -59,6 +76,14 @@ def create_default_registry() -> RuleRegistry:
         SpecializedSkillsRule,
         TransferableSkillsRule,
         SkillProgressionRule,
+        NoMeasurableAchievementRule,
+        SkillWithoutExperienceRule,
+        ExperienceNoTechnologiesRule,
+        GenericSummaryRule,
+        DuplicateSkillsRule,
+        MissingBusinessOutcomeRule,
+        CertificationUnreferencedRule,
+        ProjectWithoutSkillsRule,
     ]:
         registry.register(rule_cls())
     return registry
@@ -76,6 +101,8 @@ __all__ = [
     "ReasoningEngine",
     "EvidencePackageAssembler",
     "ReasoningFindings",
+    "ProfileRecommendation",
+    "ProfileRecommendations",
     "ReasoningReport",
     "create_default_registry",
     "RegistryError",

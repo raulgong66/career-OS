@@ -1,4 +1,4 @@
-import type { ImportResponse, ProfileDetails, ProfileSummary } from '../types';
+import type { AnalyzeResponse, ImportResponse, ProfileDetails, ProfileSummary } from '../types';
 
 const BASE = '';
 
@@ -62,6 +62,21 @@ export class ProfileService {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to delete profile');
     }
+  }
+
+  async analyzeProfile(profileId: string): Promise<AnalyzeResponse> {
+    const response = await fetch(`${BASE}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to analyze profile');
+    }
+
+    return response.json();
   }
 
   async createArtifact(profileId: string, template: string, title?: string): Promise<{ artifactId: string }> {

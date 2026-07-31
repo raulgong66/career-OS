@@ -27,6 +27,34 @@ class Evidence:
 
 
 @dataclass(frozen=True)
+class ProfileRecommendation:
+    """A deterministic, evidence-backed profile recommendation.
+
+    Confidence is qualitative by design (ADR-003): ``"high"``, ``"medium"``,
+    or ``"low"`` — no numeric scores are exposed to the frontend.
+    """
+
+    id: str
+    title: str
+    reason: str
+    element_id: str | None
+    element_type: str | None
+    confidence: str
+    future_evidence: dict[str, Any] = field(default_factory=dict, hash=False, compare=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "title": self.title,
+            "reason": self.reason,
+            "element_id": self.element_id,
+            "element_type": self.element_type,
+            "confidence": self.confidence,
+            "future_evidence": dict(self.future_evidence),
+        }
+
+
+@dataclass(frozen=True)
 class EvidenceSet:
     theme: str
     evidence: tuple[Evidence, ...] = ()
@@ -86,6 +114,7 @@ class ReasoningReport:
     profile_id: str = "unknown"
     findings: tuple[ReasoningResult, ...] = ()
     findings_by_type: dict[str, tuple[ReasoningResult, ...]] = field(default_factory=dict)
+    recommendations: tuple[ProfileRecommendation, ...] = ()
     summary: dict[str, Any] = field(default_factory=dict)
     execution_stats: dict[str, Any] = field(default_factory=dict)
 
@@ -99,6 +128,7 @@ class ReasoningReport:
                 k: [_finding_to_dict(f) for f in v]
                 for k, v in self.findings_by_type.items()
             },
+            "recommendations": [r.to_dict() for r in self.recommendations],
             "summary": dict(self.summary),
             "execution_stats": dict(self.execution_stats),
         }

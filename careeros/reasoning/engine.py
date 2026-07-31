@@ -6,6 +6,7 @@ from typing import Any
 from careeros.knowledge import KnowledgeGraph, KnowledgeGraphBuilder
 
 from .models import AnalysisModel, Evidence, ReasoningReport, ReasoningResult, RuleContext
+from .findings import ProfileRecommendations
 from .registry import RuleRegistry
 
 
@@ -52,6 +53,9 @@ class ReasoningEngine:
             profile_id=analysis.profile_id,
             findings=analysis.reasoning_results,
             findings_by_type={k: tuple(v) for k, v in findings_by_type.items()},
+            recommendations=ProfileRecommendations.from_findings(
+                analysis.reasoning_results
+            ).items,
             summary=summary,
             execution_stats=dict(analysis.execution_stats),
         )

@@ -122,6 +122,29 @@ export interface Recommendation {
 
 export type OptimizationStatus = 'already_complete' | 'no_matches' | 'recommendations_available';
 
+export type RecommendationConfidence = 'high' | 'medium' | 'low';
+
+export interface ProfileRecommendation {
+  id: string;
+  title: string;
+  reason: string;
+  element_id: string | null;
+  element_type: 'profile' | 'experience' | 'skill' | 'achievement' | 'project' | 'certification' | null;
+  confidence: RecommendationConfidence;
+  future_evidence: Record<string, unknown>;
+}
+
+export interface AnalyzeResponse {
+  engine_version: string;
+  generated_at: string;
+  profile_id: string;
+  findings: Array<Record<string, unknown>>;
+  findings_by_type: Record<string, Array<Record<string, unknown>>>;
+  recommendations: ProfileRecommendation[];
+  summary: Record<string, unknown>;
+  execution_stats: Record<string, unknown>;
+}
+
 export interface OptimizationSummary {
   total_profile_elements: number;
   included_profile_elements: number;

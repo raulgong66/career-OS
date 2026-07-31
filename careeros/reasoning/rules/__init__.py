@@ -7,6 +7,16 @@ from .experience_rules import (
     StrongestExperienceRule,
     TechnologyBreadthRule,
 )
+from .recommendation_rules import (
+    CertificationUnreferencedRule,
+    DuplicateSkillsRule,
+    ExperienceNoTechnologiesRule,
+    GenericSummaryRule,
+    MissingBusinessOutcomeRule,
+    NoMeasurableAchievementRule,
+    ProjectWithoutSkillsRule,
+    SkillWithoutExperienceRule,
+)
 from .skill_rules import (
     CoreCompetenciesRule,
     EmergingSkillsRule,
@@ -52,4 +62,12 @@ __all__ = [
     "SpecializedSkillsRule",
     "TransferableSkillsRule",
     "SkillProgressionRule",
+    "NoMeasurableAchievementRule",
+    "SkillWithoutExperienceRule",
+    "ExperienceNoTechnologiesRule",
+    "GenericSummaryRule",
+    "DuplicateSkillsRule",
+    "MissingBusinessOutcomeRule",
+    "CertificationUnreferencedRule",
+    "ProjectWithoutSkillsRule",
 ]

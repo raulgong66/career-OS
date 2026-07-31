@@ -2,7 +2,15 @@ import { useState, useEffect } from 'react';
 import { TailoringService } from '../services/TailoringService';
 import { DocumentService } from '../services/DocumentService';
 import { ProfileService } from '../services/ProfileService';
-import type { Recommendation, OptimizationStatus, OptimizationSummary, ProfileInfo, ProfileDetails } from '../types';
+import type {
+  Recommendation,
+  OptimizationStatus,
+  OptimizationSummary,
+  ProfileInfo,
+  ProfileDetails,
+  ProfileRecommendation,
+  RecommendationConfidence,
+} from '../types';
 
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 
@@ -11,6 +19,12 @@ interface ArtifactLabels {
   emptyState: string;
   completeMessage: string;
 }
+
+const CONFIDENCE_STYLES: Record<RecommendationConfidence, string> = {
+  high: 'bg-green-100 text-green-800',
+  medium: 'bg-amber-100 text-amber-800',
+  low: 'bg-gray-100 text-gray-700',
+};
 
 const ARTIFACT_LABELS: Record<string, ArtifactLabels> = {
   CV: {
@@ -55,8 +69,25 @@ export default function TailoringPage() {
   const [optimizationSummary, setOptimizationSummary] = useState<OptimizationSummary | null>(null);
   const [currentArtifactId, setCurrentArtifactId] = useState('');
   const [currentArtifactType, setCurrentArtifactType] = useState('');
+  const [profileRecommendations, setProfileRecommendations] = useState<ProfileRecommendation[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [loadingProfiles, setLoadingProfiles] = useState(true);
   const labels = getArtifactLabels(currentArtifactType);
+
+  const loadProfileRecommendations = (profileId: string) => {
+    setProfileRecommendations([]);
+    setRecommendationsLoading(true);
+    ProfileService.getInstance().analyzeProfile(profileId)
+      .then((result) => {
+        setProfileRecommendations(result.recommendations ?? []);
+      })
+      .catch(() => {
+        setProfileRecommendations([]);
+      })
+      .finally(() => {
+        setRecommendationsLoading(false);
+      });
+  };
 
   useEffect(() => {
     setLoadingProfiles(true);
@@ -65,6 +96,7 @@ export default function TailoringPage() {
       setProfiles(profiles);
       if (profiles.length > 0) {
         setSelectedProfileId(profiles[0].id);
+        loadProfileRecommendations(profiles[0].id);
         ProfileService.getInstance().getProfile(profiles[0].id).then((details) => {
           setSelectedProfile(details);
         }).catch(() => {}).finally(() => setLoadingProfiles(false));
@@ -80,6 +112,7 @@ export default function TailoringPage() {
   const handleProfileChange = (profileId: string) => {
     setSelectedProfileId(profileId);
     setSelectedProfile(null);
+    loadProfileRecommendations(profileId);
     ProfileService.getInstance().getProfile(profileId).then((details) => {
       setSelectedProfile(details);
       setErrorMessage('');
@@ -632,39 +665,66 @@ export default function TailoringPage() {
                 )}
               </div>
 
-              {/* ── AI Recommendations ── */}
+              {/* ── Recommendations ── */}
               <div>
                 <h2 className="text-base font-semibold text-gray-900 mb-3">
-                  AI Recommendations {recommendations.length > 0 && `(${recommendations.length})`}
+                  Recommendations{' '}
+                  {(profileRecommendations.length > 0 || recommendations.length > 0) && `(${profileRecommendations.length + recommendations.length})`}
                 </h2>
-                {recommendations.length > 0 ? (
-                  <div className="space-y-3">
-                    {recommendations.map((rec) => (
-                      <div key={rec.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                        <div className="flex items-start justify-between">
-                          <h3 className="font-semibold text-gray-900">{rec.displayName}</h3>
-                          {getRecommendationConfidence(rec) !== null && (
-                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
-                              {getRecommendationConfidence(rec)}% match
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-2 text-sm text-gray-600">
-                          <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2">
-                            {rec.type}
-                          </span>
-                          <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                            {rec.operation}
-                          </span>
-                        </div>
-                        {getRecommendationReason(rec) && (
-                          <p className="mt-2 text-sm text-gray-700">{getRecommendationReason(rec)}</p>
-                        )}
-                        {getRecommendationImpact(rec) && (
-                          <p className="mt-1 text-sm text-gray-600 italic">{getRecommendationImpact(rec)}</p>
-                        )}
+                {profileRecommendations.length > 0 || recommendations.length > 0 ? (
+                  <div className="space-y-6">
+                    {profileRecommendations.length > 0 && (
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          Profile Recommendations ({profileRecommendations.length})
+                        </h3>
+                        {profileRecommendations.map((rec) => (
+                          <div key={rec.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                            <div className="flex items-start justify-between gap-3">
+                              <h4 className="font-semibold text-gray-900">{rec.title}</h4>
+                              <span className={`inline-flex items-center shrink-0 px-2 py-1 rounded text-xs font-medium ${CONFIDENCE_STYLES[rec.confidence] ?? 'bg-gray-100 text-gray-700'}`}>
+                                {rec.confidence} confidence
+                              </span>
+                            </div>
+                            <p className="mt-2 text-sm text-gray-700 leading-relaxed">{rec.reason}</p>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+
+                    {recommendations.length > 0 && (
+                      <div className="space-y-3">
+                        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                          Optimization Recommendations ({recommendations.length})
+                        </h3>
+                        {recommendations.map((rec) => (
+                          <div key={rec.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                            <div className="flex items-start justify-between">
+                              <h4 className="font-semibold text-gray-900">{rec.displayName}</h4>
+                              {getRecommendationConfidence(rec) !== null && (
+                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                                  {getRecommendationConfidence(rec)}% match
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-2 text-sm text-gray-600">
+                              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 mr-2">
+                                {rec.type}
+                              </span>
+                              <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                {rec.operation}
+                              </span>
+                            </div>
+                            {getRecommendationReason(rec) && (
+                              <p className="mt-2 text-sm text-gray-700">{getRecommendationReason(rec)}</p>
+                            )}
+                            {getRecommendationImpact(rec) && (
+                              <p className="mt-1 text-sm text-gray-600 italic">{getRecommendationImpact(rec)}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-white border border-gray-200 rounded-lg p-12 shadow-sm flex flex-col items-center justify-center text-gray-400">
@@ -672,10 +732,11 @@ export default function TailoringPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
                     </svg>
                     <p className="text-sm">
-                      {status === 'analyzing' || status === 'generating' ? 'Analyzing recommendations...' :
+                      {recommendationsLoading ? 'Analyzing profile recommendations...' :
+                       status === 'analyzing' || status === 'generating' ? 'Analyzing recommendations...' :
                        status === 'success' && optimizationStatus === 'already_complete' ? labels.completeMessage :
                        status === 'success' && optimizationStatus === 'no_matches' ? 'No additional evidence found' :
-                       'AI recommendations will appear here'}
+                       'No recommendations — your profile looks strong'}
                     </p>
                   </div>
                 )}
