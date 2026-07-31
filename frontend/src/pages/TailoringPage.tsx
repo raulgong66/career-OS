@@ -66,6 +66,67 @@ function getArtifactLabels(artifactType: string): ArtifactLabels {
   return DEFAULT_LABELS;
 }
 
+type ProfileSectionKey =
+  | 'professionalSummaries'
+  | 'experiences'
+  | 'skills'
+  | 'certifications'
+  | 'projects';
+
+type RecommendationTarget =
+  | { kind: 'element'; section: ProfileSectionKey; elementId: string }
+  | { kind: 'section'; section: ProfileSectionKey }
+  | null;
+
+const SECTION_ELEMENT_KEYS: Record<string, ProfileSectionKey> = {
+  experience: 'experiences',
+  skill: 'skills',
+  certification: 'certifications',
+  project: 'projects',
+};
+
+const SECTION_ACTION_LABELS: Record<ProfileSectionKey, string> = {
+  professionalSummaries: 'Improve Summary',
+  experiences: 'Improve Experience',
+  skills: 'Improve Skill',
+  certifications: 'Improve Certification',
+  projects: 'Improve Project',
+};
+
+function resolveRecommendationTarget(rec: ProfileRecommendation): RecommendationTarget {
+  const elementType = rec.element_type;
+  if (elementType === 'profile' || !elementType) {
+    if (rec.id.startsWith('recommendation_remove_duplicate_skills')) {
+      return { kind: 'section', section: 'skills' };
+    }
+    return { kind: 'section', section: 'professionalSummaries' };
+  }
+  if (elementType === 'achievement') {
+    return { kind: 'section', section: 'experiences' };
+  }
+  const section = SECTION_ELEMENT_KEYS[elementType];
+  if (!section) return null;
+  if (!rec.element_id) return { kind: 'section', section };
+  return { kind: 'element', section, elementId: rec.element_id };
+}
+
+function renderMissingChecklist(missing: string[], heading = 'CareerOS suggests adding') {
+  if (!missing.length) return null;
+  return (
+    <div className="mt-2 border border-blue-200 bg-blue-50 rounded-md p-3">
+      <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">{heading}</p>
+      <ul className="mt-1.5 space-y-1.5">
+        {missing.map((item) => (
+          <li key={item} className="flex items-start text-sm text-gray-700">
+            <span className="mr-2 mt-0.5 inline-block h-3.5 w-3.5 flex-shrink-0 rounded-sm border border-gray-400 bg-white" aria-hidden="true" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function TailoringPage() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
@@ -85,9 +146,82 @@ export default function TailoringPage() {
   const [loadingProfiles, setLoadingProfiles] = useState(true);
   const labels = getArtifactLabels(currentArtifactType);
 
+  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [activeRecId, setActiveRecId] = useState<string | null>(null);
+
+  const activeRec =
+    activeRecId ? profileRecommendations.find((r) => r.id === activeRecId) ?? null : null;
+  const activeTarget = activeRec ? resolveRecommendationTarget(activeRec) : null;
+  const activeMissing = activeRec?.missing_information ?? [];
+
+  const totalRecommendations = profileRecommendations.length;
+  const reviewedCount = profileRecommendations.filter((r) => reviewedIds.has(r.id)).length;
+  const dismissedCount = profileRecommendations.filter((r) => dismissedIds.has(r.id)).length;
+  const remainingCount = totalRecommendations - reviewedCount - dismissedCount;
+  const reviewProgress =
+    totalRecommendations > 0 ? Math.round((reviewedCount / totalRecommendations) * 100) : 0;
+
+  const handleGoToSection = (rec: ProfileRecommendation) => {
+    const target = resolveRecommendationTarget(rec);
+    if (!target) return;
+    if (activeRecId === rec.id) {
+      setActiveRecId(null);
+      return;
+    }
+    setActiveRecId(rec.id);
+    const elementId =
+      target.kind === 'element'
+        ? `profile-element-${target.section}-${target.elementId}`
+        : `profile-section-${target.section}`;
+    const el = document.getElementById(elementId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: target.kind === 'section' ? 'start' : 'center' });
+    }
+  };
+
+  const toggleReviewed = (recId: string) => {
+    setReviewedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(recId)) {
+        next.delete(recId);
+      } else {
+        next.add(recId);
+      }
+      return next;
+    });
+    setDismissedIds((prev) => {
+      if (!prev.has(recId)) return prev;
+      const next = new Set(prev);
+      next.delete(recId);
+      return next;
+    });
+  };
+
+  const toggleDismissed = (recId: string) => {
+    setDismissedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(recId)) {
+        next.delete(recId);
+      } else {
+        next.add(recId);
+      }
+      return next;
+    });
+    setReviewedIds((prev) => {
+      if (!prev.has(recId)) return prev;
+      const next = new Set(prev);
+      next.delete(recId);
+      return next;
+    });
+  };
+
   const loadProfileRecommendations = (profileId: string) => {
     setProfileRecommendations([]);
     setRecommendationsLoading(true);
+    setReviewedIds(new Set());
+    setDismissedIds(new Set());
+    setActiveRecId(null);
     ProfileService.getInstance().analyzeProfile(profileId)
       .then((result) => {
         setProfileRecommendations(result.recommendations ?? []);
@@ -208,132 +342,216 @@ export default function TailoringPage() {
     return parts.join(' – ');
   };
 
-  const renderEntitySections = (profile: import('../types').ProfileDetails) => (
-    <div className="space-y-4">
-      {/* Professional Summary */}
-      {profile.professionalSummaries.length > 0 && (
-        <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
-          <div className="px-3 py-2 bg-gray-50">
+  const renderEntitySections = (
+    profile: import('../types').ProfileDetails,
+    activeTarget: RecommendationTarget,
+    activeMissing: string[],
+  ) => {
+    const isSectionActive = (section: ProfileSectionKey) =>
+      activeTarget?.kind === 'section' && activeTarget.section === section;
+
+    const isElementActive = (section: ProfileSectionKey, elementId: string) =>
+      activeTarget?.kind === 'element' &&
+      activeTarget.section === section &&
+      activeTarget.elementId === elementId;
+
+    const sectionHeaderClass = (section: ProfileSectionKey) =>
+      `px-3 py-2 bg-gray-50 ${isSectionActive(section) ? 'border-l-4 border-blue-500 bg-blue-50' : ''}`;
+
+    const elementRowClass = (active: boolean) =>
+      `px-3 py-2 ${active ? 'bg-blue-50 border-l-4 border-blue-500' : ''}`;
+
+    return (
+      <div className="space-y-4">
+        {/* Professional Summary */}
+        <div id="profile-section-professionalSummaries" className="border border-gray-200 rounded-md divide-y divide-gray-200">
+          <div className={sectionHeaderClass('professionalSummaries')}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Professional Summary</h3>
           </div>
-          {profile.professionalSummaries.map((ps) => (
-            <div key={ps.id} className="px-3 py-2">
-              {ps.label && <p className="text-xs font-medium text-gray-500 mb-1">{ps.label}</p>}
-              <p className="text-sm text-gray-700 leading-relaxed">{ps.text}</p>
+          {isSectionActive('professionalSummaries') && renderMissingChecklist(activeMissing)}
+          {profile.professionalSummaries.length === 0 ? (
+            <div className="px-3 py-4">
+              <p className="text-sm text-gray-400 italic">No professional summary yet.</p>
             </div>
-          ))}
+          ) : (
+            profile.professionalSummaries.map((ps) => (
+              <div key={ps.id} className="px-3 py-2">
+                {ps.label && <p className="text-xs font-medium text-gray-500 mb-1">{ps.label}</p>}
+                <p className="text-sm text-gray-700 leading-relaxed">{ps.text}</p>
+              </div>
+            ))
+          )}
         </div>
-      )}
 
-      {/* Experience */}
-      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
-        <div className="px-3 py-2 bg-gray-50">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Experience</h3>
-        </div>
-        {profile.experiences.length === 0 ? (
-          <div className="px-3 py-4">
-            <p className="text-sm text-gray-400 italic">No experience entries available.</p>
+        {/* Experience */}
+        <div id="profile-section-experiences" className="border border-gray-200 rounded-md divide-y divide-gray-200">
+          <div className={sectionHeaderClass('experiences')}>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Experience</h3>
           </div>
-        ) : (
-          profile.experiences.map((exp) => (
-            <div key={exp.id} className="px-3 py-2">
-              <p className="text-sm font-medium text-gray-900">{exp.title}</p>
-              {(exp.organization || exp.engagementType) && (
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {[exp.organization, exp.engagementType].filter(Boolean).join(' · ')}
-                </p>
-              )}
-              {formatDateRange(exp.dateRange) && (
-                <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(exp.dateRange)}</p>
-              )}
-              {exp.scope && (
-                <p className="text-sm text-gray-700 mt-1 leading-relaxed">{exp.scope}</p>
-              )}
+          {isSectionActive('experiences') && renderMissingChecklist(activeMissing)}
+          {profile.experiences.length === 0 ? (
+            <div className="px-3 py-4">
+              <p className="text-sm text-gray-400 italic">No experience entries available.</p>
             </div>
-          ))
-        )}
-      </div>
-
-      {/* Skills */}
-      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
-        <div className="px-3 py-2 bg-gray-50">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skills</h3>
-        </div>
-        {profile.skills.length === 0 ? (
-          <div className="px-3 py-4">
-            <p className="text-sm text-gray-400 italic">No skills available.</p>
-          </div>
-        ) : (
-          <div className="px-3 py-2">
-            <div className="flex flex-wrap gap-1.5">
-              {profile.skills.map((skill) => (
-                <span
-                  key={skill.id}
-                  className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
-                  title={skill.description || skill.category || undefined}
+          ) : (
+            profile.experiences.map((exp) => {
+              const elementActive = isElementActive('experiences', exp.id);
+              return (
+                <div
+                  key={exp.id}
+                  id={`profile-element-experiences-${exp.id}`}
+                  className={elementRowClass(elementActive)}
                 >
-                  {skill.name}
-                  {skill.proficiency && (
-                    <span className="ml-1 text-blue-400 font-normal">({skill.proficiency})</span>
+                  <p className="text-sm font-medium text-gray-900">{exp.title}</p>
+                  {(exp.organization || exp.engagementType) && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {[exp.organization, exp.engagementType].filter(Boolean).join(' · ')}
+                    </p>
                   )}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Education */}
-      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
-        <div className="px-3 py-2 bg-gray-50">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Education</h3>
+                  {formatDateRange(exp.dateRange) && (
+                    <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(exp.dateRange)}</p>
+                  )}
+                  {exp.scope && (
+                    <p className="text-sm text-gray-700 mt-1 leading-relaxed">{exp.scope}</p>
+                  )}
+                  {elementActive && renderMissingChecklist(activeMissing)}
+                </div>
+              );
+            })
+          )}
         </div>
-        {profile.education.length === 0 ? (
-          <div className="px-3 py-4">
-            <p className="text-sm text-gray-400 italic">No education entries available.</p>
-          </div>
-        ) : (
-          profile.education.map((edu) => (
-            <div key={edu.id} className="px-3 py-2">
-              <p className="text-sm font-medium text-gray-900">{edu.program}</p>
-              {(edu.institution || edu.fieldOfStudy) && (
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {[edu.institution, edu.fieldOfStudy].filter(Boolean).join(' · ')}
-                </p>
-              )}
-              {formatDateRange(edu.dateRange) && (
-                <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(edu.dateRange)}</p>
-              )}
-            </div>
-          ))
-        )}
-      </div>
 
-      {/* Certifications */}
-      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
-        <div className="px-3 py-2 bg-gray-50">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Certifications</h3>
-        </div>
-        {profile.certifications.length === 0 ? (
-          <div className="px-3 py-4">
-            <p className="text-sm text-gray-400 italic">No certifications available.</p>
+        {/* Skills */}
+        <div id="profile-section-skills" className="border border-gray-200 rounded-md divide-y divide-gray-200">
+          <div className={sectionHeaderClass('skills')}>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skills</h3>
           </div>
-        ) : (
-          profile.certifications.map((cert) => (
-            <div key={cert.id} className="px-3 py-2">
-              <p className="text-sm font-medium text-gray-900">{cert.name}</p>
-              {cert.issuer && (
-                <p className="text-xs text-gray-500 mt-0.5">{cert.issuer}</p>
-              )}
-              {formatDateRange(cert.dateRange) && (
-                <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(cert.dateRange)}</p>
-              )}
+          {isSectionActive('skills') && renderMissingChecklist(activeMissing)}
+          {profile.skills.length === 0 ? (
+            <div className="px-3 py-4">
+              <p className="text-sm text-gray-400 italic">No skills available.</p>
             </div>
-          ))
-        )}
+          ) : (
+            <div className="px-3 py-2">
+              <div className="flex flex-wrap gap-1.5">
+                {profile.skills.map((skill) => {
+                  const elementActive = isElementActive('skills', skill.id);
+                  return (
+                    <span
+                      key={skill.id}
+                      id={`profile-element-skills-${skill.id}`}
+                      className={`inline-flex items-center px-2.5 py-1 rounded text-xs font-medium ${
+                        elementActive
+                          ? 'bg-blue-200 text-blue-900 border-2 border-blue-500'
+                          : 'bg-blue-50 text-blue-700 border border-blue-200'
+                      }`}
+                      title={skill.description || skill.category || undefined}
+                    >
+                      {skill.name}
+                      {skill.proficiency && (
+                        <span className="ml-1 text-blue-400 font-normal">({skill.proficiency})</span>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+              {profile.skills.some((s) => isElementActive('skills', s.id)) &&
+                renderMissingChecklist(activeMissing)}
+            </div>
+          )}
+        </div>
+
+        {/* Education */}
+        <div id="profile-section-education" className="border border-gray-200 rounded-md divide-y divide-gray-200">
+          <div className="px-3 py-2 bg-gray-50">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Education</h3>
+          </div>
+          {profile.education.length === 0 ? (
+            <div className="px-3 py-4">
+              <p className="text-sm text-gray-400 italic">No education entries available.</p>
+            </div>
+          ) : (
+            profile.education.map((edu) => (
+              <div key={edu.id} className="px-3 py-2">
+                <p className="text-sm font-medium text-gray-900">{edu.program}</p>
+                {(edu.institution || edu.fieldOfStudy) && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {[edu.institution, edu.fieldOfStudy].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {formatDateRange(edu.dateRange) && (
+                  <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(edu.dateRange)}</p>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Certifications */}
+        <div id="profile-section-certifications" className="border border-gray-200 rounded-md divide-y divide-gray-200">
+          <div className={sectionHeaderClass('certifications')}>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Certifications</h3>
+          </div>
+          {isSectionActive('certifications') && renderMissingChecklist(activeMissing)}
+          {profile.certifications.length === 0 ? (
+            <div className="px-3 py-4">
+              <p className="text-sm text-gray-400 italic">No certifications available.</p>
+            </div>
+          ) : (
+            profile.certifications.map((cert) => {
+              const elementActive = isElementActive('certifications', cert.id);
+              return (
+                <div
+                  key={cert.id}
+                  id={`profile-element-certifications-${cert.id}`}
+                  className={elementRowClass(elementActive)}
+                >
+                  <p className="text-sm font-medium text-gray-900">{cert.name}</p>
+                  {cert.issuer && (
+                    <p className="text-xs text-gray-500 mt-0.5">{cert.issuer}</p>
+                  )}
+                  {formatDateRange(cert.dateRange) && (
+                    <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(cert.dateRange)}</p>
+                  )}
+                  {elementActive && renderMissingChecklist(activeMissing)}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Projects */}
+        <div id="profile-section-projects" className="border border-gray-200 rounded-md divide-y divide-gray-200">
+          <div className={sectionHeaderClass('projects')}>
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Projects</h3>
+          </div>
+          {isSectionActive('projects') && renderMissingChecklist(activeMissing)}
+          {profile.projects.length === 0 ? (
+            <div className="px-3 py-4">
+              <p className="text-sm text-gray-400 italic">No projects available.</p>
+            </div>
+          ) : (
+            profile.projects.map((proj) => {
+              const elementActive = isElementActive('projects', proj.id);
+              return (
+                <div
+                  key={proj.id}
+                  id={`profile-element-projects-${proj.id}`}
+                  className={elementRowClass(elementActive)}
+                >
+                  <p className="text-sm font-medium text-gray-900">{proj.name}</p>
+                  {proj.description && (
+                    <p className="text-sm text-gray-700 mt-1 leading-relaxed">{proj.description}</p>
+                  )}
+                  {elementActive && renderMissingChecklist(activeMissing)}
+                </div>
+              );
+            })
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderResume = (content: string) => {
     const lines = content.split('\n');
@@ -458,7 +676,7 @@ export default function TailoringPage() {
                       </div>
 
                       {/* ── Entity Sections ── */}
-                      {renderEntitySections(selectedProfile)}
+                      {renderEntitySections(selectedProfile, activeTarget, activeMissing)}
                     </>
                   )}
                   </div>
@@ -684,15 +902,80 @@ export default function TailoringPage() {
                 </h2>
                 {profileRecommendations.length > 0 || recommendations.length > 0 ? (
                   <div className="space-y-6">
+                    {totalRecommendations > 0 && (
+                      <div className="bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-semibold text-gray-900">Recommendation Progress</h3>
+                          <span className="text-xs font-medium text-gray-500">
+                            {reviewedCount}/{totalRecommendations} reviewed
+                          </span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+                          <div
+                            className="h-full bg-green-500 rounded-full transition-all duration-300"
+                            style={{ width: `${reviewProgress}%` }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 gap-3 text-center">
+                          <div>
+                            <p className="text-2xl font-bold text-gray-900">{totalRecommendations}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Total</p>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold text-green-600">{reviewedCount}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Completed</p>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold text-amber-600">{remainingCount}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Remaining</p>
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold text-gray-400">{dismissedCount}</p>
+                            <p className="text-xs text-gray-500 mt-0.5">Dismissed</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     {profileRecommendations.length > 0 && (
                       <div className="space-y-3">
                         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                           Profile Recommendations ({profileRecommendations.length})
                         </h3>
-                        {profileRecommendations.map((rec) => (
-                          <div key={rec.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                        {profileRecommendations.map((rec) => {
+                          const target = resolveRecommendationTarget(rec);
+                          const actionLabel = target ? SECTION_ACTION_LABELS[target.section] : null;
+                          const reviewed = reviewedIds.has(rec.id);
+                          const dismissed = dismissedIds.has(rec.id);
+                          return (
+                          <div
+                            key={rec.id}
+                            className={`bg-white border rounded-lg p-4 shadow-sm ${
+                              dismissed
+                                ? 'border-gray-200 opacity-60'
+                                : reviewed
+                                  ? 'border-green-300'
+                                  : 'border-gray-200'
+                            }`}
+                          >
                             <div className="flex items-start justify-between gap-3">
-                              <h4 className="font-semibold text-gray-900">{rec.title}</h4>
+                              <div className="min-w-0">
+                                <h4 className="font-semibold text-gray-900">{rec.title}</h4>
+                                {actionLabel && (
+                                  <span className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                    {actionLabel}
+                                  </span>
+                                )}
+                                {reviewed && (
+                                  <span className="mt-1.5 ml-1.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    Reviewed
+                                  </span>
+                                )}
+                                {dismissed && (
+                                  <span className="mt-1.5 ml-1.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600">
+                                    Dismissed
+                                  </span>
+                                )}
+                              </div>
                               <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                                 <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${PRIORITY_STYLES[rec.priority] ?? 'bg-gray-100 text-gray-700'}`}>
                                   Priority: {capitalizeLevel(rec.priority)}
@@ -765,8 +1048,49 @@ export default function TailoringPage() {
                                 )}
                               </div>
                             </details>
+                            <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
+                              {actionLabel && (
+                                <button
+                                  onClick={() => handleGoToSection(rec)}
+                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                >
+                                  Go to section
+                                </button>
+                              )}
+                              {reviewed ? (
+                                <button
+                                  onClick={() => toggleReviewed(rec.id)}
+                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 border border-green-200 transition-colors"
+                                >
+                                  Reviewed — undo
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => toggleReviewed(rec.id)}
+                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                                >
+                                  Mark as reviewed
+                                </button>
+                              )}
+                              {dismissed ? (
+                                <button
+                                  onClick={() => toggleDismissed(rec.id)}
+                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                                >
+                                  Dismissed — restore
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => toggleDismissed(rec.id)}
+                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                                >
+                                  Dismiss
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 

@@ -18,17 +18,63 @@ def reference_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_MONTH_BY_ABBREV: dict[str, int] = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+
+_ISO_DATE_RE = re.compile(
+    r"^(?P<year>\d{4})"
+    r"(?:-(?P<month>\d{1,2})"
+    r"(?:-(?P<day>\d{1,2})(?:[Tt ].*)?)?)?$"
+)
+_MONTH_WORD_RE = re.compile(r"^(?P<month>[a-z]+)\s+(?P<year>\d{4})$")
+
+
 def parse_date(s: str | None) -> datetime | None:
-    """Parse partial date strings like '2022-03' or '2022' to datetime."""
+    """Parse a dateRange value into a datetime, tolerating flexible labels.
+
+    Accepts ISO forms ('2022', '2022-03', '2022-03-15T...'), human-readable
+    month names ('March 2025', 'dec 2025'), and sentinel labels
+    ('present', 'now', 'current'). Unrecognized values return None so that
+    flexible dateRange labels allowed by the profile schema do not crash
+    analysis.
+    """
     if not s:
         return None
     s = s.strip().lower()
     if s in ("present", "now", "current"):
         return None
-    parts = s.split("-")
-    year = int(parts[0])
-    month = int(parts[1]) if len(parts) >= 2 else 1
-    return datetime(year, month, 1, tzinfo=timezone.utc)
+    m = _ISO_DATE_RE.match(s)
+    if m:
+        try:
+            return datetime(
+                int(m.group("year")),
+                int(m.group("month") or 1),
+                int(m.group("day") or 1),
+                tzinfo=timezone.utc,
+            )
+        except ValueError:
+            return None
+    m = _MONTH_WORD_RE.match(s)
+    if m and m.group("month")[:3] in _MONTH_BY_ABBREV:
+        return datetime(
+            int(m.group("year")),
+            _MONTH_BY_ABBREV[m.group("month")[:3]],
+            1,
+            tzinfo=timezone.utc,
+        )
+    return None
 
 
 def parse_date_range(

@@ -125,6 +125,41 @@ def test_parse_date_none() -> None:
     assert parse_date("") is None
 
 
+def test_parse_date_month_name() -> None:
+    d = parse_date("March 2025")
+    assert d is not None
+    assert d.year == 2025
+    assert d.month == 3
+
+
+def test_parse_date_month_abbreviation() -> None:
+    d = parse_date("Dec 2025")
+    assert d is not None
+    assert d.year == 2025
+    assert d.month == 12
+
+
+def test_parse_date_month_name_case_insensitive() -> None:
+    d = parse_date("august 2019")
+    assert d is not None
+    assert d.year == 2019
+    assert d.month == 8
+
+
+def test_parse_date_full_iso() -> None:
+    d = parse_date("2022-03-15")
+    assert d is not None
+    assert d.year == 2022
+    assert d.month == 3
+    assert d.day == 15
+
+
+def test_parse_date_unrecognized_label_returns_none() -> None:
+    assert parse_date("Summer 2020") is None
+    assert parse_date("Q1 2021") is None
+    assert parse_date("early 2020s") is None
+
+
 def test_parse_date_range_full() -> None:
     dr = parse_date_range({"start": "2020-01", "end": "2023-06", "isCurrent": False})
     assert dr.start is not None
