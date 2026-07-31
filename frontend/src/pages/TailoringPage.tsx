@@ -728,6 +728,43 @@ export default function TailoringPage() {
                                 </ul>
                               </div>
                             )}
+                            <details className="mt-3 border-t border-gray-100 pt-3">
+                              <summary className="flex items-center text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700">
+                                Why CareerOS made this recommendation
+                              </summary>
+                              <div className="mt-3 space-y-3">
+                                {rec.detected_pattern && (
+                                  <div>
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Detected Pattern</p>
+                                    <p className="mt-1 text-sm text-gray-700">{rec.detected_pattern}</p>
+                                  </div>
+                                )}
+                                {rec.missing_information && rec.missing_information.length > 0 && (
+                                  <div>
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Information</p>
+                                    <ul className="mt-1 space-y-1">
+                                      {rec.missing_information.map((item, i) => (
+                                        <li key={i} className="flex items-start text-sm text-gray-700">
+                                          <span className="mr-2 text-gray-400">•</span>
+                                          <span>{item}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                                {rec.recruiter_impact && (
+                                  <div>
+                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Recruiter Impact</p>
+                                    <p className="mt-1 text-sm text-gray-700">{rec.recruiter_impact}</p>
+                                  </div>
+                                )}
+                                {rec.triggered_rule && (
+                                  <p className="text-xs text-gray-400">
+                                    Triggered by: <span className="font-medium text-gray-500">{rec.triggered_rule}</span>
+                                  </p>
+                                )}
+                              </div>
+                            </details>
                           </div>
                         ))}
                       </div>

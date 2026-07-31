@@ -159,6 +159,10 @@ def test_report_to_dict_exposes_recommendations(weak_profile: dict[str, Any]) ->
         assert isinstance(rec["examples"], list) and rec["examples"]
         assert rec["priority"] in ("high", "medium", "low")
         assert rec["estimated_impact"] in ("high", "medium", "low")
+        assert rec["detected_pattern"]
+        assert isinstance(rec["missing_information"], list) and rec["missing_information"]
+        assert rec["recruiter_impact"]
+        assert rec["triggered_rule"]
         assert rec["confidence"] in ("high", "medium", "low")
         assert rec["element_type"] in (None, "profile", "experience", "skill", "achievement", "project", "certification")
         assert "future_evidence" in rec
@@ -172,6 +176,16 @@ def test_weak_profile_recommendations_are_actionable(weak_profile: dict[str, Any
         assert len(rec.examples) >= 1
         assert rec.priority in ("high", "medium", "low")
         assert rec.estimated_impact in ("high", "medium", "low")
+
+
+def test_weak_profile_recommendations_are_explainable(weak_profile: dict[str, Any]) -> None:
+    recommendations = _run(weak_profile).recommendations
+    assert len(recommendations) >= 3
+    for rec in recommendations:
+        assert rec.detected_pattern.strip()
+        assert len(rec.missing_information) >= 1
+        assert rec.recruiter_impact.strip()
+        assert rec.triggered_rule.strip()
 
 
 def test_recommendations_examples_are_deterministic(weak_profile: dict[str, Any]) -> None:
@@ -196,6 +210,10 @@ def test_recommendation_model_shapes() -> None:
         examples=("example one", "example two"),
         priority="high",
         estimated_impact="high",
+        detected_pattern="detected",
+        missing_information=("A", "B"),
+        recruiter_impact="impact",
+        triggered_rule="SomeRule",
     )
     d = rec.to_dict()
     assert d["confidence"] == "high"
@@ -206,6 +224,10 @@ def test_recommendation_model_shapes() -> None:
     assert d["examples"] == ["example one", "example two"]
     assert d["priority"] == "high"
     assert d["estimated_impact"] == "high"
+    assert d["detected_pattern"] == "detected"
+    assert d["missing_information"] == ["A", "B"]
+    assert d["recruiter_impact"] == "impact"
+    assert d["triggered_rule"] == "SomeRule"
 
 
 def test_recommendation_model_backward_compatible_defaults() -> None:
@@ -223,3 +245,7 @@ def test_recommendation_model_backward_compatible_defaults() -> None:
     assert d["examples"] == []
     assert d["priority"] == "medium"
     assert d["estimated_impact"] == "medium"
+    assert d["detected_pattern"] == ""
+    assert d["missing_information"] == []
+    assert d["recruiter_impact"] == ""
+    assert d["triggered_rule"] == ""

@@ -137,6 +137,10 @@ export interface ProfileRecommendation {
   examples: string[];
   priority: RecommendationPriority;
   estimated_impact: RecommendationImpact;
+  detected_pattern: string;
+  missing_information: string[];
+  recruiter_impact: string;
+  triggered_rule: string;
   element_id: string | null;
   element_type: 'profile' | 'experience' | 'skill' | 'achievement' | 'project' | 'certification' | null;
   confidence: RecommendationConfidence;

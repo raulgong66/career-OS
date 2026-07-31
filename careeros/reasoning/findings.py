@@ -139,6 +139,14 @@ def _build_recommendation(f: Any) -> ProfileRecommendation | None:
     else:
         examples = ()
 
+    raw_missing = v.get("missing_information", ())
+    if isinstance(raw_missing, tuple):
+        missing_information = raw_missing
+    elif isinstance(raw_missing, list):
+        missing_information = tuple(str(m) for m in raw_missing)
+    else:
+        missing_information = ()
+
     return ProfileRecommendation(
         id=f"{f.finding_type}:{element_id or 'profile'}",
         title=str(title),
@@ -152,6 +160,10 @@ def _build_recommendation(f: Any) -> ProfileRecommendation | None:
         examples=examples,
         priority=_normalize_level(v.get("priority")),
         estimated_impact=_normalize_level(v.get("estimated_impact")),
+        detected_pattern=str(v.get("detected_pattern", "") or ""),
+        missing_information=missing_information,
+        recruiter_impact=str(v.get("recruiter_impact", "") or ""),
+        triggered_rule=str(v.get("triggered_rule", "") or ""),
     )
 
 

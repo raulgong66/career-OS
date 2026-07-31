@@ -142,6 +142,90 @@ EXPLANATION_PROJECT_SKILLS = (
     "evidence."
 )
 
+RECRUITER_IMPACT_MEASURABLE_ACHIEVEMENT = (
+    "Recruiters generally prioritize measurable achievements because they "
+    "demonstrate real business value."
+)
+
+RECRUITER_IMPACT_SHOW_SKILL = (
+    "Recruiters discount skills they cannot verify against concrete work "
+    "history."
+)
+
+RECRUITER_IMPACT_ADD_TECHNOLOGIES = (
+    "Recruiters use named technologies to filter candidates and gauge "
+    "technical depth."
+)
+
+RECRUITER_IMPACT_SUMMARY = (
+    "Recruiters read the summary first; a missing or generic summary blends "
+    "into every other application."
+)
+
+RECRUITER_IMPACT_DUPLICATE_SKILLS = (
+    "Duplicate entries split your evidence across two skills and can look "
+    "careless to recruiters."
+)
+
+RECRUITER_IMPACT_BUSINESS_OUTCOME = (
+    "Recruiters hire for outcomes; achievements without a measurable result "
+    "do not demonstrate value."
+)
+
+RECRUITER_IMPACT_CERTIFICATION = (
+    "Certifications carry more weight with recruiters when they are tied to "
+    "real work."
+)
+
+RECRUITER_IMPACT_PROJECT_SKILLS = (
+    "Projects without skill links cannot contribute to your skill evidence."
+)
+
+MISSING_MEASURABLE_ACHIEVEMENT: tuple[str, ...] = (
+    "Business outcome",
+    "Percentage improvement",
+    "Cost reduction",
+    "Time reduction",
+)
+
+MISSING_SHOW_SKILL: tuple[str, ...] = (
+    "Where the skill was used",
+    "Example of the skill in context",
+    "Related experience or achievement",
+)
+
+MISSING_ADD_TECHNOLOGIES: tuple[str, ...] = (
+    "Tools used",
+    "Technologies or platforms",
+    "Stack details",
+)
+
+MISSING_SUMMARY: tuple[str, ...] = (
+    "Role specialty",
+    "Key technologies",
+    "Quantified highlight",
+)
+
+MISSING_DUPLICATE_SKILLS: tuple[str, ...] = (
+    "Consolidated single skill entry",
+)
+
+MISSING_BUSINESS_OUTCOME: tuple[str, ...] = (
+    "Business outcome",
+    "Quantified result",
+    "Impact on cost, time, or growth",
+)
+
+MISSING_CERTIFICATION: tuple[str, ...] = (
+    "Where the certification was applied",
+    "Relevant achievement reference",
+)
+
+MISSING_PROJECT_SKILLS: tuple[str, ...] = (
+    "Linked skills",
+    "Related experience",
+)
+
 
 def _experience_text(exp: dict[str, Any]) -> str:
     return " ".join(
@@ -170,6 +254,10 @@ def _build_recommendation(
     element_id: str | None,
     element_type: str | None,
     confidence: str,
+    detected_pattern: str,
+    missing_information: tuple[str, ...],
+    recruiter_impact: str,
+    triggered_rule: str,
 ) -> ReasoningResult:
     return ReasoningResult(
         rule_id=rule_id,
@@ -182,6 +270,10 @@ def _build_recommendation(
             "examples": list(examples),
             "priority": priority,
             "estimated_impact": estimated_impact,
+            "detected_pattern": detected_pattern,
+            "missing_information": list(missing_information),
+            "recruiter_impact": recruiter_impact,
+            "triggered_rule": triggered_rule,
             "element_id": element_id,
             "element_type": element_type,
             "confidence": confidence,
@@ -235,6 +327,13 @@ class NoMeasurableAchievementRule(Rule):
                         element_id=exp.get("id"),
                         element_type="experience",
                         confidence="high",
+                        detected_pattern=(
+                            "Experience describes responsibilities only, with no "
+                            "achievements attached."
+                        ),
+                        missing_information=MISSING_MEASURABLE_ACHIEVEMENT,
+                        recruiter_impact=RECRUITER_IMPACT_MEASURABLE_ACHIEVEMENT,
+                        triggered_rule=self.__class__.__name__,
                     )
                 )
                 continue
@@ -265,6 +364,13 @@ class NoMeasurableAchievementRule(Rule):
                         element_id=exp.get("id"),
                         element_type="experience",
                         confidence="medium",
+                        detected_pattern=(
+                            "Experience lists achievements without quantified "
+                            "outcomes."
+                        ),
+                        missing_information=MISSING_MEASURABLE_ACHIEVEMENT,
+                        recruiter_impact=RECRUITER_IMPACT_MEASURABLE_ACHIEVEMENT,
+                        triggered_rule=self.__class__.__name__,
                     )
                 )
 
@@ -351,6 +457,13 @@ class SkillWithoutExperienceRule(Rule):
                     element_id=skill_id,
                     element_type="skill",
                     confidence=confidence,
+                    detected_pattern=(
+                        "Skill is declared in the profile but never referenced in "
+                        "experience, achievements, or explicit experience evidence."
+                    ),
+                    missing_information=MISSING_SHOW_SKILL,
+                    recruiter_impact=RECRUITER_IMPACT_SHOW_SKILL,
+                    triggered_rule=self.__class__.__name__,
                 )
             )
 
@@ -415,6 +528,13 @@ class ExperienceNoTechnologiesRule(Rule):
                     element_id=exp.get("id"),
                     element_type="experience",
                     confidence=confidence,
+                    detected_pattern=(
+                        "Experience description mentions no recognizable tool or "
+                        "technology."
+                    ),
+                    missing_information=MISSING_ADD_TECHNOLOGIES,
+                    recruiter_impact=RECRUITER_IMPACT_ADD_TECHNOLOGIES,
+                    triggered_rule=self.__class__.__name__,
                 )
             )
 
@@ -462,6 +582,10 @@ class GenericSummaryRule(Rule):
                     element_id=None,
                     element_type="profile",
                     confidence="high",
+                    detected_pattern="Profile has no professional summary.",
+                    missing_information=MISSING_SUMMARY,
+                    recruiter_impact=RECRUITER_IMPACT_SUMMARY,
+                    triggered_rule=self.__class__.__name__,
                 )
             ]
 
@@ -496,6 +620,13 @@ class GenericSummaryRule(Rule):
                     element_id=None,
                     element_type="profile",
                     confidence=confidence,
+                    detected_pattern=(
+                        "Professional summary is too short, too generic, or lacks "
+                        "measurable substance."
+                    ),
+                    missing_information=MISSING_SUMMARY,
+                    recruiter_impact=RECRUITER_IMPACT_SUMMARY,
+                    triggered_rule=self.__class__.__name__,
                 )
             ]
 
@@ -550,6 +681,12 @@ class DuplicateSkillsRule(Rule):
                     element_id=None,
                     element_type="profile",
                     confidence="medium",
+                    detected_pattern=(
+                        "Two or more skills normalize to the same skill name."
+                    ),
+                    missing_information=MISSING_DUPLICATE_SKILLS,
+                    recruiter_impact=RECRUITER_IMPACT_DUPLICATE_SKILLS,
+                    triggered_rule=self.__class__.__name__,
                 )
             )
 
@@ -613,6 +750,13 @@ class MissingBusinessOutcomeRule(Rule):
                     element_id=achievement.get("id"),
                     element_type="achievement",
                     confidence="medium",
+                    detected_pattern=(
+                        "Achievement describes activity without a measurable "
+                        "business outcome."
+                    ),
+                    missing_information=MISSING_BUSINESS_OUTCOME,
+                    recruiter_impact=RECRUITER_IMPACT_BUSINESS_OUTCOME,
+                    triggered_rule=self.__class__.__name__,
                 )
             )
         return _limit(results)
@@ -673,6 +817,13 @@ class CertificationUnreferencedRule(Rule):
                     element_id=cert_id,
                     element_type="certification",
                     confidence="medium",
+                    detected_pattern=(
+                        "Certification is listed but never connected to experience "
+                        "or achievements."
+                    ),
+                    missing_information=MISSING_CERTIFICATION,
+                    recruiter_impact=RECRUITER_IMPACT_CERTIFICATION,
+                    triggered_rule=self.__class__.__name__,
                 )
             )
         return _limit(results)
@@ -721,6 +872,10 @@ class ProjectWithoutSkillsRule(Rule):
                     element_id=project.get("id"),
                     element_type="project",
                     confidence="low",
+                    detected_pattern="Project has no skill or experience references.",
+                    missing_information=MISSING_PROJECT_SKILLS,
+                    recruiter_impact=RECRUITER_IMPACT_PROJECT_SKILLS,
+                    triggered_rule=self.__class__.__name__,
                 )
             )
         return _limit(results)

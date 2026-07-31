@@ -48,6 +48,10 @@ class ProfileRecommendation:
     examples: tuple[str, ...] = ()
     priority: str = "medium"
     estimated_impact: str = "medium"
+    detected_pattern: str = ""
+    missing_information: tuple[str, ...] = ()
+    recruiter_impact: str = ""
+    triggered_rule: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,6 +63,10 @@ class ProfileRecommendation:
             "examples": list(self.examples),
             "priority": self.priority,
             "estimated_impact": self.estimated_impact,
+            "detected_pattern": self.detected_pattern,
+            "missing_information": list(self.missing_information),
+            "recruiter_impact": self.recruiter_impact,
+            "triggered_rule": self.triggered_rule,
             "element_id": self.element_id,
             "element_type": self.element_type,
             "confidence": self.confidence,

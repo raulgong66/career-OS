@@ -876,6 +876,10 @@ def test_analyze_profile_exposes_recommendations(analyze_profile: str) -> None:
         assert isinstance(rec["examples"], list) and rec["examples"]
         assert rec["priority"] in ("high", "medium", "low")
         assert rec["estimated_impact"] in ("high", "medium", "low")
+        assert rec["detected_pattern"]
+        assert isinstance(rec["missing_information"], list) and rec["missing_information"]
+        assert rec["recruiter_impact"]
+        assert rec["triggered_rule"]
         assert rec["confidence"] in ("high", "medium", "low")
         assert "future_evidence" in rec
 
