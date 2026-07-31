@@ -24,6 +24,7 @@ Platform Beta builds on this baseline. It does not replace it.
 | [Milestones.md](Milestones.md) | Planning milestones (M1-M5) |
 | [README.md](README.md) | This index and architecture principles |
 | [M1 Evidence Model](m1-evidence-model/) | Professional Evidence Model design (ADR-002) |
+| [M2 Claim Model](m2-claim-model/) | Professional Claim Model design (ADR-003) |
 
 ## Architecture Principles
 
