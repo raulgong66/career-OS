@@ -23,6 +23,7 @@ Platform Beta builds on this baseline. It does not replace it.
 | [Roadmap.md](Roadmap.md) | Major workstreams for Platform Beta |
 | [Milestones.md](Milestones.md) | Planning milestones (M1-M5) |
 | [README.md](README.md) | This index and architecture principles |
+| [M1 Evidence Model](m1-evidence-model/) | Professional Evidence Model design (ADR-002) |
 
 ## Architecture Principles
 
