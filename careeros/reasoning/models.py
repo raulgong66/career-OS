@@ -30,8 +30,10 @@ class Evidence:
 class ProfileRecommendation:
     """A deterministic, evidence-backed profile recommendation.
 
-    Confidence is qualitative by design (ADR-003): ``"high"``, ``"medium"``,
-    or ``"low"`` — no numeric scores are exposed to the frontend.
+    Confidence, priority, and estimated impact are qualitative by design
+    (ADR-003): ``"high"``, ``"medium"``, or ``"low"`` — no numeric scores are
+    exposed to the frontend. New action-guidance fields carry a default so
+    existing consumers keep working (backward compatibility).
     """
 
     id: str
@@ -41,12 +43,22 @@ class ProfileRecommendation:
     element_type: str | None
     confidence: str
     future_evidence: dict[str, Any] = field(default_factory=dict, hash=False, compare=False)
+    explanation: str = ""
+    suggested_action: str = ""
+    examples: tuple[str, ...] = ()
+    priority: str = "medium"
+    estimated_impact: str = "medium"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "title": self.title,
             "reason": self.reason,
+            "explanation": self.explanation,
+            "suggested_action": self.suggested_action,
+            "examples": list(self.examples),
+            "priority": self.priority,
+            "estimated_impact": self.estimated_impact,
             "element_id": self.element_id,
             "element_type": self.element_type,
             "confidence": self.confidence,

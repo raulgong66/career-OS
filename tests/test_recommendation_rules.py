@@ -154,9 +154,32 @@ def test_report_to_dict_exposes_recommendations(weak_profile: dict[str, Any]) ->
     for rec in payload["recommendations"]:
         assert rec["title"]
         assert rec["reason"]
+        assert rec["explanation"]
+        assert rec["suggested_action"]
+        assert isinstance(rec["examples"], list) and rec["examples"]
+        assert rec["priority"] in ("high", "medium", "low")
+        assert rec["estimated_impact"] in ("high", "medium", "low")
         assert rec["confidence"] in ("high", "medium", "low")
         assert rec["element_type"] in (None, "profile", "experience", "skill", "achievement", "project", "certification")
         assert "future_evidence" in rec
+
+
+def test_weak_profile_recommendations_are_actionable(weak_profile: dict[str, Any]) -> None:
+    recommendations = _run(weak_profile).recommendations
+    assert len(recommendations) >= 3
+    for rec in recommendations:
+        assert rec.suggested_action.strip()
+        assert len(rec.examples) >= 1
+        assert rec.priority in ("high", "medium", "low")
+        assert rec.estimated_impact in ("high", "medium", "low")
+
+
+def test_recommendations_examples_are_deterministic(weak_profile: dict[str, Any]) -> None:
+    first = [r.examples for r in _run(weak_profile).recommendations]
+    second = [r.examples for r in _run(weak_profile).recommendations]
+    assert first == second
+    for examples in first:
+        assert all(isinstance(ex, str) and ex.strip() for ex in examples)
 
 
 def test_recommendation_model_shapes() -> None:
@@ -168,8 +191,35 @@ def test_recommendation_model_shapes() -> None:
         element_type="profile",
         confidence="high",
         future_evidence={"evidence_model": "not_implemented"},
+        explanation="why it matters",
+        suggested_action="write one",
+        examples=("example one", "example two"),
+        priority="high",
+        estimated_impact="high",
     )
     d = rec.to_dict()
     assert d["confidence"] == "high"
     assert d["element_id"] is None
     assert d["future_evidence"]["evidence_model"] == "not_implemented"
+    assert d["explanation"] == "why it matters"
+    assert d["suggested_action"] == "write one"
+    assert d["examples"] == ["example one", "example two"]
+    assert d["priority"] == "high"
+    assert d["estimated_impact"] == "high"
+
+
+def test_recommendation_model_backward_compatible_defaults() -> None:
+    rec = ProfileRecommendation(
+        id="r1",
+        title="Title",
+        reason="Reason",
+        element_id=None,
+        element_type="profile",
+        confidence="medium",
+    )
+    d = rec.to_dict()
+    assert d["explanation"] == ""
+    assert d["suggested_action"] == ""
+    assert d["examples"] == []
+    assert d["priority"] == "medium"
+    assert d["estimated_impact"] == "medium"

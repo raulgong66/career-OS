@@ -9,7 +9,8 @@ import type {
   ProfileInfo,
   ProfileDetails,
   ProfileRecommendation,
-  RecommendationConfidence,
+  RecommendationImpact,
+  RecommendationPriority,
 } from '../types';
 
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
@@ -20,11 +21,21 @@ interface ArtifactLabels {
   completeMessage: string;
 }
 
-const CONFIDENCE_STYLES: Record<RecommendationConfidence, string> = {
-  high: 'bg-green-100 text-green-800',
+const PRIORITY_STYLES: Record<RecommendationPriority, string> = {
+  high: 'bg-red-100 text-red-800',
   medium: 'bg-amber-100 text-amber-800',
   low: 'bg-gray-100 text-gray-700',
 };
+
+const IMPACT_STYLES: Record<RecommendationImpact, string> = {
+  high: 'bg-green-100 text-green-800',
+  medium: 'bg-blue-100 text-blue-800',
+  low: 'bg-gray-100 text-gray-700',
+};
+
+function capitalizeLevel(level: string): string {
+  return level ? level.charAt(0).toUpperCase() + level.slice(1) : level;
+}
 
 const ARTIFACT_LABELS: Record<string, ArtifactLabels> = {
   CV: {
@@ -682,11 +693,41 @@ export default function TailoringPage() {
                           <div key={rec.id} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                             <div className="flex items-start justify-between gap-3">
                               <h4 className="font-semibold text-gray-900">{rec.title}</h4>
-                              <span className={`inline-flex items-center shrink-0 px-2 py-1 rounded text-xs font-medium ${CONFIDENCE_STYLES[rec.confidence] ?? 'bg-gray-100 text-gray-700'}`}>
-                                {rec.confidence} confidence
-                              </span>
+                              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${PRIORITY_STYLES[rec.priority] ?? 'bg-gray-100 text-gray-700'}`}>
+                                  Priority: {capitalizeLevel(rec.priority)}
+                                </span>
+                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${IMPACT_STYLES[rec.estimated_impact] ?? 'bg-gray-100 text-gray-700'}`}>
+                                  Impact: {capitalizeLevel(rec.estimated_impact)}
+                                </span>
+                              </div>
                             </div>
                             <p className="mt-2 text-sm text-gray-700 leading-relaxed">{rec.reason}</p>
+                            {rec.explanation && (
+                              <p className="mt-1 text-xs text-gray-500 italic leading-relaxed">
+                                Why it matters: {rec.explanation}
+                              </p>
+                            )}
+                            <p className="mt-1 text-xs text-gray-400">{capitalizeLevel(rec.confidence)} confidence</p>
+                            {rec.suggested_action && (
+                              <div className="mt-3">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Suggested Action</p>
+                                <p className="mt-1 text-sm text-gray-800">{rec.suggested_action}</p>
+                              </div>
+                            )}
+                            {rec.examples && rec.examples.length > 0 && (
+                              <div className="mt-3">
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Examples</p>
+                                <ul className="mt-1 space-y-1">
+                                  {rec.examples.map((example, i) => (
+                                    <li key={i} className="flex items-start text-sm text-gray-700">
+                                      <span className="mr-2 text-gray-400">•</span>
+                                      <span>{example}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

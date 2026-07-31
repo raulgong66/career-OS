@@ -53,6 +53,95 @@ FUTURE_EVIDENCE_PLACEHOLDER: dict[str, Any] = {
     "evidence_model": "not_implemented",
 }
 
+# Deterministic, recruiter-quality example bullets (no AI generation).
+EXAMPLES_MEASURABLE_ACHIEVEMENT: tuple[str, ...] = (
+    "Reduced deployment time by 60%",
+    "Migrated 240 servers to AWS",
+    "Improved availability from 99.5% to 99.95%",
+)
+
+EXAMPLES_SHOW_SKILL: tuple[str, ...] = (
+    "Used it to automate server provisioning across 40+ nodes",
+    "Built a data pipeline that processed 1M records per day",
+    "Wrote tooling that cut release build time by 30%",
+)
+
+EXAMPLES_ADD_TECHNOLOGIES: tuple[str, ...] = (
+    "Led migration of 40 microservices to Kubernetes on AWS EKS",
+    "Automated infrastructure with Terraform and Jenkins CI/CD",
+    "Built Grafana dashboards on Prometheus metrics for 20 services",
+)
+
+EXAMPLES_SUMMARY: tuple[str, ...] = (
+    "Senior DevOps engineer with 8 years scaling AWS infrastructure",
+    "Cut deployment time by 40% and lifted uptime to 99.9%",
+    "Led a team of 5 platform engineers serving 50+ product teams",
+)
+
+EXAMPLES_DUPLICATE_SKILLS: tuple[str, ...] = (
+    "'AWS' and 'Amazon Web Services' merged into one 'AWS' entry",
+    "'JavaScript' and 'Javascript' merged into one 'JavaScript' entry",
+    "'Docker' and 'Docker Containers' merged into one 'Docker' entry",
+)
+
+EXAMPLES_BUSINESS_OUTCOME: tuple[str, ...] = (
+    "Cut infrastructure cost by 25%",
+    "Reduced incident response time from 4 hours to 30 minutes",
+    "Grew daily active users by 18%",
+)
+
+EXAMPLES_CERTIFICATION: tuple[str, ...] = (
+    "Applied AWS Solutions Architect practices to a cost-optimized migration",
+    "Used CISSP principles to establish the first security review process",
+    "Leveraged CKAD training to containerize 20 existing services",
+)
+
+EXAMPLES_PROJECT_SKILLS: tuple[str, ...] = (
+    "Tag a CI/CD project with 'Docker', 'Kubernetes', 'CI/CD'",
+    "Tag a data project with 'Python', 'SQL', 'Airflow'",
+    "Link a cloud migration project to your platform engineering experience",
+)
+
+EXPLANATION_MEASURABLE_ACHIEVEMENT = (
+    "Recruiters scan for quantified impact; an experience that only describes "
+    "responsibilities looks like every other job description."
+)
+
+EXPLANATION_SHOW_SKILL = (
+    "Skills without demonstrated use can read as inflated — reviewers trust "
+    "what they can see in context."
+)
+
+EXPLANATION_ADD_TECHNOLOGIES = (
+    "Descriptions without tools and technologies give reviewers no way to "
+    "gauge your technical depth."
+)
+
+EXPLANATION_SUMMARY = (
+    "Your summary is the first thing most recruiters read — without it, they "
+    "have to infer your strengths from the rest of the profile."
+)
+
+EXPLANATION_DUPLICATE_SKILLS = (
+    "Duplicate entries split your evidence across two skills and can look "
+    "careless to reviewers."
+)
+
+EXPLANATION_BUSINESS_OUTCOME = (
+    "Recruiters hire for outcomes; activity alone does not show the value you "
+    "delivered."
+)
+
+EXPLANATION_CERTIFICATION = (
+    "Certifications earn credibility when they are tied to real work — "
+    "otherwise they are just a line item."
+)
+
+EXPLANATION_PROJECT_SKILLS = (
+    "Projects that are not connected to skills cannot strengthen your skill "
+    "evidence."
+)
+
 
 def _experience_text(exp: dict[str, Any]) -> str:
     return " ".join(
@@ -73,6 +162,11 @@ def _build_recommendation(
     finding_type: str,
     title: str,
     reason: str,
+    explanation: str,
+    suggested_action: str,
+    examples: tuple[str, ...],
+    priority: str,
+    estimated_impact: str,
     element_id: str | None,
     element_type: str | None,
     confidence: str,
@@ -83,6 +177,11 @@ def _build_recommendation(
         value={
             "title": title,
             "reason": reason,
+            "explanation": explanation,
+            "suggested_action": suggested_action,
+            "examples": list(examples),
+            "priority": priority,
+            "estimated_impact": estimated_impact,
             "element_id": element_id,
             "element_type": element_type,
             "confidence": confidence,
@@ -123,9 +222,16 @@ class NoMeasurableAchievementRule(Rule):
                         finding_type=self.id,
                         title="Add measurable achievements",
                         reason=(
-                            f"'{exp_title}' has no achievements listed. Add quantified "
-                            "results (e.g. 'reduced deployment time by 40%') to show impact."
+                            f"'{exp_title}' has no achievements listed — it describes "
+                            "responsibilities without evidence of results."
                         ),
+                        explanation=EXPLANATION_MEASURABLE_ACHIEVEMENT,
+                        suggested_action=(
+                            "Add at least one measurable achievement to this experience."
+                        ),
+                        examples=EXAMPLES_MEASURABLE_ACHIEVEMENT,
+                        priority="high",
+                        estimated_impact="high",
                         element_id=exp.get("id"),
                         element_type="experience",
                         confidence="high",
@@ -145,9 +251,17 @@ class NoMeasurableAchievementRule(Rule):
                         finding_type=self.id,
                         title="Quantify achievements with outcomes",
                         reason=(
-                            f"'{exp_title}' lists achievements but none include a "
+                            f"'{exp_title}' lists achievements, but none include a "
                             "measurable outcome (metrics, percentages, or business impact)."
                         ),
+                        explanation=EXPLANATION_MEASURABLE_ACHIEVEMENT,
+                        suggested_action=(
+                            "Rewrite each achievement to state a quantified result — "
+                            "a metric, percentage, or business outcome."
+                        ),
+                        examples=EXAMPLES_MEASURABLE_ACHIEVEMENT,
+                        priority="high",
+                        estimated_impact="high",
                         element_id=exp.get("id"),
                         element_type="experience",
                         confidence="medium",
@@ -224,8 +338,16 @@ class SkillWithoutExperienceRule(Rule):
                     title="Show how you use this skill",
                     reason=(
                         f"'{skill_name}' is listed as a skill but never appears in your "
-                        "experience or achievements. Back it up with a concrete example."
+                        "experience or achievements."
                     ),
+                    explanation=EXPLANATION_SHOW_SKILL,
+                    suggested_action=(
+                        f"Add a concrete example that shows how you use {skill_name} "
+                        "to an experience or achievement."
+                    ),
+                    examples=EXAMPLES_SHOW_SKILL,
+                    priority="high" if category else "medium",
+                    estimated_impact="medium",
                     element_id=skill_id,
                     element_type="skill",
                     confidence=confidence,
@@ -263,16 +385,17 @@ class ExperienceNoTechnologiesRule(Rule):
 
             if not scope:
                 reason = (
-                    f"'{exp_title}' has no description at all. Add your responsibilities "
-                    "and the tools and technologies you used."
+                    f"'{exp_title}' has no description at all — nothing tells a reviewer "
+                    "what you did or what you used."
                 )
+                priority = "high"
                 confidence = "high"
             else:
                 reason = (
                     f"'{exp_title}' describes work without naming any specific tool or "
-                    "technology. Add concrete tech (e.g. Python, AWS, Kubernetes) so "
-                    "reviewers can gauge depth."
+                    "technology."
                 )
+                priority = "medium"
                 confidence = "medium"
 
             results.append(
@@ -281,6 +404,14 @@ class ExperienceNoTechnologiesRule(Rule):
                     finding_type=self.id,
                     title="Name the technologies you used",
                     reason=reason,
+                    explanation=EXPLANATION_ADD_TECHNOLOGIES,
+                    suggested_action=(
+                        "Describe your responsibilities and name the tools and "
+                        "technologies you used (e.g., Python, AWS, Kubernetes)."
+                    ),
+                    examples=EXAMPLES_ADD_TECHNOLOGIES,
+                    priority=priority,
+                    estimated_impact="high",
                     element_id=exp.get("id"),
                     element_type="experience",
                     confidence=confidence,
@@ -319,10 +450,15 @@ class GenericSummaryRule(Rule):
                     rule_id=self.id,
                     finding_type=self.id,
                     title="Add a professional summary",
-                    reason=(
-                        "Your profile has no professional summary. Open with 2-3 lines "
-                        "summarizing your role, your strongest skills, and measurable impact."
+                    reason="Your profile has no professional summary.",
+                    explanation=EXPLANATION_SUMMARY,
+                    suggested_action=(
+                        "Write 2-3 lines covering your role, your strongest skills, "
+                        "and one quantified highlight."
                     ),
+                    examples=EXAMPLES_SUMMARY,
+                    priority="high",
+                    estimated_impact="high",
                     element_id=None,
                     element_type="profile",
                     confidence="high",
@@ -345,11 +481,18 @@ class GenericSummaryRule(Rule):
                     rule_id=self.id,
                     finding_type=self.id,
                     title="Strengthen your professional summary",
-                    reason=(
-                        "Your professional summary reads as generic. Make it concrete: "
-                        "lead with your specialty, name key technologies, and include a "
-                        "quantified highlight (e.g. years, scale, or results)."
+                    reason="Your professional summary reads as generic.",
+                    explanation=(
+                        "Generic adjectives do not differentiate you from other "
+                        "candidates."
                     ),
+                    suggested_action=(
+                        "Lead with your specialty, name key technologies, and include "
+                        "a quantified result."
+                    ),
+                    examples=EXAMPLES_SUMMARY,
+                    priority="medium",
+                    estimated_impact="medium",
                     element_id=None,
                     element_type="profile",
                     confidence=confidence,
@@ -395,10 +538,15 @@ class DuplicateSkillsRule(Rule):
                     rule_id=self.id,
                     finding_type=self.id,
                     title="Merge duplicate skills",
-                    reason=(
-                        f"{merged} appear to be the same skill. Merge them into one "
-                        "entry to avoid splitting your skill evidence."
+                    reason=f"{merged} appear to be the same skill.",
+                    explanation=EXPLANATION_DUPLICATE_SKILLS,
+                    suggested_action=(
+                        "Merge them into one skill entry and keep the strongest "
+                        "evidence for it."
                     ),
+                    examples=EXAMPLES_DUPLICATE_SKILLS,
+                    priority="low",
+                    estimated_impact="low",
                     element_id=None,
                     element_type="profile",
                     confidence="medium",
@@ -451,9 +599,17 @@ class MissingBusinessOutcomeRule(Rule):
                     finding_type=self.id,
                     title="Add a measurable business outcome",
                     reason=(
-                        f"'{title}' describes activity but not a result. State the "
-                        "outcome (e.g. 'cut cost by 25%', 'improved uptime to 99.9%')."
+                        f"'{title}' describes activity but not a result — reviewers "
+                        "cannot see the value it delivered."
                     ),
+                    explanation=EXPLANATION_BUSINESS_OUTCOME,
+                    suggested_action=(
+                        "State the outcome of this achievement and quantify it "
+                        "where possible."
+                    ),
+                    examples=EXAMPLES_BUSINESS_OUTCOME,
+                    priority="medium",
+                    estimated_impact="high",
                     element_id=achievement.get("id"),
                     element_type="achievement",
                     confidence="medium",
@@ -503,9 +659,17 @@ class CertificationUnreferencedRule(Rule):
                     finding_type=self.id,
                     title="Show the value of this certification",
                     reason=(
-                        f"'{cert_name}' is listed but never connected to your experience "
-                        "or achievements. Mention where and how you applied it."
+                        f"'{cert_name}' is listed but never connected to your "
+                        "experience or achievements."
                     ),
+                    explanation=EXPLANATION_CERTIFICATION,
+                    suggested_action=(
+                        "Mention where you applied this certification, or reference "
+                        "it in a relevant achievement."
+                    ),
+                    examples=EXAMPLES_CERTIFICATION,
+                    priority="medium",
+                    estimated_impact="medium",
                     element_id=cert_id,
                     element_type="certification",
                     confidence="medium",
@@ -544,9 +708,16 @@ class ProjectWithoutSkillsRule(Rule):
                     finding_type=self.id,
                     title="Tag this project with skills",
                     reason=(
-                        f"'{title}' is not linked to any skills or experiences. Link it "
-                        "to the capabilities it demonstrates so its evidence counts."
+                        f"'{title}' is not linked to any skills or experiences."
                     ),
+                    explanation=EXPLANATION_PROJECT_SKILLS,
+                    suggested_action=(
+                        "Tag the project with the skills it demonstrates, or link it "
+                        "to a related experience."
+                    ),
+                    examples=EXAMPLES_PROJECT_SKILLS,
+                    priority="low",
+                    estimated_impact="medium",
                     element_id=project.get("id"),
                     element_type="project",
                     confidence="low",

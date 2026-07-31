@@ -122,12 +122,21 @@ export interface Recommendation {
 
 export type OptimizationStatus = 'already_complete' | 'no_matches' | 'recommendations_available';
 
-export type RecommendationConfidence = 'high' | 'medium' | 'low';
+export type QualitativeLevel = 'high' | 'medium' | 'low';
+
+export type RecommendationConfidence = QualitativeLevel;
+export type RecommendationPriority = QualitativeLevel;
+export type RecommendationImpact = QualitativeLevel;
 
 export interface ProfileRecommendation {
   id: string;
   title: string;
   reason: string;
+  explanation: string;
+  suggested_action: string;
+  examples: string[];
+  priority: RecommendationPriority;
+  estimated_impact: RecommendationImpact;
   element_id: string | null;
   element_type: 'profile' | 'experience' | 'skill' | 'achievement' | 'project' | 'certification' | null;
   confidence: RecommendationConfidence;

@@ -76,6 +76,7 @@ def _as_dict_list(v: Any) -> list[dict[str, Any]]:
 
 
 VALID_CONFIDENCES = ("high", "medium", "low")
+VALID_LEVELS = ("high", "medium", "low")
 RECOMMENDATION_FINDING_PREFIX = "recommendation_"
 
 
@@ -130,6 +131,14 @@ def _build_recommendation(f: Any) -> ProfileRecommendation | None:
     if not isinstance(future_evidence, dict):
         future_evidence = {}
 
+    raw_examples = v.get("examples", ())
+    if isinstance(raw_examples, tuple):
+        examples = raw_examples
+    elif isinstance(raw_examples, list):
+        examples = tuple(str(e) for e in raw_examples)
+    else:
+        examples = ()
+
     return ProfileRecommendation(
         id=f"{f.finding_type}:{element_id or 'profile'}",
         title=str(title),
@@ -138,4 +147,15 @@ def _build_recommendation(f: Any) -> ProfileRecommendation | None:
         element_type=element_type,
         confidence=str(confidence),
         future_evidence=future_evidence,
+        explanation=str(v.get("explanation", "") or ""),
+        suggested_action=str(v.get("suggested_action", "") or ""),
+        examples=examples,
+        priority=_normalize_level(v.get("priority")),
+        estimated_impact=_normalize_level(v.get("estimated_impact")),
     )
+
+
+def _normalize_level(value: Any) -> str:
+    if isinstance(value, str) and value in VALID_LEVELS:
+        return value
+    return "medium"
