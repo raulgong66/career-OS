@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
@@ -16,7 +18,22 @@ from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 import yaml
 
-from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, generate_artifact, generate_markdown_cv
+
+from .runtime_config import (
+    BACKEND_VERSION,
+    RuntimeConfigurationError,
+    print_configuration_banner,
+    validate_runtime_config,
+)
+
+try:
+    runtime_config = validate_runtime_config()
+except RuntimeConfigurationError as exc:
+    print(f"CareerOS startup aborted: {exc}", file=sys.stderr)
+    raise SystemExit(1) from exc
+print_configuration_banner(runtime_config)
+
+from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.profile_repository import ProfileRepository, ProfileState
@@ -25,7 +42,7 @@ from .dto import to_import_response, to_profile_details, to_profile_summary
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
 
-app = FastAPI(title="CareerOS API", version="1.0.0")
+app = FastAPI(title="CareerOS API", version=BACKEND_VERSION)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -157,6 +174,20 @@ class ApiErrorResponse(BaseModel):
     processingErrors: list[str] | None = Field(default=None, description="Optional list of processing errors.")
 
 
+class CreateArtifactRequest(BaseModel):
+    """Request payload for creating an artifact from a template."""
+
+    template: str = Field(description="Template identifier (e.g. 'standard_cv').")
+    title: str | None = Field(default=None, description="Optional human-readable artifact title.")
+
+
+class CreateArtifactResponse(BaseModel):
+    """Response after creating an artifact."""
+
+    artifactId: str = Field(description="ID of the created artifact.")
+    artifact: dict[str, Any] = Field(description="The full artifact definition.")
+
+
 
 
 
@@ -169,7 +200,13 @@ def health() -> HealthResponse:
 @app.get("/version", response_model=VersionResponse)
 def version() -> VersionResponse:
     """Return the API version."""
-    return VersionResponse(version="1.0.0")
+    return VersionResponse(version=BACKEND_VERSION)
+
+
+@app.get("/artifact-templates")
+def list_artifact_templates() -> list[dict[str, str]]:
+    """Return all available artifact templates."""
+    return default_template_registry().list()
 
 
 ACCEPTED_MIME_TYPES = {
@@ -320,6 +357,52 @@ def delete_profile(profile_id: str) -> None:
         ).model_dump())
 
 
+@app.post("/profiles/{profile_id}/artifacts", response_model=CreateArtifactResponse, status_code=status.HTTP_201_CREATED)
+def create_profile_artifact(profile_id: str, request: CreateArtifactRequest) -> CreateArtifactResponse:
+    """Create an artifact definition from a template and persist it to the profile."""
+    try:
+        record = PROFILE_REPOSITORY.get(profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    data = record.data
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail="Profile data is malformed.",
+        ).model_dump())
+
+    registry = default_template_registry()
+    try:
+        template = registry.get(request.template)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=ApiErrorResponse(
+            error="INVALID_TEMPLATE",
+            detail=f"Unknown artifact template: '{request.template}'. Available: {[t['id'] for t in registry.list()]}",
+        ).model_dump())
+
+    artifact = template.build(data, title=request.title)
+    artifacts: list[dict[str, Any]] = data.get("artifacts", [])
+    artifacts.append(artifact)
+    data["artifacts"] = artifacts
+
+    try:
+        Path(record.path).write_text(
+            yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail=f"Failed to persist artifact: {exc}",
+        ).model_dump())
+
+    return CreateArtifactResponse(artifactId=artifact["id"], artifact=artifact)
+
+
 @app.post("/analyze", response_model=dict[str, Any])
 def analyze_profile(request: AnalyzeRequest) -> dict[str, Any]:
     """Run deterministic analysis of a canonical profile using the Reasoning Engine.
@@ -461,7 +544,7 @@ def generate_artifact_endpoint(request: GenerateArtifactRequest) -> Response:
             job_description=request.job_description
         )
         
-        if request.job_description:
+        if request.job_description and isinstance(result, tuple):
             output, optimization_result = result
         else:
             output = result

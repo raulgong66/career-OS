@@ -68,11 +68,13 @@ def test_docx_cv_generator_renders_expected_content(repo_root: Path, profile: di
 
     assert "Jane Doe" in text
     assert "AI product builder" in text
-    assert "AI Platform CV" in text
     assert "Professional Summary" in text
     assert "AI product builder focused on reliable workflow systems." in text
     assert "AI workflow design" in text
-    assert "Derived from profile version: 1.0.0" in text
+
+    # No internal implementation metadata leaks into the document
+    for leak in ("Artifact:", "Derived from profile version", "profileVersion", "artifact_id", "artifactId"):
+        assert leak not in text
 
 
 def test_docx_cv_generator_rejects_non_cv_contract(repo_root: Path, profile: dict) -> None:

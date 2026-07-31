@@ -63,4 +63,20 @@ export class ProfileService {
       throw new Error(error.detail || 'Failed to delete profile');
     }
   }
+
+  async createArtifact(profileId: string, template: string, title?: string): Promise<{ artifactId: string }> {
+    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}/artifacts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ template, title }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to create artifact');
+    }
+
+    return response.json();
+  }
+
 }

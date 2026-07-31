@@ -7,10 +7,13 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
+from dotenv import load_dotenv
 import typer
 import yaml
 from rich.console import Console
 from rich.table import Table
+
+load_dotenv()
 
 from careeros import (
     CVDocumentRenderer,

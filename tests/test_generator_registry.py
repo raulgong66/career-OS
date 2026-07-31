@@ -96,7 +96,7 @@ def test_markdown_cv_pipeline_uses_default_registry(repo_root: Path, profile_fil
     output = generate_markdown_cv(profile_file, "artifact-1", SchemaLoader(repo_root / "schemas"))
 
     assert "# Jane Doe" in output
-    assert "- AI workflow design" in output
+    assert "AI workflow design" in output
 
 
 def test_pipeline_generates_markdown_cover_letter_with_default_registry(repo_root: Path, tmp_path: Path) -> None:

@@ -31,6 +31,22 @@ def _run_reasoning(profile: dict) -> ReasoningFindings | None:
         return None
 
 
+def _infer_artifact_type(artifact: dict) -> str:
+    """Infer artifact type from metadata when explicit artifactType is missing (legacy compat)."""
+    explicit = artifact.get("artifactType")
+    if explicit:
+        return str(explicit).upper()
+    art_id = str(artifact.get("id", "")).lower()
+    title = str(artifact.get("title", "")).lower()
+    if "interest" in art_id or "interest" in title:
+        return "INTEREST_LETTER"
+    if "cover" in art_id or "cover" in title:
+        return "COVER_LETTER"
+    if "cv" in art_id or "cv" in title or "resume" in art_id or "resume" in title:
+        return "CV"
+    return ""
+
+
 def generate_artifact(
     profile_file: Union[str, Path],
     artifact_id: str,
@@ -44,8 +60,8 @@ def generate_artifact(
     Runs deterministic reasoning exactly once per request and attaches the
     findings to the ExportContract so generators can consume them.
     
-    When job_description is provided for CV/Resume artifacts, generates a
-    tailored artifact with ADD recommendations applied and returns
+    When job_description is provided for CV/Resume/Interest Letter artifacts,
+    generates a tailored artifact with ADD recommendations applied and returns
     (artifact, OptimizationResult). For other artifact types (e.g. cover letters)
     the JD is passed through the contract for generator-level consumption.
     """
@@ -58,10 +74,10 @@ def generate_artifact(
     if target_artifact is None:
         from .exceptions import EntityNotFoundError
         raise EntityNotFoundError(f"Artifact not found: {artifact_id}")
-    artifact_type = (target_artifact.get("artifactType") or "").upper()
+    artifact_type = _infer_artifact_type(target_artifact)
 
-    # CV/Resume artifacts with JD → tailoring path (ADD recommendations)
-    if job_description and artifact_type in {"CV", "RESUME"}:
+    # CV/Resume/Interest Letter artifacts with JD → tailoring path (ADD recommendations)
+    if job_description and artifact_type in {"CV", "RESUME", "INTEREST_LETTER"}:
         return generate_tailored_artifact(profile_file, artifact_id, output_format, job_description, schema_loader, registry)
 
     # All other artifacts (cover letters, etc.) → normal generation path

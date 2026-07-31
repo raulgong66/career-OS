@@ -7,6 +7,57 @@ export interface ProfileSummary {
   importedAt: string;
 }
 
+export interface DateRange {
+  start?: string;
+  end?: string;
+  isCurrent?: boolean;
+  label?: string;
+}
+
+export interface ProfessionalSummary {
+  id: string;
+  label: string;
+  text: string;
+}
+
+export interface Experience {
+  id: string;
+  title: string;
+  organization: string;
+  dateRange: DateRange | null;
+  scope: string;
+  engagementType: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  proficiency?: string;
+}
+
+export interface Education {
+  id: string;
+  institution: string;
+  program: string;
+  fieldOfStudy: string;
+  dateRange: DateRange | null;
+}
+
+export interface Certification {
+  id: string;
+  name: string;
+  issuer: string;
+  dateRange: DateRange | null;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+}
+
 export interface ProfileDetails {
   id: string;
   person: {
@@ -25,6 +76,12 @@ export interface ProfileDetails {
   }>;
   summary: string | null;
   importedAt: string;
+  professionalSummaries: ProfessionalSummary[];
+  experiences: Experience[];
+  skills: Skill[];
+  education: Education[];
+  certifications: Certification[];
+  projects: Project[];
 }
 
 export interface ImportResponse {

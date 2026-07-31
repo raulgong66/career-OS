@@ -1,4 +1,4 @@
-"""DOCX CV generator."""
+"""DOCX letter generator (cover letters, interest letters)."""
 
 from __future__ import annotations
 
@@ -8,23 +8,23 @@ from docx import Document
 
 from ..exceptions import ValidationError
 from ..export_contract import ExportContract
-from .markdown_cv import MarkdownCVGenerator
+from .markdown_cover_letter import MarkdownCoverLetterGenerator
 
 
-class DocxCVGenerator:
-    """Generate a minimal DOCX CV from an export contract."""
+class DocxLetterGenerator:
+    """Generate a minimal DOCX letter from an export contract."""
 
-    supported_artifact_types = {"CV", "RESUME"}
+    supported_artifact_types = {"COVER_LETTER", "INTEREST_LETTER"}
 
     def __init__(self) -> None:
-        """Create a DOCX generator backed by the Markdown CV structure."""
-        self.markdown_generator = MarkdownCVGenerator()
+        """Create a DOCX letter generator backed by the Markdown letter generator."""
+        self.markdown_generator = MarkdownCoverLetterGenerator()
 
     def generate(self, contract: ExportContract) -> bytes:
         """Generate DOCX bytes using only the provided export contract."""
         artifact_type = contract.artifact_type.upper()
         if artifact_type not in self.supported_artifact_types:
-            raise ValidationError(f"Unsupported artifact type for DOCX CV: {contract.artifact_type}")
+            raise ValidationError(f"Unsupported artifact type for DOCX letter: {contract.artifact_type}")
 
         markdown = self.markdown_generator.generate(contract)
         document = Document()
@@ -35,7 +35,8 @@ class DocxCVGenerator:
         document.save(buffer)
         return buffer.getvalue()
 
-    def _add_markdown_line(self, document: Document, line: str) -> None:
+    @staticmethod
+    def _add_markdown_line(document: Document, line: str) -> None:
         """Add a Markdown-derived line to a DOCX document."""
         if not line:
             return
@@ -45,9 +46,9 @@ class DocxCVGenerator:
         if line.startswith("## "):
             document.add_heading(line[3:], level=1)
             return
-        if line.startswith("- ") or line.startswith("• "):
+        if line.startswith("- "):
             paragraph = document.add_paragraph(style="List Bullet")
-            self._add_inline_text(paragraph, line[2:])
+            DocxLetterGenerator._add_inline_text(paragraph, line[2:])
             return
         if line.startswith("_") and line.endswith("_"):
             paragraph = document.add_paragraph()
@@ -55,7 +56,7 @@ class DocxCVGenerator:
             run.italic = True
             return
         paragraph = document.add_paragraph()
-        self._add_inline_text(paragraph, line)
+        DocxLetterGenerator._add_inline_text(paragraph, line)
 
     @staticmethod
     def _add_inline_text(paragraph, text: str) -> None:

@@ -25,9 +25,30 @@ careeros list company .
 careeros search company name Example
 ```
 
+### Configuration
+
+Runtime settings are loaded from a `.env` file in the project root. Copy the example and adjust:
+
+```bash
+cp .env.example .env
+```
+
+Available variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `LLM_PROVIDER` | *(required)* | `ollama` or `openai` |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+| `OLLAMA_MODEL` | `qwen2.5:3b` | Ollama model name |
+| `OPENAI_API_KEY` | — | OpenAI API key |
+| `CV_LLM_ENABLED` | `false` | When `true`, CVs generated with a job description are tailored by the LLM provider |
+
+A startup error is raised if `LLM_PROVIDER` is missing or invalid.
+
 ### API
 
 ```bash
+cp .env.example .env
 python3 -m uvicorn api.main:app --reload
 ```
 

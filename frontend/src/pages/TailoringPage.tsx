@@ -1,58 +1,50 @@
 import { useState, useEffect } from 'react';
 import { TailoringService } from '../services/TailoringService';
 import { DocumentService } from '../services/DocumentService';
-import type { Recommendation, OptimizationStatus, OptimizationSummary, ProfileInfo } from '../types';
+import { ProfileService } from '../services/ProfileService';
+import type { Recommendation, OptimizationStatus, OptimizationSummary, ProfileInfo, ProfileDetails } from '../types';
 
 type RequestStatus = 'idle' | 'analyzing' | 'generating' | 'success' | 'error';
 
 interface ArtifactLabels {
-  generateButton: string;
-  generatingStatus: string;
-  errorFallback: string;
   resultHeading: string;
   emptyState: string;
   completeMessage: string;
 }
 
 const ARTIFACT_LABELS: Record<string, ArtifactLabels> = {
-  cv: {
-    generateButton: 'Generate Tailored Resume',
-    generatingStatus: 'Generating tailored resume...',
-    errorFallback: 'Failed to generate tailored resume',
-    resultHeading: 'Tailored Resume',
-    emptyState: 'Your tailored resume will appear here',
-    completeMessage: 'Resume is already complete',
+  CV: {
+    resultHeading: 'Tailored CV',
+    emptyState: 'Your tailored CV will appear here',
+    completeMessage: 'CV is already complete',
   },
-  'cover-letter': {
-    generateButton: 'Generate Tailored Cover Letter',
-    generatingStatus: 'Generating tailored cover letter...',
-    errorFallback: 'Failed to generate tailored cover letter',
-    resultHeading: 'Tailored Cover Letter',
-    emptyState: 'Your tailored cover letter will appear here',
-    completeMessage: 'Cover letter is already complete',
+  INTEREST_LETTER: {
+    resultHeading: 'Interest Letter',
+    emptyState: 'Your interest letter will appear here',
+    completeMessage: 'Interest letter is already complete',
   },
 };
 
+const TEMPLATE_IDS: Record<string, string> = {
+  CV: 'standard_cv',
+  INTEREST_LETTER: 'standard_interest_letter',
+};
+
 const DEFAULT_LABELS: ArtifactLabels = {
-  generateButton: 'Generate Tailored Document',
-  generatingStatus: 'Generating tailored document...',
-  errorFallback: 'Failed to generate tailored document',
   resultHeading: 'Tailored Document',
   emptyState: 'Your tailored document will appear here',
   completeMessage: 'Document is already complete',
 };
 
-function getArtifactLabels(artifactId: string): ArtifactLabels {
-  if (artifactId.startsWith('cover-letter')) return ARTIFACT_LABELS['cover-letter'];
-  if (artifactId.startsWith('cv')) return ARTIFACT_LABELS['cv'];
+function getArtifactLabels(artifactType: string): ArtifactLabels {
+  if (artifactType in ARTIFACT_LABELS) return ARTIFACT_LABELS[artifactType];
   return DEFAULT_LABELS;
 }
 
 export default function TailoringPage() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
-  const [availableArtifacts, setAvailableArtifacts] = useState<string[]>([]);
-  const [selectedArtifactId, setSelectedArtifactId] = useState('');
+  const [selectedProfile, setSelectedProfile] = useState<ProfileDetails | null>(null);
   const [jobDescription, setJobDescription] = useState('');
   const [status, setStatus] = useState<RequestStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -61,71 +53,86 @@ export default function TailoringPage() {
   const [optimizationStatus, setOptimizationStatus] = useState<OptimizationStatus | null>(null);
   const [optimizationMessage, setOptimizationMessage] = useState('');
   const [optimizationSummary, setOptimizationSummary] = useState<OptimizationSummary | null>(null);
+  const [currentArtifactId, setCurrentArtifactId] = useState('');
+  const [currentArtifactType, setCurrentArtifactType] = useState('');
+  const [loadingProfiles, setLoadingProfiles] = useState(true);
+  const labels = getArtifactLabels(currentArtifactType);
 
   useEffect(() => {
+    setLoadingProfiles(true);
     const service = TailoringService.getInstance();
     service.getProfiles().then((profiles) => {
       setProfiles(profiles);
       if (profiles.length > 0) {
         setSelectedProfileId(profiles[0].id);
-        setAvailableArtifacts(profiles[0].artifactIds);
-        if (profiles[0].artifactIds.length > 0) {
-          setSelectedArtifactId(profiles[0].artifactIds[0]);
-        }
+        ProfileService.getInstance().getProfile(profiles[0].id).then((details) => {
+          setSelectedProfile(details);
+        }).catch(() => {}).finally(() => setLoadingProfiles(false));
+      } else {
+        setLoadingProfiles(false);
       }
     }).catch(() => {
       setErrorMessage('Unable to load profiles. Please ensure the backend is running.');
+      setLoadingProfiles(false);
     });
   }, []);
 
   const handleProfileChange = (profileId: string) => {
     setSelectedProfileId(profileId);
-    const profile = profiles.find(p => p.id === profileId);
-    if (profile) {
-      setAvailableArtifacts(profile.artifactIds);
-      if (profile.artifactIds.length > 0) {
-        setSelectedArtifactId(profile.artifactIds[0]);
-      } else {
-        setSelectedArtifactId('');
-      }
-    }
+    setSelectedProfile(null);
+    ProfileService.getInstance().getProfile(profileId).then((details) => {
+      setSelectedProfile(details);
+      setErrorMessage('');
+    }).catch(() => {
+      setErrorMessage('Failed to load profile details. Please try again.');
+    });
   };
 
-  const handleGenerate = async () => {
-    if (!selectedArtifactId) {
-      setErrorMessage('Please select an artifact');
-      setStatus('error');
-      return;
-    }
+  const generateDocument = async (artifactType: 'CV' | 'INTEREST_LETTER') => {
     if (!jobDescription.trim()) {
       setErrorMessage('Please enter a job description');
       setStatus('error');
       return;
     }
 
-    setStatus('analyzing');
     setErrorMessage('');
-    setArtifact('');
-    setRecommendations([]);
-    setOptimizationStatus(null);
-    setOptimizationMessage('');
-    setOptimizationSummary(null);
-
-    const generatingTimeout = setTimeout(() => {
-      setStatus('generating');
-    }, 800);
+    setStatus('analyzing');
 
     try {
-      const service = TailoringService.getInstance();
+      setArtifact('');
+      setRecommendations([]);
+      setOptimizationStatus(null);
+      setOptimizationMessage('');
+      setOptimizationSummary(null);
 
+      let artifactId: string | null = null;
+      const existing = selectedProfile?.artifacts.find((a: { type: string }) => a.type === artifactType);
+      if (existing) {
+        artifactId = existing.id;
+      } else {
+        const result = await ProfileService.getInstance().createArtifact(selectedProfileId, TEMPLATE_IDS[artifactType]);
+        const details = await ProfileService.getInstance().getProfile(selectedProfileId);
+        setSelectedProfile(details);
+        artifactId = result.artifactId;
+      }
+
+      setCurrentArtifactId(artifactId);
+      setCurrentArtifactType(artifactType);
+
+      const generatingTimeout = setTimeout(() => {
+        setStatus('generating');
+      }, 800);
+
+      const service = TailoringService.getInstance();
       const response = await service.generateTailoredArtifact(
         selectedProfileId,
-        selectedArtifactId,
+        artifactId,
         'markdown',
         jobDescription
       );
 
       clearTimeout(generatingTimeout);
+
       setArtifact(response.artifact);
       setRecommendations(response.recommendations);
       setOptimizationStatus(response.optimizationStatus);
@@ -133,17 +140,156 @@ export default function TailoringPage() {
       setOptimizationSummary(response.optimizationSummary);
       setStatus('success');
     } catch (error) {
-      clearTimeout(generatingTimeout);
+      setStatus('error');
       setErrorMessage(
         error instanceof Error && error.message.includes('Failed to fetch')
           ? 'Unable to connect to the server. Please ensure the backend is running.'
           : error instanceof Error
           ? error.message
-          : labels.errorFallback
+          : 'Failed to generate document'
       );
-      setStatus('error');
     }
   };
+
+  const formatDateRange = (dr: import('../types').DateRange | null): string => {
+    if (!dr) return '';
+    if (dr.label) return dr.label;
+    const parts: string[] = [];
+    if (dr.start) parts.push(dr.start);
+    if (dr.isCurrent) {
+      parts.push('Present');
+    } else if (dr.end) {
+      parts.push(dr.end);
+    }
+    return parts.join(' – ');
+  };
+
+  const renderEntitySections = (profile: import('../types').ProfileDetails) => (
+    <div className="space-y-4">
+      {/* Professional Summary */}
+      {profile.professionalSummaries.length > 0 && (
+        <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
+          <div className="px-3 py-2 bg-gray-50">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Professional Summary</h3>
+          </div>
+          {profile.professionalSummaries.map((ps) => (
+            <div key={ps.id} className="px-3 py-2">
+              {ps.label && <p className="text-xs font-medium text-gray-500 mb-1">{ps.label}</p>}
+              <p className="text-sm text-gray-700 leading-relaxed">{ps.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Experience */}
+      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
+        <div className="px-3 py-2 bg-gray-50">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Experience</h3>
+        </div>
+        {profile.experiences.length === 0 ? (
+          <div className="px-3 py-4">
+            <p className="text-sm text-gray-400 italic">No experience entries available.</p>
+          </div>
+        ) : (
+          profile.experiences.map((exp) => (
+            <div key={exp.id} className="px-3 py-2">
+              <p className="text-sm font-medium text-gray-900">{exp.title}</p>
+              {(exp.organization || exp.engagementType) && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {[exp.organization, exp.engagementType].filter(Boolean).join(' · ')}
+                </p>
+              )}
+              {formatDateRange(exp.dateRange) && (
+                <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(exp.dateRange)}</p>
+              )}
+              {exp.scope && (
+                <p className="text-sm text-gray-700 mt-1 leading-relaxed">{exp.scope}</p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Skills */}
+      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
+        <div className="px-3 py-2 bg-gray-50">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skills</h3>
+        </div>
+        {profile.skills.length === 0 ? (
+          <div className="px-3 py-4">
+            <p className="text-sm text-gray-400 italic">No skills available.</p>
+          </div>
+        ) : (
+          <div className="px-3 py-2">
+            <div className="flex flex-wrap gap-1.5">
+              {profile.skills.map((skill) => (
+                <span
+                  key={skill.id}
+                  className="inline-flex items-center px-2.5 py-1 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200"
+                  title={skill.description || skill.category || undefined}
+                >
+                  {skill.name}
+                  {skill.proficiency && (
+                    <span className="ml-1 text-blue-400 font-normal">({skill.proficiency})</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Education */}
+      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
+        <div className="px-3 py-2 bg-gray-50">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Education</h3>
+        </div>
+        {profile.education.length === 0 ? (
+          <div className="px-3 py-4">
+            <p className="text-sm text-gray-400 italic">No education entries available.</p>
+          </div>
+        ) : (
+          profile.education.map((edu) => (
+            <div key={edu.id} className="px-3 py-2">
+              <p className="text-sm font-medium text-gray-900">{edu.program}</p>
+              {(edu.institution || edu.fieldOfStudy) && (
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {[edu.institution, edu.fieldOfStudy].filter(Boolean).join(' · ')}
+                </p>
+              )}
+              {formatDateRange(edu.dateRange) && (
+                <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(edu.dateRange)}</p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Certifications */}
+      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
+        <div className="px-3 py-2 bg-gray-50">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Certifications</h3>
+        </div>
+        {profile.certifications.length === 0 ? (
+          <div className="px-3 py-4">
+            <p className="text-sm text-gray-400 italic">No certifications available.</p>
+          </div>
+        ) : (
+          profile.certifications.map((cert) => (
+            <div key={cert.id} className="px-3 py-2">
+              <p className="text-sm font-medium text-gray-900">{cert.name}</p>
+              {cert.issuer && (
+                <p className="text-xs text-gray-500 mt-0.5">{cert.issuer}</p>
+              )}
+              {formatDateRange(cert.dateRange) && (
+                <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(cert.dateRange)}</p>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 
   const renderResume = (content: string) => {
     const lines = content.split('\n');
@@ -197,19 +343,26 @@ export default function TailoringPage() {
     return null;
   };
 
-  const labels = getArtifactLabels(selectedArtifactId);
-
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
       <header className="bg-white border-b border-gray-200 px-6 py-4">
         <h1 className="text-2xl font-bold text-gray-900">CareerOS Platform Alpha</h1>
-        <p className="text-sm text-gray-600 mt-1">AI-Powered Resume Tailoring</p>
+        <p className="text-sm text-gray-600 mt-1">AI-Powered Document Tailoring</p>
       </header>
 
       <div className="flex-1 overflow-hidden">
         <div className="h-full grid grid-cols-1 lg:grid-cols-2">
           {/* Left Panel */}
           <div className="border-r border-gray-200 bg-white p-6 overflow-y-auto">
+            {loadingProfiles ? (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                <svg className="animate-spin h-8 w-8 mb-3 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <p className="text-sm">Loading profiles...</p>
+              </div>
+            ) : (
             <div className="max-w-xl mx-auto space-y-6">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Source Profile</h2>
@@ -227,22 +380,45 @@ export default function TailoringPage() {
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Artifact</label>
-                    <select
-                      value={selectedArtifactId}
-                      onChange={(e) => setSelectedArtifactId(e.target.value)}
-                      disabled={availableArtifacts.length === 0}
-                      className="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                    >
-                      {availableArtifacts.length === 0 && <option value="">Select a profile first</option>}
-                      {availableArtifacts.map((id) => (
-                        <option key={id} value={id}>{id}</option>
-                      ))}
-                    </select>
+                  {selectedProfile && (
+                    <>
+                      <div className="border border-gray-200 rounded-md divide-y divide-gray-200">
+                        <div className="px-3 py-2">
+                          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Name</label>
+                          <p className="mt-0.5 text-sm text-gray-900">{selectedProfile.person.firstName} {selectedProfile.person.lastName}</p>
+                        </div>
+                        <div className="px-3 py-2">
+                          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Headline</label>
+                          <p className="mt-0.5 text-sm text-gray-700">{selectedProfile.person.headline || '—'}</p>
+                        </div>
+                        <div className="px-3 py-2">
+                          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Location</label>
+                          <p className="mt-0.5 text-sm text-gray-700">
+                            {[selectedProfile.person.city, selectedProfile.person.country].filter(Boolean).join(', ') || '—'}
+                          </p>
+                        </div>
+                        <div className="px-3 py-2">
+                          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Languages</label>
+                          <p className="mt-0.5 text-sm text-gray-700">
+                            {selectedProfile.person.languages.length > 0
+                              ? selectedProfile.person.languages.map((l) => `${l.name} (${l.proficiency})`).join(', ')
+                              : '—'}
+                          </p>
+                        </div>
+                        {selectedProfile.summary && (
+                          <div className="px-3 py-2">
+                            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Summary</label>
+                            <p className="mt-0.5 text-sm text-gray-700 leading-relaxed">{selectedProfile.summary}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ── Entity Sections ── */}
+                      {renderEntitySections(selectedProfile)}
+                    </>
+                  )}
                   </div>
                 </div>
-              </div>
 
               <div>
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Paste Job Description</h2>
@@ -254,21 +430,32 @@ export default function TailoringPage() {
                 />
               </div>
 
-              <button
-                onClick={handleGenerate}
-                disabled={status === 'analyzing' || status === 'generating' || !selectedArtifactId || !jobDescription.trim()}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-md transition-colors duration-200"
-              >
-                {status === 'analyzing' || status === 'generating' ? (
-                  <span className="flex items-center justify-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    {status === 'analyzing' ? 'Analyzing job description...' : labels.generatingStatus}
-                  </span>
-                ) : labels.generateButton}
-              </button>
+              <div className="flex gap-3">
+                {(['CV', 'INTEREST_LETTER'] as const).map((type) => {
+                  const isActive = status === 'analyzing' || status === 'generating';
+                  const label = type === 'CV' ? 'Generate Tailored CV' : 'Generate Interest Letter';
+                  return (
+                    <button
+                      key={type}
+                      onClick={() => generateDocument(type)}
+                      disabled={isActive || !jobDescription.trim() || !selectedProfile}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-md transition-colors duration-200"
+                    >
+                      {isActive ? (
+                        <span className="flex items-center justify-center">
+                          <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          {status === 'analyzing' ? 'Analyzing' : 'Generating...'}
+                        </span>
+                      ) : (
+                        label
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
               {status === 'error' && (
                 <div className="bg-red-50 border border-red-200 rounded-md p-4">
@@ -276,6 +463,7 @@ export default function TailoringPage() {
                 </div>
               )}
             </div>
+            )}
           </div>
 
           {/* Right Panel */}
@@ -283,7 +471,7 @@ export default function TailoringPage() {
             <div className="max-w-2xl mx-auto space-y-6">
 
               {/* ── Status Banner ── */}
-              {status === 'success' && optimizationStatus === 'already_complete' && (
+                    {status === 'success' && optimizationStatus === 'already_complete' && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-5">
                   <div className="flex items-start gap-3">
                     <div className="flex-shrink-0 mt-0.5">
@@ -294,7 +482,7 @@ export default function TailoringPage() {
                     <div>
                       <h2 className="text-base font-semibold text-green-800">Optimization Complete</h2>
                       <p className="mt-1 text-sm text-green-700 leading-relaxed">
-                        Your CV already contains all verified evidence relevant to this opportunity.
+                        Your profile already contains all verified evidence relevant to this opportunity.
                         No additional profile information needs to be incorporated.
                       </p>
                     </div>
@@ -370,8 +558,8 @@ export default function TailoringPage() {
               {/* ── Analysis Explanation ── */}
               {status === 'success' && optimizationSummary && (
                 <p className="text-sm text-gray-500 leading-relaxed border-l-2 border-gray-200 pl-4">
-                  The AI analyzed the job description, compared it with the canonical professional profile,
-                  and generated this tailored artifact using verified profile evidence.
+                  The AI analyzed the job description, compared it with your professional profile,
+                  and generated this tailored document using verified profile evidence.
                 </p>
               )}
 
@@ -418,8 +606,9 @@ export default function TailoringPage() {
                         onClick={async () => {
                           try {
                             const docService = DocumentService.getInstance();
-                            const blob = await docService.downloadDocx(selectedProfileId, selectedArtifactId);
-                            docService.downloadBlob(blob, `${selectedArtifactId}.docx`);
+                            const blob = await docService.downloadDocx(selectedProfileId, currentArtifactId);
+                            const ext = currentArtifactType ? `${currentArtifactType.replace(/_/g, '-')}.docx` : 'document.docx';
+                            docService.downloadBlob(blob, ext);
                           } catch (err) {
                             setErrorMessage(err instanceof Error ? err.message : 'Download failed');
                           }

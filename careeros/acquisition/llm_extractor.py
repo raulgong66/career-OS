@@ -5,13 +5,9 @@ import os
 from abc import ABC, abstractmethod
 from typing import Any
 
-from careeros.exceptions import CareerOSException
+from careeros.exceptions import CareerOSException, LLMConfigurationError
 
 from .person_data import EducationData, ExperienceData, ExtractionResult, PersonData, SkillData
-
-
-class LLMConfigurationError(CareerOSException):
-    pass
 
 
 class LLMExtractionError(CareerOSException):
@@ -98,6 +94,7 @@ class LLMExtractor(ABC):
         return prompt
 
     def parse_response(self, response_text: str) -> dict[str, Any]:
+        import re
         cleaned = response_text.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.split("\n", 1)[-1]
@@ -105,10 +102,14 @@ class LLMExtractor(ABC):
         cleaned = cleaned.strip()
         try:
             data = json.loads(cleaned)
-        except json.JSONDecodeError as exc:
-            raise LLMExtractionError(
-                f"Failed to parse LLM response as JSON: {exc}\nResponse was:\n{response_text}"
-            ) from exc
+        except json.JSONDecodeError:
+            try:
+                cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
+                data = json.loads(cleaned)
+            except json.JSONDecodeError as exc:
+                raise LLMExtractionError(
+                    f"Failed to parse LLM response as JSON: {exc}\nResponse was:\n{response_text}"
+                ) from exc
         if not isinstance(data, dict):
             raise LLMExtractionError("LLM response is not a JSON object")
         return data
@@ -264,7 +265,7 @@ class OllamaLLMExtractor(LLMExtractor):
         model: str | None = None,
     ) -> None:
         self.host = (host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")).rstrip("/")
-        self.model = model or os.environ.get("OLLAMA_MODEL", "qwen3:4b")
+        self.model = model or os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
 
     def extract(
         self, text: str, schema: dict[str, Any] | None = None
@@ -298,7 +299,12 @@ class OllamaLLMExtractor(LLMExtractor):
 
 
 def create_llm_extractor() -> LLMExtractor:
-    provider = os.environ.get("LLM_PROVIDER", "openai").strip().lower()
+    provider = os.environ.get("LLM_PROVIDER")
+    if not provider:
+        raise LLMConfigurationError(
+            "LLM_PROVIDER is not configured. Configure it in the .env file."
+        )
+    provider = provider.strip().lower()
     if provider == "openai":
         return OpenAILLMExtractor()
     elif provider == "ollama":

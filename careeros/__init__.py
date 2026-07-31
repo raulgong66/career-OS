@@ -1,5 +1,9 @@
 """Core library for CareerOS."""
 
+from .artifact_templates import (
+    TemplateRegistry,
+    default_template_registry,
+)
 from .exceptions import (
     CareerOSException,
     EntityNotFoundError,
@@ -73,6 +77,8 @@ __all__ = [
     "CONCEPT_TAXONOMY",
     "CVDocumentRenderer",
     "RecommendationApplier",
+    "TemplateRegistry",
+    "default_template_registry",
     "AcquisitionPipeline",
     "CanonicalProfileBuilder",
     "DocumentReader",

@@ -26,3 +26,7 @@ class RepositoryError(CareerOSException):
 
 class EntityNotFoundError(RepositoryError):
     """Raised when a requested entity cannot be found."""
+
+
+class LLMConfigurationError(CareerOSException):
+    """Raised when LLM provider configuration is missing or invalid."""

@@ -112,10 +112,24 @@ class ExportContractBuilder:
         target_contexts = self._resolve_target_contexts(profile, artifact.get("targetContextRefs", []))
         sources = self._resolve_sources(profile, artifact.get("sourceRefs", []))
 
+        def _infer_type(a: dict) -> str:
+            explicit = a.get("artifactType")
+            if explicit:
+                return str(explicit)
+            a_id = str(a.get("id", "")).lower()
+            a_title = str(a.get("title", "")).lower()
+            if "interest" in a_id or "interest" in a_title:
+                return "INTEREST_LETTER"
+            if "cover" in a_id or "cover" in a_title:
+                return "COVER_LETTER"
+            if "cv" in a_id or "cv" in a_title or "resume" in a_id or "resume" in a_title:
+                return "CV"
+            return ""
+
         return ExportContract(
             profile_version=str(profile.get("profileVersion", "")),
             artifact_id=artifact_id,
-            artifact_type=str(artifact.get("artifactType", "")),
+            artifact_type=_infer_type(artifact),
             person=profile.get("person", {}),
             artifact=artifact,
             target_contexts=target_contexts,

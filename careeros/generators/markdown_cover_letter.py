@@ -22,7 +22,7 @@ class MarkdownCoverLetterGenerator:
     (backward compatible).
     """
 
-    supported_artifact_types = {"COVER_LETTER"}
+    supported_artifact_types = {"COVER_LETTER", "INTEREST_LETTER"}
 
     def __init__(self) -> None:
         """Create a cover letter generator using shared Markdown CV helpers."""
@@ -37,7 +37,8 @@ class MarkdownCoverLetterGenerator:
             )
 
         name = self._markdown_cv._person_name(contract.person)
-        title = contract.artifact.get("title") or "Cover Letter"
+        default_title = "Interest Letter" if "interest" in contract.artifact_type.lower() else "Cover Letter"
+        title = contract.artifact.get("title") or default_title
         context = contract.target_contexts[0] if contract.target_contexts else {}
         role = context.get("role")
         audience = context.get("audience") or "Hiring Team"
@@ -68,8 +69,6 @@ class MarkdownCoverLetterGenerator:
                 self._closing_paragraph(name, role, contract.reasoning, requirements) if has_jd else "Sincerely,",
                 "",
                 name,
-                "",
-                f"_Derived from profile version: {contract.profile_version}_",
             ]
         )
         return "\n".join(lines).strip() + "\n"

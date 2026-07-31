@@ -24,3 +24,10 @@ Thumbs.db
 
 # Lock files (regenerated)
 package-lock.json
+
+# Environment variables (secrets)
+.env
+
+# Profile workspace working data (imported profiles awaiting review)
+profiles/staging/
+profiles/archived/

@@ -7,6 +7,7 @@ from typing import Protocol, Union
 from ..exceptions import ValidationError
 from ..export_contract import ExportContract
 from .docx_cv import DocxCVGenerator
+from .docx_letter import DocxLetterGenerator
 from .markdown_cover_letter import MarkdownCoverLetterGenerator
 from .markdown_cv import MarkdownCVGenerator
 
@@ -50,9 +51,13 @@ def default_generator_registry() -> GeneratorRegistry:
     markdown_cv_generator = MarkdownCVGenerator()
     markdown_cover_letter_generator = MarkdownCoverLetterGenerator()
     docx_cv_generator = DocxCVGenerator()
+    docx_letter_generator = DocxLetterGenerator()
     registry.register("CV", "markdown", markdown_cv_generator)
     registry.register("RESUME", "markdown", markdown_cv_generator)
     registry.register("CV", "docx", docx_cv_generator)
     registry.register("RESUME", "docx", docx_cv_generator)
     registry.register("COVER_LETTER", "markdown", markdown_cover_letter_generator)
+    registry.register("COVER_LETTER", "docx", docx_letter_generator)
+    registry.register("INTEREST_LETTER", "markdown", markdown_cover_letter_generator)
+    registry.register("INTEREST_LETTER", "docx", docx_letter_generator)
     return registry

@@ -112,17 +112,26 @@ def test_markdown_cv_generator_uses_only_export_contract(repo_root: Path, profil
 
     assert markdown.startswith("# Jane Doe\n")
     assert "AI product builder" in markdown
-    assert "**Artifact:** AI Platform CV" in markdown
-    assert "## Target Context\nAI Product Engineer, AI platforms, en" in markdown
     assert "## Professional Summary" in markdown
-    assert "- AI product builder focused on reliable workflow systems." in markdown
-    assert "- **Product Engineer** (2024 - 2026): Built AI-native career workflows." in markdown
-    assert "- **CareerOS**: Schema-driven career operating system." in markdown
-    assert "- AI workflow design (AI)" in markdown
-    assert "- Reduced manual tailoring effort through structured reuse." in markdown
-    assert "- MSc in Computer Science" in markdown
-    assert "- AI Product Certification (Credential ID: CERT-1)" in markdown
-    assert "_Derived from profile version: 1.0.0_" in markdown
+    assert "AI product builder focused on reliable workflow systems." in markdown
+    assert "## Core Competencies" in markdown
+    assert "AI workflow design" in markdown
+    assert "## Professional Experience" in markdown
+    assert "Product Engineer" in markdown
+    assert "Built AI-native career workflows." in markdown
+    assert "## Projects" in markdown
+    assert "**CareerOS**: Schema-driven career operating system." in markdown
+    assert "## Education" in markdown
+    assert "MSc in Computer Science" in markdown
+    assert "## Certifications" in markdown
+    assert "AI Product Certification" in markdown
+
+    # No internal implementation metadata leaks into the document
+    for leak in ("Artifact:", "Derived from profile version", "profileVersion", "artifact_id", "artifactId"):
+        assert leak not in markdown
+
+    # Individual entries render as plain text, never as headings
+    assert not any(line.startswith("###") for line in markdown.splitlines())
 
 
 def test_markdown_cv_generator_preserves_contract_source_order_within_sections(repo_root: Path, profile: dict) -> None:
@@ -136,7 +145,7 @@ def test_markdown_cv_generator_preserves_contract_source_order_within_sections(r
 
     markdown = MarkdownCVGenerator().generate(contract)
 
-    assert markdown.index("- AI workflow design (AI)") < markdown.index("- Schema design")
+    assert markdown.index("AI workflow design") < markdown.index("Schema design")
 
 
 def test_markdown_cv_generator_rejects_non_cv_contract(repo_root: Path, profile: dict) -> None:

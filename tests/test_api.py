@@ -132,7 +132,7 @@ def test_generate_markdown_cv_endpoint_returns_markdown(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/markdown")
     assert "# Jane Doe" in response.text
-    assert "- AI workflow design" in response.text
+    assert "AI workflow design" in response.text
 
 
 def test_generate_markdown_cv_endpoint_reports_missing_artifact(tmp_path: Path) -> None:
@@ -185,7 +185,7 @@ def test_generate_artifact_endpoint_returns_markdown(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/markdown")
     assert "# Jane Doe" in response.text
-    assert "- AI workflow design" in response.text
+    assert "AI workflow design" in response.text
 
 
 def test_generate_artifact_endpoint_returns_docx(tmp_path: Path) -> None:
@@ -349,6 +349,66 @@ def test_optimization_summary_included_in_tailored_response() -> None:
     assert summary["total_profile_elements"] > 0
     assert summary["skills_evaluated"] == 6
     assert summary["experiences_evaluated"] == 6
+
+    # Tailored CV must not leak internal implementation metadata
+    for leak in ("Artifact:", "Derived from profile version", "profileVersion", "artifact_id", "artifactId"):
+        assert leak not in response.text
+
+
+def test_optimization_summary_included_in_interest_letter_response() -> None:
+    response = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": "raul-gongora-profile",
+            "artifact_id": "artf-standard_interest_letter-person-raul-gongora",
+            "output_format": "markdown",
+            "job_description": "DevSecOps engineer with Kubernetes experience",
+        },
+    )
+
+    assert response.status_code == 200
+    status_header = response.headers.get("X-Optimization-Status")
+    assert status_header is not None
+    message_header = response.headers.get("X-Optimization-Message")
+    assert message_header is not None
+    summary_header = response.headers.get("X-Optimization-Summary")
+    assert summary_header is not None
+    import json
+    summary = json.loads(summary_header)
+    assert summary["total_profile_elements"] == 23
+    assert summary["included_profile_elements"] == 13
+    assert summary["profile_coverage"] == 56.5
+    assert summary["additional_evidence"] == 0
+    assert summary["skills_evaluated"] == 6
+    assert summary["experiences_evaluated"] == 6
+
+    # The interest letter references only 13 of 23 profile elements, but the
+    # profile has no evidence model, so zero ADD recommendations is correct.
+    assert status_header == "no_matches"
+
+    # Same header contract as CV: X-Recommendations is only present when non-empty
+    assert response.headers.get("X-Recommendations") is None
+
+    # The generated document is still a proper interest letter
+    assert "Interest Letter" in response.text
+    assert "Dear" in response.text
+
+
+def test_interest_letter_without_job_description_has_no_optimization_headers() -> None:
+    response = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": "raul-gongora-profile",
+            "artifact_id": "artf-standard_interest_letter-person-raul-gongora",
+            "output_format": "markdown",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers.get("X-Optimization-Status") is None
+    assert response.headers.get("X-Optimization-Summary") is None
+    assert response.headers.get("X-Recommendations") is None
+    assert "Interest Letter" in response.text
 
 
 def test_optimization_summary_included_in_optimize_cv_response() -> None:
@@ -553,9 +613,19 @@ def test_get_profile_returns_clean_dto_no_canonical_leakage() -> None:
     assert "names" not in body.get("person", {})
     assert "positioning" not in body.get("person", {})
     assert "sourceRefs" not in [a for a in body.get("artifacts", [])]
-    assert "professionalSummaries" not in body
     assert "profileVersion" not in body
     assert "targetContexts" not in body
+    # New DTO fields that expose entity collections
+    assert isinstance(body.get("professionalSummaries"), list)
+    assert isinstance(body.get("experiences"), list)
+    assert isinstance(body.get("skills"), list)
+    assert isinstance(body.get("education"), list)
+    assert isinstance(body.get("certifications"), list)
+    assert isinstance(body.get("projects"), list)
+    # Entity DTOs should not leak canonical internal fields
+    for exp in body["experiences"]:
+        assert "sourceRefs" not in exp
+        assert "organizationRefs" not in exp
 
 
 def test_profile_summary_includes_new_fields() -> None:
@@ -926,3 +996,72 @@ def test_optimizer_runs_once_per_artifact_request() -> None:
             assert "display_name" in rec
             assert "displayName" in rec
             assert rec["displayName"] == rec["display_name"]
+
+
+def test_artifact_templates_endpoint() -> None:
+    """GET /artifact-templates returns both registered templates."""
+    response = client.get("/artifact-templates")
+    assert response.status_code == 200
+    templates = response.json()
+    assert isinstance(templates, list)
+    assert len(templates) >= 2
+
+    cv = next((t for t in templates if t["artifactType"] == "CV"), None)
+    assert cv is not None
+    assert cv["id"] == "standard_cv"
+    assert cv["displayName"] == "Tailored CV"
+
+    interest = next((t for t in templates if t["artifactType"] == "INTEREST_LETTER"), None)
+    assert interest is not None
+    assert interest["id"] == "standard_interest_letter"
+    assert interest["displayName"] == "Interest Letter"
+
+
+def test_create_interest_letter_artifact(tmp_path: Path) -> None:
+    """POST /profiles/{id}/artifacts with the interest letter template creates a valid artifact.
+
+    Regression test covering:
+    * template registration
+    * artifactType == INTEREST_LETTER
+    * expected sourceRefs (only professional_summary, experience, skill, education)
+    * successful API-based artifact creation
+    """
+    from api.main import PROFILES_ROOT
+
+    profile_id = "test-interest-letter-artifact"
+    profile_data = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-123"},
+        "professionalSummaries": [{"id": "sum-1", "text": "Experienced engineer."}],
+        "experiences": [{"id": "exp-1", "title": "Senior Engineer"}],
+        "skills": [{"id": "skill-1", "name": "Python"}],
+        "education": [{"id": "edu-1", "program": "MSc CS"}],
+        "certifications": [{"id": "cert-1", "name": "AWS Certified"}],
+        "projects": [{"id": "proj-1", "name": "Platform Alpha"}],
+        "achievements": [{"id": "ach-1", "name": "Award"}],
+        "artifacts": [],
+    }
+    profile_path = PROFILES_ROOT / f"{profile_id}.yaml"
+    try:
+        profile_path.write_text(yaml.safe_dump(profile_data), encoding="utf-8")
+
+        response = client.post(
+            f"/profiles/{profile_id}/artifacts",
+            json={"template": "standard_interest_letter"},
+        )
+        assert response.status_code == 201, f"Expected 201, got {response.status_code}: {response.text}"
+
+        body = response.json()
+        assert body["artifactId"].startswith("artf-standard_interest_letter-person-123")
+
+        artifact = body["artifact"]
+        assert artifact["artifactType"] == "INTEREST_LETTER"
+        assert artifact["title"] == "Interest Letter"
+
+        source_refs = artifact["sourceRefs"]
+        assert len(source_refs) == 4
+        source_types = {r["type"] for r in source_refs}
+        assert source_types == {"professional_summary", "experience", "skill", "education"}
+    finally:
+        if profile_path.exists():
+            profile_path.unlink()

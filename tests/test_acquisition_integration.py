@@ -275,19 +275,24 @@ class TestLLMExtractorFactory:
         monkeypatch.setenv("LLM_PROVIDER", "ollama")
         monkeypatch.delenv("OLLAMA_MODEL", raising=False)
         extractor = create_llm_extractor()
-        assert extractor.model == "qwen3:4b"
+        assert extractor.model == "qwen2.5:3b"
 
     def test_create_openai_extractor_when_ollama_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
         from careeros.acquisition.llm_extractor import OpenAILLMExtractor
         extractor = create_llm_extractor()
         assert isinstance(extractor, OpenAILLMExtractor)
 
     def test_create_openai_extractor_missing_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.setenv("LLM_PROVIDER", "openai")
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         with pytest.raises(LLMConfigurationError, match="OpenAI API key is required"):
+            create_llm_extractor()
+
+    def test_create_extractor_no_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        with pytest.raises(LLMConfigurationError, match="LLM_PROVIDER is not configured"):
             create_llm_extractor()
 
     def test_create_unknown_provider(self, monkeypatch: pytest.MonkeyPatch) -> None:

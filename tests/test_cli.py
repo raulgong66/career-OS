@@ -112,7 +112,7 @@ def test_generate_markdown_cv_command_writes_output_file(tmp_path: Path) -> None
     assert result.exit_code == 0
     assert output_file.exists()
     assert "# Jane Doe" in output_file.read_text(encoding="utf-8")
-    assert "- AI workflow design" in output_file.read_text(encoding="utf-8")
+    assert "AI workflow design" in output_file.read_text(encoding="utf-8")
 
 
 def test_generate_markdown_cv_command_reports_missing_artifact(tmp_path: Path) -> None:
@@ -184,14 +184,11 @@ def test_generate_markdown_cv_command_filters_context_specific_sources(tmp_path:
     assert result.exit_code == 0
     markdown = output_file.read_text(encoding="utf-8")
 
-    # The Sources section must only include context-matching skills
-    skills_section_start = markdown.index("## Skills")
+    # The Core Competencies section must only include context-matching skills
+    skills_section_start = markdown.index("## Core Competencies")
     after_skills = markdown[skills_section_start:]
     assert "Matching skill" in after_skills
     assert "Other skill" not in after_skills
-
-    # The reasoning section may include profile-wide skill analysis
-    assert "Strongest Skills:" in markdown
 
 
 def test_generate_artifact_command_writes_markdown_output_file(tmp_path: Path) -> None:
@@ -219,7 +216,7 @@ def test_generate_artifact_command_writes_markdown_output_file(tmp_path: Path) -
 
     assert result.exit_code == 0
     assert "# Jane Doe" in output_file.read_text(encoding="utf-8")
-    assert "- AI workflow design" in output_file.read_text(encoding="utf-8")
+    assert "AI workflow design" in output_file.read_text(encoding="utf-8")
 
 
 def test_generate_artifact_command_writes_docx_output_file(tmp_path: Path) -> None:

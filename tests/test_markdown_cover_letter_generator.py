@@ -87,7 +87,7 @@ def test_markdown_cover_letter_generator_uses_only_export_contract(repo_root: Pa
     assert "- AI workflow design: Designs deterministic AI-assisted workflows." in markdown
     assert "- Reduced manual tailoring effort through structured reuse." in markdown
     assert "Sincerely,\n\nJane Doe" in markdown
-    assert "_Derived from profile version: 1.0.0_" in markdown
+    assert "profile version" not in markdown
 
 
 def test_markdown_cover_letter_generator_preserves_source_order(repo_root: Path, profile: dict) -> None:
@@ -177,7 +177,7 @@ def test_markdown_cover_letter_with_jd_no_matching_evidence_fallback(repo_root: 
     assert "- Product Engineer: Built AI-native career workflows." in markdown
     assert "- Reduced manual tailoring effort through structured reuse." in markdown
     assert "Sincerely," in markdown
-    assert "_Derived from profile version: 1.0.0_" in markdown
+    assert "profile version" not in markdown
 
 
 def test_markdown_cover_letter_with_jd_no_role_fallback(repo_root: Path, profile: dict) -> None:
@@ -209,7 +209,7 @@ def test_markdown_cover_letter_backward_compat_without_jd(repo_root: Path, profi
     assert "- AI workflow design: Designs deterministic AI-assisted workflows." in markdown
     assert "- Reduced manual tailoring effort through structured reuse." in markdown
     assert "Sincerely,\n\nJane Doe" in markdown
-    assert "_Derived from profile version: 1.0.0_" in markdown
+    assert "profile version" not in markdown
 
 
 def test_markdown_cover_letter_jd_cvoptimizer_integration(repo_root: Path, profile: dict) -> None:

@@ -149,10 +149,9 @@ def test_markdown_generator_works_without_reasoning(schema_loader: SchemaLoader,
     assert contract.reasoning is None
     markdown = MarkdownCVGenerator().generate(contract)
     assert "# Jane Doe" in markdown
-    assert "- **Senior Engineer**" in markdown
-    assert "- Python (Programming)" in markdown
-    assert "- AWS (Cloud)" in markdown
-    assert "_Derived from profile version: 1.0.0_" in markdown
+    assert "Senior Engineer" in markdown
+    assert "## Core Competencies" in markdown
+    assert "Python, AWS" in markdown
 
 
 # ---- Markdown generator: reasoning sections ----
@@ -165,15 +164,15 @@ def test_markdown_generator_includes_reasoning_when_available(schema_loader: Sch
 
     # Core sections still present
     assert "# Jane Doe" in markdown
-    assert "_Derived from profile version: 1.0.0_" in markdown
+    assert "## Professional Summary" in markdown
+    assert "## Core Competencies" in markdown
 
-    # Reasoning-derived sections present
-    if findings.core_competencies:
-        assert "Core Competencies:" in markdown
-    if findings.strongest_skills:
-        assert "Strongest Skills:" in markdown
-    if findings.technology_breadth:
-        assert "Technology Breadth:" in markdown
+    # Reasoning feeds the summary and competencies sections
+    if findings.career_stage:
+        assert findings.career_stage in markdown
+    if findings.core_competencies or findings.strongest_skills:
+        for skill in findings.strongest_skills:
+            assert skill in markdown
 
 
 def test_markdown_generator_reasoning_career_stage(schema_loader: SchemaLoader, profile: dict[str, Any], reasoning_report: ReasoningReport) -> None:
@@ -182,7 +181,7 @@ def test_markdown_generator_reasoning_career_stage(schema_loader: SchemaLoader, 
     markdown = MarkdownCVGenerator().generate(contract)
 
     if findings.career_stage:
-        assert f"**Career Stage:** {findings.career_stage}" in markdown
+        assert f"is a {findings.career_stage} professional" in markdown
 
 
 def test_markdown_generator_reasoning_strongest_experience(schema_loader: SchemaLoader, profile: dict[str, Any], reasoning_report: ReasoningReport) -> None:
@@ -265,6 +264,96 @@ def test_pipeline_backward_compatible_no_job_desc(schema_loader: SchemaLoader, p
 
 
 # ---- Helpers ----
+
+
+def test_interest_letter_routes_through_tailoring_pipeline(schema_loader: SchemaLoader) -> None:
+    """INTEREST_LETTER generation with a job description returns (artifact, OptimizationResult)."""
+    from careeros.pipelines import generate_artifact
+
+    profile: dict[str, Any] = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        "professionalSummaries": [
+            {"id": "summary-1", "text": "AI product builder focused on reliable workflow systems."}
+        ],
+        "experiences": [
+            {"id": "exp-1", "title": "Product Engineer", "scope": "Built AI-native career workflows."}
+        ],
+        "skills": [
+            {"id": "skill-1", "name": "AI workflow design"},
+            {"id": "skill-2", "name": "Kubernetes"},
+        ],
+        "education": [],
+        "organizations": [],
+        "projects": [],
+        "achievements": [],
+        "evidence": [],
+        "certifications": [],
+        "targetContexts": [
+            {"id": "context-1", "audience": "Hiring Team", "role": "AI Product Engineer"}
+        ],
+        "artifacts": [
+            {
+                "id": "interest-letter-1",
+                "title": "Interest Letter",
+                "artifactType": "INTEREST_LETTER",
+                "targetContextRefs": [{"id": "context-1", "type": "targetContext"}],
+                "sourceRefs": [
+                    {"id": "summary-1", "type": "professional_summary"},
+                    {"id": "exp-1", "type": "experience"},
+                    {"id": "skill-1", "type": "skill"},
+                ],
+            }
+        ],
+    }
+
+    profile_file = _write_profile(profile)
+    try:
+        result = generate_artifact(
+            profile_file,
+            "interest-letter-1",
+            "markdown",
+            schema_loader,
+            job_description="Kubernetes engineer with automation experience",
+        )
+        assert isinstance(result, tuple)
+        artifact, optimization_result = result
+        assert isinstance(artifact, str)
+        assert optimization_result.status is not None
+        assert optimization_result.summary is not None
+        assert "# Interest Letter" in artifact
+    finally:
+        profile_file.unlink(missing_ok=True)
+
+
+def test_interest_letter_without_job_description_returns_plain_string(
+    schema_loader: SchemaLoader,
+    profile: dict[str, Any],
+) -> None:
+    """Without job_description, INTEREST_LETTER generation stays on the normal path."""
+    from careeros.pipelines import generate_artifact
+
+    interest_profile = dict(profile)
+    interest_profile["artifacts"] = [
+        {
+            "id": "interest-letter-1",
+            "title": "Interest Letter",
+            "artifactType": "INTEREST_LETTER",
+            "targetContextRefs": [],
+            "sourceRefs": [
+                {"id": "exp-1", "type": "experience"},
+                {"id": "skill-1", "type": "skill"},
+            ],
+        }
+    ]
+
+    profile_file = _write_profile(interest_profile)
+    try:
+        result = generate_artifact(profile_file, "interest-letter-1", "markdown", schema_loader)
+        assert isinstance(result, str)
+        assert "Interest Letter" in result
+    finally:
+        profile_file.unlink(missing_ok=True)
 
 
 def _write_profile(profile: dict[str, Any]) -> Path:
