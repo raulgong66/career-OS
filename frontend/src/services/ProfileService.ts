@@ -94,4 +94,43 @@ export class ProfileService {
     return response.json();
   }
 
+  async getTechnologyKeywords(): Promise<string[]> {
+    const response = await fetch(`${BASE}/technologies`);
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch technology keywords');
+    }
+
+    const data = await response.json();
+    return data.keywords ?? [];
+  }
+
+  async resolveRecommendation(
+    profileId: string,
+    request: {
+      triggeredRule: string;
+      elementId: string;
+      skillIds: string[];
+      experienceIds: string[];
+      technologies: string[];
+      achievementStatement: string;
+    },
+  ): Promise<ProfileDetails> {
+    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      const detail =
+        typeof error?.detail === 'string' ? error.detail : error?.detail?.detail ?? 'Failed to resolve recommendation';
+      throw new Error(detail);
+    }
+
+    const data = await response.json();
+    return data.profile;
+  }
+
 }

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .exceptions import EntityNotFoundError, ValidationError
 from .schema_loader import SchemaLoader
 from .validator import EntityValidator
+
+if TYPE_CHECKING:
+    from .interview.domain import InterviewPlan
 
 
 _SOURCE_COLLECTIONS = {
@@ -56,6 +59,7 @@ class ExportContract:
     sources: list[ExportSource] = field(default_factory=list)
     reasoning: ReasoningFindings | None = field(default=None, compare=False)
     job_description: str | None = None
+    interview_plan: "InterviewPlan | None" = field(default=None, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the contract to a serializable dictionary."""
@@ -122,6 +126,8 @@ class ExportContractBuilder:
                 return "INTEREST_LETTER"
             if "cover" in a_id or "cover" in a_title:
                 return "COVER_LETTER"
+            if "interview" in a_id or "interview" in a_title:
+                return "INTERVIEW_PREPARATION_GUIDE"
             if "cv" in a_id or "cv" in a_title or "resume" in a_id or "resume" in a_title:
                 return "CV"
             return ""

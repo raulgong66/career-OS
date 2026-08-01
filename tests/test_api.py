@@ -1042,6 +1042,697 @@ def test_artifact_templates_endpoint() -> None:
     assert interest["displayName"] == "Interest Letter"
 
 
+RESOLVE_TEST_PROFILE = {
+    "profileVersion": "1.0.0",
+    "person": {"id": "resolve-test-person", "names": [{"value": "Resolve Test", "usage": "professional"}]},
+    "organizations": [{"id": "org-1", "name": "Corp"}],
+    "experiences": [
+        {
+            "id": "exp-no-tech",
+            "title": "Operations Coordinator",
+            "organizationRefs": [{"id": "org-1", "type": "organization"}],
+            "dateRange": {"start": "2020-01", "end": "2023-12"},
+            "scope": "Coordinated operations across several departments.",
+        },
+    ],
+    "skills": [
+        {"id": "skill-python", "name": "Python"},
+        {"id": "skill-observability", "name": "Observability Patterns"},
+    ],
+    "projects": [
+        {"id": "proj-lonely", "name": "Lonely Project", "description": "A project with no links."},
+    ],
+    "education": [],
+    "professionalSummaries": [],
+    "achievements": [],
+    "evidence": [],
+    "certifications": [],
+    "artifacts": [],
+    "targetContexts": [],
+}
+
+
+@pytest.fixture
+def resolve_profile() -> str:
+    """Create a clean test profile for guided resolution tests and return its ID."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    profile_id = "resolve-test-profile"
+    profile_path = PROFILES_ROOT / f"{profile_id}.yaml"
+    profile_path.write_text(yaml.safe_dump(RESOLVE_TEST_PROFILE), encoding="utf-8")
+    yield profile_id
+    if profile_path.exists():
+        profile_path.unlink()
+
+
+def _read_canonical(profile_id: str) -> dict:
+    import yaml
+    from api.main import PROFILES_ROOT
+    return yaml.safe_load((PROFILES_ROOT / f"{profile_id}.yaml").read_text(encoding="utf-8"))
+
+
+def test_technologies_endpoint() -> None:
+    """GET /technologies exposes the recognized technology keywords."""
+    response = client.get("/technologies")
+    assert response.status_code == 200
+    keywords = response.json()["keywords"]
+    assert isinstance(keywords, list)
+    assert len(keywords) >= 50
+    assert len(keywords) == len(set(keywords))
+    assert keywords == sorted(keywords)
+    for expected in ("python", "docker", "kubernetes", "terraform", "sql", "aws"):
+        assert expected in keywords
+
+
+def test_resolve_recommendation_unsupported_rule(resolve_profile: str) -> None:
+    """Resolution rejects rule types outside the M1.7 scope."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "GenericSummaryRule", "elementId": "exp-no-tech"},
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"] == "UNSUPPORTED_RULE"
+
+
+def test_resolve_recommendation_profile_not_found() -> None:
+    """Resolution returns 404 for a non-existent profile."""
+    response = client.post(
+        "/profiles/non-existent-profile/resolve",
+        json={"triggeredRule": "ProjectWithoutSkillsRule", "elementId": "proj-1"},
+    )
+    assert response.status_code == 404
+    assert response.json()["error"] == "NOT_FOUND"
+
+
+def test_resolve_recommendation_element_not_found(resolve_profile: str) -> None:
+    """Resolution returns 404 when the target element does not exist."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "ProjectWithoutSkillsRule", "elementId": "proj-missing", "skillIds": ["skill-python"]},
+    )
+    assert response.status_code == 404
+
+
+def test_resolve_project_with_skills_and_experience(resolve_profile: str) -> None:
+    """Resolving a project writes canonical skillRefs/experienceRefs and clears the recommendation."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "ProjectWithoutSkillsRule",
+            "elementId": "proj-lonely",
+            "skillIds": ["skill-python"],
+            "experienceIds": ["exp-no-tech"],
+            "technologies": [],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    project = next(p for p in body["profile"]["projects"] if p["id"] == "proj-lonely")
+    assert project["name"] == "Lonely Project"
+
+    canonical = _read_canonical(resolve_profile)
+    proj = next(p for p in canonical["projects"] if p["id"] == "proj-lonely")
+    assert proj["skillRefs"] == [{"id": "skill-python", "type": "skill"}]
+    assert proj["experienceRefs"] == [{"id": "exp-no-tech", "type": "experience"}]
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    recs = analysis.json()["recommendations"]
+    assert not any(
+        r["element_id"] == "proj-lonely" and r["triggered_rule"] == "ProjectWithoutSkillsRule"
+        for r in recs
+    )
+
+
+def test_resolve_experience_technologies(resolve_profile: str) -> None:
+    """Resolving technologies appends recognized keywords to the experience scope and clears the recommendation."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "ExperienceNoTechnologiesRule",
+            "elementId": "exp-no-tech",
+            "skillIds": ["skill-python"],
+            "experienceIds": [],
+            "technologies": ["Terraform"],
+        },
+    )
+    assert response.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    exp = next(e for e in canonical["experiences"] if e["id"] == "exp-no-tech")
+    assert "Key technologies" in exp["scope"]
+    assert "Python" in exp["scope"]
+    assert "Terraform" in exp["scope"]
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    recs = analysis.json()["recommendations"]
+    assert not any(
+        r["element_id"] == "exp-no-tech" and r["triggered_rule"] == "ExperienceNoTechnologiesRule"
+        for r in recs
+    )
+
+
+def test_resolve_skill_with_experience_evidence(resolve_profile: str) -> None:
+    """Resolving a skill links experience evidence and clears the recommendation."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "SkillWithoutExperienceRule",
+            "elementId": "skill-observability",
+            "skillIds": [],
+            "experienceIds": ["exp-no-tech"],
+            "technologies": [],
+        },
+    )
+    assert response.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    skill = next(s for s in canonical["skills"] if s["id"] == "skill-observability")
+    assert skill["extensions"]["experienceEvidence"] == [
+        {"experienceId": "exp-no-tech", "type": "experience"}
+    ]
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    recs = analysis.json()["recommendations"]
+    assert not any(
+        r["element_id"] == "skill-observability" and r["triggered_rule"] == "SkillWithoutExperienceRule"
+        for r in recs
+    )
+
+
+def test_resolve_skill_evidence_is_idempotent(resolve_profile: str) -> None:
+    """Repeated skill resolution does not duplicate experience evidence entries."""
+    payload = {
+        "triggeredRule": "SkillWithoutExperienceRule",
+        "elementId": "skill-observability",
+        "skillIds": [],
+        "experienceIds": ["exp-no-tech", "exp-no-tech"],
+        "technologies": [],
+    }
+    first = client.post(f"/profiles/{resolve_profile}/resolve", json=payload)
+    second = client.post(f"/profiles/{resolve_profile}/resolve", json=payload)
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    skill = next(s for s in canonical["skills"] if s["id"] == "skill-observability")
+    assert len(skill["extensions"]["experienceEvidence"]) == 1
+
+
+def _has_measurable_achievement_rec(recs: list[dict], element_id: str) -> bool:
+    return any(
+        r["element_id"] == element_id
+        and r["triggered_rule"] == "NoMeasurableAchievementRule"
+        for r in recs
+    )
+
+
+def test_resolve_measurable_achievement_creates_and_links(resolve_profile: str) -> None:
+    """Resolving a measurable achievement persists it in the canonical profile and clears the recommendation."""
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    assert _has_measurable_achievement_rec(
+        analysis.json()["recommendations"], "exp-no-tech"
+    )
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "skillIds": ["skill-python"],
+            "experienceIds": [],
+            "technologies": [],
+            "achievementStatement": "Reduced deployment time by 60%",
+        },
+    )
+    assert response.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    exp = next(e for e in canonical["experiences"] if e["id"] == "exp-no-tech")
+    assert len(exp["achievementRefs"]) == 1
+    achievement_id = exp["achievementRefs"][0]["id"]
+    assert exp["achievementRefs"][0]["type"] == "achievement"
+
+    achievement = next(a for a in canonical["achievements"] if a["id"] == achievement_id)
+    assert achievement["statement"] == "Reduced deployment time by 60%"
+    assert achievement["contextRefs"] == [{"id": "exp-no-tech", "type": "experience"}]
+    assert achievement["skillRefs"] == [{"id": "skill-python", "type": "skill"}]
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    assert not _has_measurable_achievement_rec(
+        analysis.json()["recommendations"], "exp-no-tech"
+    )
+
+
+def test_resolve_measurable_achievement_requires_statement(resolve_profile: str) -> None:
+    """Resolution rejects a missing achievement statement."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "INVALID_ACHIEVEMENT"
+
+
+def test_resolve_measurable_achievement_rejects_non_measurable(resolve_profile: str) -> None:
+    """Resolution rejects an achievement statement with no measurable outcome."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "Coordinated operations across departments.",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "ACHIEVEMENT_NOT_MEASURABLE"
+
+
+def test_resolve_measurable_achievement_adds_to_qualified_experience(resolve_profile: str) -> None:
+    """Adding a measurable achievement clears the 'quantify outcomes' recommendation for an experience whose linked achievements are not measurable."""
+    canonical = _read_canonical(resolve_profile)
+    canonical["achievements"].append(
+        {
+            "id": "achievement-vague",
+            "statement": "Handled day-to-day operations.",
+        }
+    )
+    exp = next(e for e in canonical["experiences"] if e["id"] == "exp-no-tech")
+    exp["achievementRefs"] = [{"id": "achievement-vague", "type": "achievement"}]
+
+    from api.main import PROFILES_ROOT
+
+    (PROFILES_ROOT / f"{resolve_profile}.yaml").write_text(
+        yaml.safe_dump(canonical), encoding="utf-8"
+    )
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    assert _has_measurable_achievement_rec(
+        analysis.json()["recommendations"], "exp-no-tech"
+    )
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "Improved availability from 99.5% to 99.95%",
+        },
+    )
+    assert response.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    exp = next(e for e in canonical["experiences"] if e["id"] == "exp-no-tech")
+    assert len(exp["achievementRefs"]) == 2
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    assert not _has_measurable_achievement_rec(
+        analysis.json()["recommendations"], "exp-no-tech"
+    )
+
+
+def test_resolve_measurable_achievement_wires_artifact_source_ref(resolve_profile: str) -> None:
+    """Resolving a measurable achievement adds it to artifacts that already export the experience.
+
+    M1.9: a resolved achievement must enter the export pipeline via the existing
+    sourceRef mechanism so generated CVs render it.
+    """
+    canonical = _read_canonical(resolve_profile)
+    canonical["artifacts"] = [
+        {
+            "id": "artifact-cv",
+            "title": "CV",
+            "artifactType": "CV",
+            "sourceRefs": [
+                {"id": "summary-1", "type": "professional_summary"},
+                {"id": "exp-no-tech", "type": "experience"},
+            ],
+        },
+        {
+            "id": "artifact-unrelated",
+            "title": "Other",
+            "artifactType": "CV",
+            "sourceRefs": [{"id": "skill-python", "type": "skill"}],
+        },
+    ]
+    from api.main import PROFILES_ROOT
+
+    (PROFILES_ROOT / f"{resolve_profile}.yaml").write_text(
+        yaml.safe_dump(canonical), encoding="utf-8"
+    )
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "skillIds": ["skill-python"],
+            "achievementStatement": "Reduced deployment time by 60% through CI/CD automation.",
+        },
+    )
+    assert response.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    exp = next(e for e in canonical["experiences"] if e["id"] == "exp-no-tech")
+    achievement_id = exp["achievementRefs"][0]["id"]
+
+    cv = next(a for a in canonical["artifacts"] if a["id"] == "artifact-cv")
+    achievement_refs = [r for r in cv["sourceRefs"] if r.get("id") == achievement_id]
+    assert achievement_refs == [{"id": achievement_id, "type": "achievement"}]
+
+    unrelated = next(a for a in canonical["artifacts"] if a["id"] == "artifact-unrelated")
+    assert achievement_id not in [r.get("id") for r in unrelated["sourceRefs"]]
+
+
+def test_resolve_measurable_achievement_source_ref_is_idempotent(resolve_profile: str) -> None:
+    """Resolving an achievement never duplicates the same sourceRef entry in an artifact."""
+    canonical = _read_canonical(resolve_profile)
+    canonical["artifacts"] = [
+        {
+            "id": "artifact-cv",
+            "title": "CV",
+            "artifactType": "CV",
+            "sourceRefs": [{"id": "exp-no-tech", "type": "experience"}],
+        }
+    ]
+    from api.main import PROFILES_ROOT
+
+    (PROFILES_ROOT / f"{resolve_profile}.yaml").write_text(
+        yaml.safe_dump(canonical), encoding="utf-8"
+    )
+
+    payload = {
+        "triggeredRule": "NoMeasurableAchievementRule",
+        "elementId": "exp-no-tech",
+        "achievementStatement": "Reduced deployment time by 60% through CI/CD automation.",
+    }
+    assert client.post(f"/profiles/{resolve_profile}/resolve", json=payload).status_code == 200
+    assert client.post(f"/profiles/{resolve_profile}/resolve", json=payload).status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    cv = next(a for a in canonical["artifacts"] if a["id"] == "artifact-cv")
+    achievement_refs = [r for r in cv["sourceRefs"] if r.get("type") == "achievement"]
+    assert len(achievement_refs) == len({r["id"] for r in achievement_refs})
+    assert len(achievement_refs) == len(canonical["achievements"])
+
+
+def test_resolved_achievement_renders_in_tailored_cv(resolve_profile: str) -> None:
+    """M1.9 acceptance: a resolved measurable achievement appears in the Tailored CV."""
+    canonical = _read_canonical(resolve_profile)
+    canonical["professionalSummaries"] = [{"id": "summary-1", "text": "DevSecOps engineer."}]
+    canonical["artifacts"] = [
+        {
+            "id": "artifact-cv",
+            "title": "CV",
+            "artifactType": "CV",
+            "sourceRefs": [
+                {"id": "summary-1", "type": "professional_summary"},
+                {"id": "exp-no-tech", "type": "experience"},
+                {"id": "skill-python", "type": "skill"},
+            ],
+        }
+    ]
+    from api.main import PROFILES_ROOT
+
+    (PROFILES_ROOT / f"{resolve_profile}.yaml").write_text(
+        yaml.safe_dump(canonical), encoding="utf-8"
+    )
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "Reduced deployment time by 60% through CI/CD automation.",
+        },
+    )
+    assert response.status_code == 200
+
+    generated = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": resolve_profile,
+            "artifact_id": "artifact-cv",
+            "output_format": "markdown",
+            "job_description": "DevSecOps engineer with CI/CD automation expertise",
+        },
+    )
+    assert generated.status_code == 200
+    assert "Reduced deployment time by 60% through CI/CD automation." in generated.text
+    assert generated.text.count("Reduced deployment time by 60% through CI/CD automation.") == 1
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    assert not _has_measurable_achievement_rec(
+        analysis.json()["recommendations"], "exp-no-tech"
+    )
+
+
+def _write_cv_artifact(profile_id: str, artifact_id: str, source_refs: list[dict]) -> None:
+    """Attach an artifact exporting the given sourceRefs to a canonical test profile."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    canonical = _read_canonical(profile_id)
+    canonical["professionalSummaries"] = canonical.get("professionalSummaries") or [
+        {"id": "summary-1", "text": "DevSecOps engineer."}
+    ]
+    canonical["artifacts"] = [
+        {
+            "id": artifact_id,
+            "title": "CV",
+            "artifactType": "CV",
+            "sourceRefs": source_refs,
+        }
+    ]
+    (PROFILES_ROOT / f"{profile_id}.yaml").write_text(
+        yaml.safe_dump(canonical), encoding="utf-8"
+    )
+
+
+def _artifact_record(profile_id: str, artifact_id: str) -> dict:
+    canonical = _read_canonical(profile_id)
+    return next(a for a in canonical["artifacts"] if a["id"] == artifact_id)
+
+
+def _regenerate(client, profile_id: str, artifact_id: str) -> "TestClientResponse":
+    return client.post(
+        f"/profiles/{profile_id}/artifacts/{artifact_id}/regenerate",
+        json={"output_format": "markdown"},
+    )
+
+
+def test_resolve_marks_affected_artifact_stale(resolve_profile: str) -> None:
+    """M1.10: accepting a canonical change marks artifacts that export the element as stale."""
+    _write_cv_artifact(
+        resolve_profile,
+        "artifact-cv",
+        [
+            {"id": "summary-1", "type": "professional_summary"},
+            {"id": "exp-no-tech", "type": "experience"},
+        ],
+    )
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "Reduced deployment time by 60% through CI/CD automation.",
+        },
+    )
+    assert response.status_code == 200
+    cv = next(a for a in response.json()["profile"]["artifacts"] if a["id"] == "artifact-cv")
+    assert cv["status"] == "stale"
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "stale"
+
+
+def test_already_applied_resolution_does_not_change_freshness(resolve_profile: str) -> None:
+    """M1.10: re-applying an already-applied resolution leaves artifact freshness untouched."""
+    _write_cv_artifact(
+        resolve_profile,
+        "artifact-cv",
+        [{"id": "skill-python", "type": "skill"}],
+    )
+
+    payload = {
+        "triggeredRule": "SkillWithoutExperienceRule",
+        "elementId": "skill-python",
+        "experienceIds": ["exp-no-tech"],
+    }
+    assert client.post(f"/profiles/{resolve_profile}/resolve", json=payload).status_code == 200
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "stale"
+
+    canonical = _read_canonical(resolve_profile)
+    for art in canonical["artifacts"]:
+        art["status"] = "current"
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    (PROFILES_ROOT / f"{resolve_profile}.yaml").write_text(
+        yaml.safe_dump(canonical), encoding="utf-8"
+    )
+
+    assert client.post(f"/profiles/{resolve_profile}/resolve", json=payload).status_code == 200
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "current"
+
+
+def test_regenerate_clears_stale_flag(resolve_profile: str) -> None:
+    """M1.10: explicit regeneration clears the stale flag and returns fresh markdown."""
+    _write_cv_artifact(
+        resolve_profile,
+        "artifact-cv",
+        [
+            {"id": "summary-1", "type": "professional_summary"},
+            {"id": "exp-no-tech", "type": "experience"},
+            {"id": "skill-python", "type": "skill"},
+        ],
+    )
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "Reduced deployment time by 60% through CI/CD automation.",
+        },
+    )
+    assert response.status_code == 200
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "stale"
+
+    regenerated = _regenerate(client, resolve_profile, "artifact-cv")
+    assert regenerated.status_code == 200
+    body = regenerated.json()
+    assert body["artifactId"] == "artifact-cv"
+    assert body["status"] == "current"
+    assert body["output_format"] == "markdown"
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "current"
+
+
+def test_regenerated_artifact_contains_accepted_achievement(resolve_profile: str) -> None:
+    """M1.10: the regenerated artifact renders the accepted achievement exactly once."""
+    _write_cv_artifact(
+        resolve_profile,
+        "artifact-cv",
+        [
+            {"id": "summary-1", "type": "professional_summary"},
+            {"id": "exp-no-tech", "type": "experience"},
+            {"id": "skill-python", "type": "skill"},
+        ],
+    )
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "Reduced deployment time by 60% through CI/CD automation.",
+        },
+    )
+    assert response.status_code == 200
+
+    regenerated = _regenerate(client, resolve_profile, "artifact-cv")
+    assert regenerated.status_code == 200
+    markdown = regenerated.json()["artifact"]
+    assert "Reduced deployment time by 60% through CI/CD automation." in markdown
+    assert markdown.count("Reduced deployment time by 60% through CI/CD automation.") == 1
+
+    achievement_refs = [
+        r for r in _artifact_record(resolve_profile, "artifact-cv")["sourceRefs"]
+        if r.get("type") == "achievement"
+    ]
+    assert len(achievement_refs) == 1
+
+
+def test_existing_artifact_unchanged_until_regeneration(resolve_profile: str) -> None:
+    """M1.10: resolution never mutates the artifact record itself; only regeneration refreshes it."""
+    _write_cv_artifact(
+        resolve_profile,
+        "artifact-cv",
+        [
+            {"id": "summary-1", "type": "professional_summary"},
+            {"id": "exp-no-tech", "type": "experience"},
+        ],
+    )
+    baseline = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": resolve_profile,
+            "artifact_id": "artifact-cv",
+            "output_format": "markdown",
+        },
+    )
+    assert baseline.status_code == 200
+    assert "Coordinated operations across several departments." in baseline.text
+
+    before = _artifact_record(resolve_profile, "artifact-cv")
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "ExperienceNoTechnologiesRule",
+            "elementId": "exp-no-tech",
+            "technologies": ["python"],
+        },
+    )
+    assert response.status_code == 200
+
+    after = _artifact_record(resolve_profile, "artifact-cv")
+    assert after["id"] == before["id"]
+    assert after["title"] == before["title"]
+    assert after["sourceRefs"] == before["sourceRefs"]
+    assert after["status"] == "stale"
+
+    regenerated = _regenerate(client, resolve_profile, "artifact-cv")
+    assert regenerated.status_code == 200
+    assert "python" in regenerated.json()["artifact"].lower()
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "current"
+
+
+def test_artifact_lifecycle_end_to_end(resolve_profile: str) -> None:
+    """M1.10: generate -> accept -> stale -> regenerate -> current end-to-end workflow."""
+    _write_cv_artifact(
+        resolve_profile,
+        "artifact-cv",
+        [
+            {"id": "summary-1", "type": "professional_summary"},
+            {"id": "exp-no-tech", "type": "experience"},
+        ],
+    )
+
+    baseline = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": resolve_profile,
+            "artifact_id": "artifact-cv",
+            "output_format": "markdown",
+        },
+    )
+    assert baseline.status_code == 200
+    assert "Reduced deployment time by 60%" not in baseline.text
+
+    accepted = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "NoMeasurableAchievementRule",
+            "elementId": "exp-no-tech",
+            "achievementStatement": "Reduced deployment time by 60% through CI/CD automation.",
+        },
+    )
+    assert accepted.status_code == 200
+    cv = next(a for a in accepted.json()["profile"]["artifacts"] if a["id"] == "artifact-cv")
+    assert cv["status"] == "stale"
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "stale"
+
+    current = _regenerate(client, resolve_profile, "artifact-cv")
+    assert current.status_code == 200
+    body = current.json()
+    assert body["status"] == "current"
+    assert "Reduced deployment time by 60% through CI/CD automation." in body["artifact"]
+    assert body["artifact"].count("Reduced deployment time by 60% through CI/CD automation.") == 1
+    assert _artifact_record(resolve_profile, "artifact-cv")["status"] == "current"
+
+
 def test_create_interest_letter_artifact(tmp_path: Path) -> None:
     """POST /profiles/{id}/artifacts with the interest letter template creates a valid artifact.
 

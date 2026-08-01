@@ -383,9 +383,10 @@ def _is_measurable(achievement: dict[str, Any] | None) -> bool:
     metrics = achievement.get("metrics", [])
     if metrics and any(str(m).strip() for m in metrics):
         return True
+    statement = str(achievement.get("statement", "") or "")
     description = str(achievement.get("description", "") or "")
     impact = str(achievement.get("impact", "") or "")
-    combined = f"{description} {impact}"
+    combined = f"{statement} {description} {impact}"
     if NUMBER_PATTERN.search(combined):
         return True
     return any(word_boundary_match(word, combined) for word in BUSINESS_OUTCOME_WORDS)

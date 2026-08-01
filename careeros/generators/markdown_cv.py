@@ -8,8 +8,7 @@ import os
 import re
 from typing import Any
 
-import httpx
-
+from ..ai import AIProvider, create_ai_provider
 from ..exceptions import LLMConfigurationError, ValidationError
 from ..export_contract import ExportContract, ExportSource
 
@@ -26,8 +25,13 @@ class MarkdownCVGenerator:
 
     supported_artifact_types = {"CV", "RESUME"}
 
-    def __init__(self, llm_config: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self,
+        llm_config: dict[str, Any] | None = None,
+        provider: AIProvider | None = None,
+    ) -> None:
         self._llm_config = llm_config
+        self._provider = provider
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -48,6 +52,82 @@ class MarkdownCVGenerator:
                 logger.warning("LLM CV generation failed, falling back to deterministic: %s", exc)
 
         return self._deterministic_generate(contract)
+
+    # ------------------------------------------------------------------
+    # Linked achievements
+    # ------------------------------------------------------------------
+
+    def _linked_achievement_statements(self, contract: ExportContract) -> dict[str, list[str]]:
+        """Map experience source id -> linked achievement statement texts.
+
+        Links are read from the experience's ``achievementRefs`` and the
+        achievement's ``contextRefs``. Only statement text is returned; internal
+        ids and sourceRefs are never exposed in generated output.
+        """
+        achievements_by_id: dict[str, str] = {}
+        for source in contract.sources:
+            if source.type.lower() != "achievement":
+                continue
+            statement = source.data.get("statement")
+            if statement:
+                achievements_by_id[str(source.id)] = str(statement).strip()
+
+        linked: dict[str, list[str]] = {}
+        for source in contract.sources:
+            if source.type.lower() != "experience":
+                continue
+            statements: list[str] = []
+            for ref in source.data.get("achievementRefs", []) or []:
+                ref_id = ref.get("id") if isinstance(ref, dict) else None
+                if ref_id and ref_id in achievements_by_id:
+                    statement = achievements_by_id[ref_id]
+                    if statement and statement not in statements:
+                        statements.append(statement)
+            for ref in source.data.get("contextRefs", []) or []:
+                ref_id = ref.get("id") if isinstance(ref, dict) else None
+                if ref_id and ref_id in achievements_by_id:
+                    statement = achievements_by_id[ref_id]
+                    if statement and statement not in statements:
+                        statements.append(statement)
+            linked[str(source.id)] = statements
+
+        for source in contract.sources:
+            if source.type.lower() != "achievement":
+                continue
+            statement = source.data.get("statement")
+            if not statement:
+                continue
+            statement = str(statement).strip()
+            for ref in source.data.get("contextRefs", []) or []:
+                if not isinstance(ref, dict) or ref.get("type") != "experience":
+                    continue
+                exp_id = ref.get("id")
+                if not exp_id:
+                    continue
+                statements = linked.setdefault(str(exp_id), [])
+                if statement and statement not in statements:
+                    statements.append(statement)
+
+        return linked
+
+    @staticmethod
+    def _merge_achievement_texts(data: dict[str, Any], linked_statements: list[str]) -> list[str]:
+        """Merge legacy inline achievements with linked achievement statements.
+
+        Legacy inline achievements may be strings or objects with a ``statement``.
+        Returns a de-duplicated, order-preserving list of statement texts.
+        """
+        merged: list[str] = []
+        for item in data.get("achievements", []) or []:
+            text = item.get("statement") if isinstance(item, dict) else item
+            text = str(text).strip() if text else ""
+            if text and text not in merged:
+                merged.append(text)
+        for text in linked_statements:
+            text = str(text).strip() if text else ""
+            if text and text not in merged:
+                merged.append(text)
+        return merged
 
     # ------------------------------------------------------------------
     # LLM-powered generation (with job description)
@@ -91,6 +171,7 @@ class MarkdownCVGenerator:
 
         # ── experiences ───────────────────────────────────────────────
         experiences = []
+        linked_achievements = self._linked_achievement_statements(contract)
         for s in contract.sources:
             if s.type.lower() != "experience":
                 continue
@@ -104,7 +185,7 @@ class MarkdownCVGenerator:
                 "location": safe(d.get("location")),
                 "scope": safe(d.get("scope")),
                 "responsibilities": d.get("responsibilities", []),
-                "achievements": d.get("achievements", []),
+                "achievements": self._merge_achievement_texts(d, linked_achievements.get(str(s.id), [])),
                 "technologies": d.get("technologies", []),
             }
             experiences.append(exp)
@@ -254,62 +335,17 @@ Job Description:
 {jd}
 """
 
+    def _resolve_provider(self) -> AIProvider:
+        if self._provider is None:
+            self._provider = create_ai_provider()
+        return self._provider
+
     def _call_llm(self, prompt: str) -> str:
-        provider = (os.environ.get("LLM_PROVIDER") or "").strip().lower()
-
-        if provider == "ollama":
-            return self._call_ollama(prompt)
-        elif provider == "openai":
-            return self._call_openai(prompt)
-        else:
-            raise LLMConfigurationError(
-                f"Cannot generate CV: LLM_PROVIDER={provider!r} is not configured. "
-                "Set LLM_PROVIDER in .env"
-            )
-
-    def _call_ollama(self, prompt: str) -> str:
-        host = (os.environ.get("OLLAMA_HOST") or "http://localhost:11434").rstrip("/")
-        model = os.environ.get("OLLAMA_MODEL") or "qwen2.5:3b"
-
-        with httpx.Client(timeout=120) as client:
-            response = client.post(
-                f"{host}/api/generate",
-                json={
-                    "model": model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.3},
-                },
-            )
-            response.raise_for_status()
-            return response.json().get("response", "")
-
-    def _call_openai(self, prompt: str) -> str:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise LLMConfigurationError(
-                "OpenAI API key is required. Set OPENAI_API_KEY in .env"
-            )
-        model = os.environ.get("OPENAI_MODEL") or "gpt-4o"
-
-        with httpx.Client(timeout=120) as client:
-            response = client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                },
-            )
-            response.raise_for_status()
-            choices = response.json().get("choices", [])
-            if not choices:
-                raise LLMConfigurationError("OpenAI returned no choices")
-            return choices[0].get("message", {}).get("content", "")
+        try:
+            provider = self._resolve_provider()
+        except LLMConfigurationError as exc:
+            raise LLMConfigurationError(f"Cannot generate CV: {exc}") from exc
+        return provider.generate(prompt, temperature=0.3, timeout=120.0)
 
     def _parse_llm_response(self, raw: str) -> str:
         cleaned = raw.strip()
@@ -464,6 +500,8 @@ Job Description:
         if not experiences:
             return
 
+        linked_achievements = self._linked_achievement_statements(contract)
+
         lines.append("## Professional Experience")
         for s in experiences:
             d = s.data
@@ -484,11 +522,11 @@ Job Description:
                 lines.append(" | ".join(str(p) for p in meta_parts))
 
             bullets: list[str] = []
-            achievements = d.get("achievements", [])
+            achievements = self._merge_achievement_texts(d, linked_achievements.get(str(s.id), []))
             responsibilities = d.get("responsibilities", [])
 
             for a in achievements:
-                text = a.get("statement") or (a if isinstance(a, str) else "")
+                text = a.get("statement") or (a if isinstance(a, str) else "") if isinstance(a, dict) else a
                 if text:
                     bullets.append(str(text))
 

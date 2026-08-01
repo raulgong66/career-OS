@@ -1,5 +1,15 @@
 """Core library for CareerOS."""
 
+from .ai import (
+    AIError,
+    AIProvider,
+    AIResponseError,
+    MockAIProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    SUPPORTED_PROVIDERS,
+    create_ai_provider,
+)
 from .artifact_templates import (
     TemplateRegistry,
     default_template_registry,
@@ -16,9 +26,11 @@ from .export_contract import ExportContract, ExportContractBuilder, ExportSource
 from .evidence_selector import EvidenceSelector
 from .generators import (
     DocxCVGenerator,
+    DocxPreparationGuideGenerator,
     GeneratorRegistry,
     MarkdownCoverLetterGenerator,
     MarkdownCVGenerator,
+    MarkdownPreparationGuideGenerator,
     default_generator_registry,
 )
 from .profile_loader import ProfileLoader
@@ -29,6 +41,36 @@ from .validator import EntityValidator
 from .optimizer import CVOptimizer, OptimizationResult, OptimizationStatus, OptimizationSummary, Recommendation, RequirementConcept, CONCEPT_TAXONOMY
 from .docx_renderer import CVDocumentRenderer
 from .recommendation_applier import RecommendationApplier
+from .resolution import (
+    AchievementNotMeasurableError,
+    InvalidAchievementError,
+    RESOLVABLE_RULES,
+    ResolutionError,
+    ResolutionTargetNotFoundError,
+    UnsupportedRuleError,
+    apply_resolution,
+)
+from .interview import (
+    CATEGORY_ORDER,
+    QUESTION_TEMPLATES,
+    Competency,
+    CompetencyMapper,
+    EvidenceCitation,
+    InterviewEngine,
+    InterviewError,
+    InterviewPlan,
+    InterviewQuestion,
+    InvalidProfileError,
+    PreparationGuide,
+    QuestionBuilder,
+    QuestionTemplate,
+    QuestionType,
+    SuggestedAnswer,
+    UnsupportedQuestionTypeError,
+    build_preparation_plan,
+    template_for,
+    templates_for,
+)
 
 from .acquisition import (
     AcquisitionPipeline,
@@ -46,6 +88,14 @@ from .acquisition import (
 
 __all__ = [
     "CareerOSException",
+    "AIError",
+    "AIProvider",
+    "AIResponseError",
+    "MockAIProvider",
+    "OllamaProvider",
+    "OpenAIProvider",
+    "SUPPORTED_PROVIDERS",
+    "create_ai_provider",
     "EntityNotFoundError",
     "EntityRecord",
     "EntityValidator",
@@ -57,11 +107,13 @@ __all__ = [
     "GeneratorRegistry",
     "default_generator_registry",
     "DocxCVGenerator",
+    "DocxPreparationGuideGenerator",
     "generate_artifact",
     "generate_markdown_cv",
     "generate_tailored_artifact",
     "MarkdownCoverLetterGenerator",
     "MarkdownCVGenerator",
+    "MarkdownPreparationGuideGenerator",
     "ProfileLoader",
     "RepositoryError",
     "SchemaLoader",
@@ -77,6 +129,13 @@ __all__ = [
     "CONCEPT_TAXONOMY",
     "CVDocumentRenderer",
     "RecommendationApplier",
+    "ResolutionError",
+    "UnsupportedRuleError",
+    "ResolutionTargetNotFoundError",
+    "InvalidAchievementError",
+    "AchievementNotMeasurableError",
+    "RESOLVABLE_RULES",
+    "apply_resolution",
     "TemplateRegistry",
     "default_template_registry",
     "AcquisitionPipeline",
@@ -90,4 +149,23 @@ __all__ = [
     "PersonData",
     "TextExtractor",
     "YamlWriter",
+    "InterviewEngine",
+    "build_preparation_plan",
+    "CompetencyMapper",
+    "QuestionBuilder",
+    "QuestionType",
+    "CATEGORY_ORDER",
+    "Competency",
+    "EvidenceCitation",
+    "InterviewPlan",
+    "InterviewQuestion",
+    "PreparationGuide",
+    "SuggestedAnswer",
+    "QuestionTemplate",
+    "QUESTION_TEMPLATES",
+    "template_for",
+    "templates_for",
+    "InterviewError",
+    "InvalidProfileError",
+    "UnsupportedQuestionTypeError",
 ]

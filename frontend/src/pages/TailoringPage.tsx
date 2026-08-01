@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { TailoringService } from '../services/TailoringService';
 import { DocumentService } from '../services/DocumentService';
 import { ProfileService } from '../services/ProfileService';
@@ -93,6 +93,179 @@ const SECTION_ACTION_LABELS: Record<ProfileSectionKey, string> = {
   projects: 'Improve Project',
 };
 
+const PRIORITY_RANK: Record<RecommendationPriority, number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+const IMPACT_RANK: Record<RecommendationImpact, number> = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+const ELEMENT_TYPE_PLURALS: Record<string, string> = {
+  experience: 'experiences',
+  skill: 'skills',
+  certification: 'certifications',
+  project: 'projects',
+  achievement: 'achievements',
+};
+
+const RESOLVABLE_RULES = new Set([
+  'ProjectWithoutSkillsRule',
+  'ExperienceNoTechnologiesRule',
+  'SkillWithoutExperienceRule',
+  'NoMeasurableAchievementRule',
+]);
+
+const NUMBER_PATTERN = /\d/;
+
+const BUSINESS_OUTCOME_WORDS = new Set([
+  'reduced', 'increased', 'improved', 'decreased', 'saved', 'generated',
+  'delivered', 'achieved', 'grew', 'cut', 'boosted', 'optimized',
+  'automated', 'accelerated', 'streamlined', 'implemented',
+  'revenue', 'cost', 'costs', 'sales', 'profit', 'margin', 'roi',
+  'efficiency', 'uptime', 'availability', 'performance', 'latency',
+  'turnaround', 'productivity', 'growth', 'conversion', 'retention',
+  'throughput', 'capacity', 'scaling', 'downtime', 'outage',
+  'usd', 'eur', 'million', 'billion', 'thousand',
+]);
+
+function isMeasurableStatement(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (NUMBER_PATTERN.test(trimmed)) return true;
+  const lower = trimmed.toLowerCase();
+  return [...BUSINESS_OUTCOME_WORDS].some((word) => {
+    const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`).test(lower);
+  });
+}
+
+type RecommendationGroup = {
+  key: string;
+  title: string;
+  priority: RecommendationPriority;
+  impact: RecommendationImpact;
+  recommendations: ProfileRecommendation[];
+};
+
+function groupRecommendations(recommendations: ProfileRecommendation[]): RecommendationGroup[] {
+  const groups = new Map<string, RecommendationGroup>();
+  for (const rec of recommendations) {
+    const key = `${rec.title}::${rec.triggered_rule ?? ''}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        title: rec.title,
+        priority: rec.priority,
+        impact: rec.estimated_impact,
+        recommendations: [],
+      };
+      groups.set(key, group);
+    }
+    if (PRIORITY_RANK[rec.priority] > PRIORITY_RANK[group.priority]) group.priority = rec.priority;
+    if (IMPACT_RANK[rec.estimated_impact] > IMPACT_RANK[group.impact]) group.impact = rec.estimated_impact;
+    group.recommendations.push(rec);
+  }
+  return [...groups.values()];
+}
+
+function groupNoun(recommendations: ProfileRecommendation[]): string {
+  const types = [...new Set(recommendations.map((rec) => rec.element_type ?? 'profile'))];
+  if (types.length === 1) return ELEMENT_TYPE_PLURALS[types[0]] ?? 'profile elements';
+  return 'profile elements';
+}
+
+function elementFallbackLabel(id: string): string {
+  return id.replace(/-/g, ' ');
+}
+
+function elementDisplayName(rec: ProfileRecommendation, profile: ProfileDetails | null): string {
+  const id = rec.element_id;
+  if (!id) return 'Profile';
+  if (!profile) return elementFallbackLabel(id);
+  switch (rec.element_type) {
+    case 'experience':
+      return profile.experiences.find((e) => e.id === id)?.title ?? elementFallbackLabel(id);
+    case 'skill':
+      return profile.skills.find((s) => s.id === id)?.name ?? elementFallbackLabel(id);
+    case 'certification':
+      return profile.certifications.find((c) => c.id === id)?.name ?? elementFallbackLabel(id);
+    case 'project':
+      return profile.projects.find((p) => p.id === id)?.name ?? elementFallbackLabel(id);
+    case 'achievement':
+      return elementFallbackLabel(id);
+    default:
+      return elementFallbackLabel(id);
+  }
+}
+
+function renderRecommendationDetails(rec: ProfileRecommendation) {
+  return (
+    <details className="mt-2.5">
+      <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-700">
+        Why CareerOS recommends this
+      </summary>
+      <div className="mt-2.5 space-y-3">
+        {rec.suggested_action && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Suggested Action</p>
+            <p className="mt-1 text-sm leading-relaxed text-gray-800">{rec.suggested_action}</p>
+          </div>
+        )}
+        {rec.explanation && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Why it matters</p>
+            <p className="mt-1 text-sm leading-relaxed text-gray-700">{rec.explanation}</p>
+          </div>
+        )}
+        {rec.recruiter_impact && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Recruiter Impact</p>
+            <p className="mt-1 text-sm leading-relaxed text-gray-700">{rec.recruiter_impact}</p>
+          </div>
+        )}
+        {rec.missing_information && rec.missing_information.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Missing Information</p>
+            <ul className="mt-1 space-y-1">
+              {rec.missing_information.map((item, index) => (
+                <li key={index} className="flex items-start gap-2 text-sm text-gray-700">
+                  <span className="mt-0.5 inline-block h-3.5 w-3.5 flex-shrink-0 rounded-sm border border-gray-400 bg-white" aria-hidden="true" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {rec.examples && rec.examples.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Examples</p>
+            <ul className="mt-1 space-y-1">
+              {rec.examples.map((example, index) => (
+                <li key={index} className="flex items-start gap-2 text-sm text-gray-700">
+                  <span className="mt-0.5 text-gray-400" aria-hidden="true">•</span>
+                  <span>{example}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {rec.triggered_rule && (
+          <p className="text-xs text-gray-400">
+            Triggered by: <span className="font-medium text-gray-500">{rec.triggered_rule}</span>
+          </p>
+        )}
+        {rec.confidence && <p className="text-xs text-gray-400">{capitalizeLevel(rec.confidence)} confidence</p>}
+      </div>
+    </details>
+  );
+}
+
 function resolveRecommendationTarget(rec: ProfileRecommendation): RecommendationTarget {
   const elementType = rec.element_type;
   if (elementType === 'profile' || !elementType) {
@@ -110,18 +283,34 @@ function resolveRecommendationTarget(rec: ProfileRecommendation): Recommendation
   return { kind: 'element', section, elementId: rec.element_id };
 }
 
-function renderMissingChecklist(missing: string[], heading = 'CareerOS suggests adding') {
+function renderMissingChecklist(
+  missing: string[],
+  recId: string,
+  checked: Set<string>,
+  onToggle: (key: string) => void,
+  heading = 'CareerOS suggests adding'
+) {
   if (!missing.length) return null;
+  const keyFor = (item: string) => `${recId}::${item}`;
   return (
     <div className="mt-2 border border-blue-200 bg-blue-50 rounded-md p-3">
       <p className="text-xs font-semibold text-blue-800 uppercase tracking-wide">{heading}</p>
       <ul className="mt-1.5 space-y-1.5">
-        {missing.map((item) => (
-          <li key={item} className="flex items-start text-sm text-gray-700">
-            <span className="mr-2 mt-0.5 inline-block h-3.5 w-3.5 flex-shrink-0 rounded-sm border border-gray-400 bg-white" aria-hidden="true" />
-            <span>{item}</span>
-          </li>
-        ))}
+        {missing.map((item) => {
+          const key = keyFor(item);
+          return (
+            <li key={item} className="flex items-start text-sm text-gray-700">
+              <input
+                id={key}
+                type="checkbox"
+                checked={checked.has(key)}
+                onChange={() => onToggle(key)}
+                className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 rounded-sm border-gray-400 text-blue-600"
+              />
+              <label htmlFor={key} className="ml-2 cursor-pointer select-none">{item}</label>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -148,12 +337,29 @@ export default function TailoringPage() {
 
   const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+  const [checkedChecklistItems, setCheckedChecklistItems] = useState<Set<string>>(new Set());
   const [activeRecId, setActiveRecId] = useState<string | null>(null);
+
+  const [openResolutionId, setOpenResolutionId] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolutionError, setResolutionError] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenerateError, setRegenerateError] = useState('');
+  const [techKeywords, setTechKeywords] = useState<string[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
+  const [selectedExperienceIds, setSelectedExperienceIds] = useState<Set<string>>(new Set());
+  const [selectedTechnologies, setSelectedTechnologies] = useState<Set<string>>(new Set());
+  const [techQuery, setTechQuery] = useState('');
+  const [achievementStatement, setAchievementStatement] = useState('');
 
   const activeRec =
     activeRecId ? profileRecommendations.find((r) => r.id === activeRecId) ?? null : null;
   const activeTarget = activeRec ? resolveRecommendationTarget(activeRec) : null;
   const activeMissing = activeRec?.missing_information ?? [];
+
+  const isCurrentArtifactStale =
+    Boolean(currentArtifactId) &&
+    (selectedProfile?.artifacts.find((a) => a.id === currentArtifactId)?.status ?? 'current') === 'stale';
 
   const totalRecommendations = profileRecommendations.length;
   const reviewedCount = profileRecommendations.filter((r) => reviewedIds.has(r.id)).length;
@@ -161,6 +367,8 @@ export default function TailoringPage() {
   const remainingCount = totalRecommendations - reviewedCount - dismissedCount;
   const reviewProgress =
     totalRecommendations > 0 ? Math.round((reviewedCount / totalRecommendations) * 100) : 0;
+
+  const recommendationGroups = useMemo(() => groupRecommendations(profileRecommendations), [profileRecommendations]);
 
   const handleGoToSection = (rec: ProfileRecommendation) => {
     const target = resolveRecommendationTarget(rec);
@@ -196,6 +404,305 @@ export default function TailoringPage() {
       next.delete(recId);
       return next;
     });
+  };
+
+  const toggleChecklistItem = (key: string) => {
+    setCheckedChecklistItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const canResolve = (rec: ProfileRecommendation): boolean =>
+    Boolean(rec.element_id) && RESOLVABLE_RULES.has(rec.triggered_rule);
+
+  const toggleResolutionPanel = (rec: ProfileRecommendation) => {
+    if (openResolutionId === rec.id) {
+      setOpenResolutionId(null);
+      setResolutionError('');
+      return;
+    }
+    setOpenResolutionId(rec.id);
+    setResolutionError('');
+    setSelectedSkillIds(new Set());
+    setSelectedExperienceIds(new Set());
+    setSelectedTechnologies(new Set());
+    setTechQuery('');
+    setAchievementStatement('');
+  };
+
+  const toggleSelectedSkill = (skillId: string) => {
+    setSelectedSkillIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(skillId)) {
+        next.delete(skillId);
+      } else {
+        next.add(skillId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectedExperience = (experienceId: string) => {
+    setSelectedExperienceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(experienceId)) {
+        next.delete(experienceId);
+      } else {
+        next.add(experienceId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectedTechnology = (technology: string) => {
+    setSelectedTechnologies((prev) => {
+      const next = new Set(prev);
+      if (next.has(technology)) {
+        next.delete(technology);
+      } else {
+        next.add(technology);
+      }
+      return next;
+    });
+  };
+
+  const filteredTechKeywords = techKeywords.filter((keyword) =>
+    keyword.toLowerCase().includes(techQuery.trim().toLowerCase())
+  );
+
+  const applyResolution = async (rec: ProfileRecommendation) => {
+    if (!selectedProfile) return;
+    setResolvingId(rec.id);
+    setResolutionError('');
+    try {
+      const updated = await ProfileService.getInstance().resolveRecommendation(selectedProfileId, {
+        triggeredRule: rec.triggered_rule,
+        elementId: rec.element_id ?? '',
+        skillIds: [...selectedSkillIds],
+        experienceIds: [...selectedExperienceIds],
+        technologies: [...selectedTechnologies],
+        achievementStatement,
+      });
+      setSelectedProfile(updated);
+      const analysis = await ProfileService.getInstance().analyzeProfile(selectedProfileId);
+      setProfileRecommendations(analysis.recommendations ?? []);
+      setReviewedIds(new Set());
+      setDismissedIds(new Set());
+      if ((analysis.recommendations ?? []).some((r) => r.id === rec.id)) {
+        setOpenResolutionId(rec.id);
+        setResolutionError(
+          rec.triggered_rule === 'NoMeasurableAchievementRule'
+            ? 'This recommendation could not be cleared automatically. Make sure your achievement states a quantified outcome (a number, percentage, or business result), then try again.'
+            : 'This recommendation could not be cleared automatically. Check that your selections name a recognized technology, then try again.'
+        );
+      } else {
+        setOpenResolutionId(null);
+        setActiveRecId(null);
+      }
+    } catch (err) {
+      setResolutionError(err instanceof Error ? err.message : 'Failed to apply changes');
+    } finally {
+      setResolvingId(null);
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!selectedProfile || !currentArtifactId) return;
+    setRegenerating(true);
+    setRegenerateError('');
+    try {
+      const service = TailoringService.getInstance();
+      const response = await service.regenerateTailoredArtifact(
+        selectedProfileId,
+        currentArtifactId,
+        'markdown'
+      );
+      setArtifact(response.artifact);
+      if (response.profile) {
+        setSelectedProfile(response.profile);
+      }
+    } catch (err) {
+      setRegenerateError(
+        err instanceof Error ? err.message : 'Failed to regenerate document'
+      );
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
+  const renderResolutionPanel = (rec: ProfileRecommendation) => {
+    if (!selectedProfile || !canResolve(rec)) return null;
+    const nothingSelected =
+      rec.triggered_rule === 'ExperienceNoTechnologiesRule'
+        ? selectedTechnologies.size === 0
+        : rec.triggered_rule === 'SkillWithoutExperienceRule'
+          ? selectedExperienceIds.size === 0
+          : rec.triggered_rule === 'NoMeasurableAchievementRule'
+            ? !isMeasurableStatement(achievementStatement)
+            : selectedSkillIds.size === 0 && selectedExperienceIds.size === 0;
+    return (
+      <div className="mt-3 border border-emerald-200 bg-emerald-50 rounded-md p-3">
+        <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wide">Resolve inline</p>
+        {rec.triggered_rule === 'ProjectWithoutSkillsRule' && (
+          <>
+            <p className="mt-1 text-sm text-gray-700">
+              Tag this project with the skills it demonstrates. You can also link related experiences.
+            </p>
+            <p className="mt-2 text-xs font-semibold text-gray-600 uppercase tracking-wide">Skills</p>
+            <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+              {selectedProfile.skills.map((skill) => (
+                <li key={skill.id} className="flex items-start text-sm text-gray-700">
+                  <input
+                    id={`${rec.id}-skill-${skill.id}`}
+                    type="checkbox"
+                    checked={selectedSkillIds.has(skill.id)}
+                    onChange={() => toggleSelectedSkill(skill.id)}
+                    className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 rounded-sm border-gray-400 text-emerald-600"
+                  />
+                  <label htmlFor={`${rec.id}-skill-${skill.id}`} className="ml-2 cursor-pointer select-none">{skill.name}</label>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs font-semibold text-gray-600 uppercase tracking-wide">Related experiences</p>
+            <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+              {selectedProfile.experiences.map((exp) => (
+                <li key={exp.id} className="flex items-start text-sm text-gray-700">
+                  <input
+                    id={`${rec.id}-experience-${exp.id}`}
+                    type="checkbox"
+                    checked={selectedExperienceIds.has(exp.id)}
+                    onChange={() => toggleSelectedExperience(exp.id)}
+                    className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 rounded-sm border-gray-400 text-emerald-600"
+                  />
+                  <label htmlFor={`${rec.id}-experience-${exp.id}`} className="ml-2 cursor-pointer select-none">
+                    {exp.title}
+                    {exp.organization ? ` — ${exp.organization}` : ''}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {rec.triggered_rule === 'ExperienceNoTechnologiesRule' && (
+          <>
+            <p className="mt-1 text-sm text-gray-700">
+              Select the technologies you used in this role. They will be appended to the experience description.
+            </p>
+            <input
+              type="search"
+              value={techQuery}
+              onChange={(event) => setTechQuery(event.target.value)}
+              placeholder="Filter technologies..."
+              className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-800 placeholder-gray-400 focus:border-emerald-500 focus:outline-none"
+            />
+            <ul className="mt-2 max-h-44 space-y-1 overflow-y-auto rounded-md border border-emerald-100 bg-white p-2">
+              {filteredTechKeywords.length > 0 ? (
+                filteredTechKeywords.map((keyword) => (
+                  <li key={keyword} className="flex items-start text-sm text-gray-700">
+                    <input
+                      id={`${rec.id}-tech-${keyword}`}
+                      type="checkbox"
+                      checked={selectedTechnologies.has(keyword)}
+                      onChange={() => toggleSelectedTechnology(keyword)}
+                      className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 rounded-sm border-gray-400 text-emerald-600"
+                    />
+                    <label htmlFor={`${rec.id}-tech-${keyword}`} className="ml-2 cursor-pointer select-none">{keyword}</label>
+                  </li>
+                ))
+              ) : (
+                <li className="text-sm text-gray-400">No technologies match your filter.</li>
+              )}
+            </ul>
+          </>
+        )}
+        {rec.triggered_rule === 'SkillWithoutExperienceRule' && (
+          <>
+            <p className="mt-1 text-sm text-gray-700">
+              Choose the experience entries that demonstrate this skill.
+            </p>
+            <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">
+              {selectedProfile.experiences.map((exp) => (
+                <li key={exp.id} className="flex items-start text-sm text-gray-700">
+                  <input
+                    id={`${rec.id}-experience-${exp.id}`}
+                    type="checkbox"
+                    checked={selectedExperienceIds.has(exp.id)}
+                    onChange={() => toggleSelectedExperience(exp.id)}
+                    className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 rounded-sm border-gray-400 text-emerald-600"
+                  />
+                  <label htmlFor={`${rec.id}-experience-${exp.id}`} className="ml-2 cursor-pointer select-none">
+                    {exp.title}
+                    {exp.organization ? ` — ${exp.organization}` : ''}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+        {rec.triggered_rule === 'NoMeasurableAchievementRule' && (
+          <>
+            <p className="mt-1 text-sm text-gray-700">
+              Write a measurable achievement for this role. Quantify the outcome so
+              reviewers can see the value you delivered.
+            </p>
+            <textarea
+              value={achievementStatement}
+              onChange={(event) => setAchievementStatement(event.target.value)}
+              rows={3}
+              placeholder="e.g. Reduced deployment time by 60%"
+              className="mt-2 w-full rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-800 placeholder-gray-400 focus:border-emerald-500 focus:outline-none"
+            />
+            {achievementStatement.trim() && !isMeasurableStatement(achievementStatement) && (
+              <p className="mt-1 text-xs text-amber-700">
+                Add a number, percentage, or business outcome (e.g. cost, time, growth) so this counts as measurable.
+              </p>
+            )}
+            <div>
+              <p className="mt-2 text-xs font-semibold text-gray-600 uppercase tracking-wide">Related skills (optional)</p>
+              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto">
+                {selectedProfile.skills.map((skill) => (
+                  <li key={skill.id} className="flex items-start text-sm text-gray-700">
+                    <input
+                      id={`${rec.id}-achievement-skill-${skill.id}`}
+                      type="checkbox"
+                      checked={selectedSkillIds.has(skill.id)}
+                      onChange={() => toggleSelectedSkill(skill.id)}
+                      className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 rounded-sm border-gray-400 text-emerald-600"
+                    />
+                    <label htmlFor={`${rec.id}-achievement-skill-${skill.id}`} className="ml-2 cursor-pointer select-none">{skill.name}</label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+        {resolutionError && (
+          <p className="mt-2 text-sm text-red-600">{resolutionError}</p>
+        )}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => applyResolution(rec)}
+            disabled={resolvingId === rec.id || nothingSelected}
+            className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {resolvingId === rec.id ? 'Applying...' : 'Apply to profile'}
+          </button>
+          <button
+            onClick={() => toggleResolutionPanel(rec)}
+            className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            Cancel
+          </button>
+          <span className="text-xs text-gray-400">Writes canonical profile changes</span>
+        </div>
+      </div>
+    );
   };
 
   const toggleDismissed = (recId: string) => {
@@ -252,6 +759,13 @@ export default function TailoringPage() {
       setErrorMessage('Unable to load profiles. Please ensure the backend is running.');
       setLoadingProfiles(false);
     });
+  }, []);
+
+  useEffect(() => {
+    ProfileService.getInstance()
+      .getTechnologyKeywords()
+      .then((keywords) => setTechKeywords(keywords))
+      .catch(() => setTechKeywords([]));
   }, []);
 
   const handleProfileChange = (profileId: string) => {
@@ -368,7 +882,7 @@ export default function TailoringPage() {
           <div className={sectionHeaderClass('professionalSummaries')}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Professional Summary</h3>
           </div>
-          {isSectionActive('professionalSummaries') && renderMissingChecklist(activeMissing)}
+          {isSectionActive('professionalSummaries') && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
           {profile.professionalSummaries.length === 0 ? (
             <div className="px-3 py-4">
               <p className="text-sm text-gray-400 italic">No professional summary yet.</p>
@@ -388,7 +902,7 @@ export default function TailoringPage() {
           <div className={sectionHeaderClass('experiences')}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Experience</h3>
           </div>
-          {isSectionActive('experiences') && renderMissingChecklist(activeMissing)}
+          {isSectionActive('experiences') && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
           {profile.experiences.length === 0 ? (
             <div className="px-3 py-4">
               <p className="text-sm text-gray-400 italic">No experience entries available.</p>
@@ -414,7 +928,7 @@ export default function TailoringPage() {
                   {exp.scope && (
                     <p className="text-sm text-gray-700 mt-1 leading-relaxed">{exp.scope}</p>
                   )}
-                  {elementActive && renderMissingChecklist(activeMissing)}
+                  {elementActive && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
                 </div>
               );
             })
@@ -426,7 +940,7 @@ export default function TailoringPage() {
           <div className={sectionHeaderClass('skills')}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Skills</h3>
           </div>
-          {isSectionActive('skills') && renderMissingChecklist(activeMissing)}
+          {isSectionActive('skills') && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
           {profile.skills.length === 0 ? (
             <div className="px-3 py-4">
               <p className="text-sm text-gray-400 italic">No skills available.</p>
@@ -456,7 +970,7 @@ export default function TailoringPage() {
                 })}
               </div>
               {profile.skills.some((s) => isElementActive('skills', s.id)) &&
-                renderMissingChecklist(activeMissing)}
+                renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
             </div>
           )}
         </div>
@@ -492,7 +1006,7 @@ export default function TailoringPage() {
           <div className={sectionHeaderClass('certifications')}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Certifications</h3>
           </div>
-          {isSectionActive('certifications') && renderMissingChecklist(activeMissing)}
+          {isSectionActive('certifications') && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
           {profile.certifications.length === 0 ? (
             <div className="px-3 py-4">
               <p className="text-sm text-gray-400 italic">No certifications available.</p>
@@ -513,7 +1027,7 @@ export default function TailoringPage() {
                   {formatDateRange(cert.dateRange) && (
                     <p className="text-xs text-gray-400 mt-0.5">{formatDateRange(cert.dateRange)}</p>
                   )}
-                  {elementActive && renderMissingChecklist(activeMissing)}
+                  {elementActive && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
                 </div>
               );
             })
@@ -525,7 +1039,7 @@ export default function TailoringPage() {
           <div className={sectionHeaderClass('projects')}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Projects</h3>
           </div>
-          {isSectionActive('projects') && renderMissingChecklist(activeMissing)}
+          {isSectionActive('projects') && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
           {profile.projects.length === 0 ? (
             <div className="px-3 py-4">
               <p className="text-sm text-gray-400 italic">No projects available.</p>
@@ -543,7 +1057,7 @@ export default function TailoringPage() {
                   {proj.description && (
                     <p className="text-sm text-gray-700 mt-1 leading-relaxed">{proj.description}</p>
                   )}
-                  {elementActive && renderMissingChecklist(activeMissing)}
+                  {elementActive && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
                 </div>
               );
             })
@@ -858,6 +1372,37 @@ export default function TailoringPage() {
                 </div>
               )}
 
+              {/* ── Stale Artifact Banner ── */}
+              {status === 'success' && artifact && isCurrentArtifactStale && (
+                <div className="bg-amber-50 border border-amber-300 rounded-lg p-5">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <svg className="h-5 w-5 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="text-base font-semibold text-amber-900">This document is out of date</h2>
+                      <p className="mt-1 text-sm text-amber-800 leading-relaxed">
+                        Accepted changes modified the canonical profile. This document still shows the previously
+                        generated version. Regenerate to incorporate your accepted changes.
+                      </p>
+                      {regenerateError && (
+                        <p className="mt-2 text-xs text-red-700">{regenerateError}</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleRegenerate}
+                        disabled={regenerating}
+                        className="mt-3 inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 border border-amber-700 transition-colors disabled:opacity-60"
+                      >
+                        {regenerating ? 'Regenerating...' : `Regenerate ${labels.resultHeading}`}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* ── Generated Artifact ── */}
               <div>
                 <h2 className="text-base font-semibold text-gray-900 mb-3">{labels.resultHeading}</h2>
@@ -941,154 +1486,192 @@ export default function TailoringPage() {
                         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                           Profile Recommendations ({profileRecommendations.length})
                         </h3>
-                        {profileRecommendations.map((rec) => {
-                          const target = resolveRecommendationTarget(rec);
-                          const actionLabel = target ? SECTION_ACTION_LABELS[target.section] : null;
-                          const reviewed = reviewedIds.has(rec.id);
-                          const dismissed = dismissedIds.has(rec.id);
+                        {recommendationGroups.map((group) => {
+                          const groupTarget = resolveRecommendationTarget(group.recommendations[0]);
+                          const groupActionLabel = groupTarget ? SECTION_ACTION_LABELS[groupTarget.section] : null;
+                          const noun = groupNoun(group.recommendations);
+                          const single = group.recommendations.length === 1;
+                          const item = group.recommendations[0];
+                          const itemTarget = resolveRecommendationTarget(item);
+                          const itemActionLabel = itemTarget ? SECTION_ACTION_LABELS[itemTarget.section] : null;
                           return (
-                          <div
-                            key={rec.id}
-                            className={`bg-white border rounded-lg p-4 shadow-sm ${
-                              dismissed
-                                ? 'border-gray-200 opacity-60'
-                                : reviewed
-                                  ? 'border-green-300'
-                                  : 'border-gray-200'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <h4 className="font-semibold text-gray-900">{rec.title}</h4>
-                                {actionLabel && (
-                                  <span className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                    {actionLabel}
+                            <div key={group.key} data-recommendation-group={group.key} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <h4 className="font-semibold text-gray-900">
+                                    {group.title}
+                                    {!single && (
+                                      <span className="ml-2 align-middle inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                        {group.recommendations.length} {noun}
+                                      </span>
+                                    )}
+                                  </h4>
+                                  {groupActionLabel && (
+                                    <span className="mt-1.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                      {groupActionLabel}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${PRIORITY_STYLES[group.priority] ?? 'bg-gray-100 text-gray-700'}`}>
+                                    Priority: {capitalizeLevel(group.priority)}
                                   </span>
-                                )}
-                                {reviewed && (
-                                  <span className="mt-1.5 ml-1.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                    Reviewed
+                                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${IMPACT_STYLES[group.impact] ?? 'bg-gray-100 text-gray-700'}`}>
+                                    Impact: {capitalizeLevel(group.impact)}
                                   </span>
-                                )}
-                                {dismissed && (
-                                  <span className="mt-1.5 ml-1.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600">
-                                    Dismissed
-                                  </span>
-                                )}
+                                </div>
                               </div>
-                              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${PRIORITY_STYLES[rec.priority] ?? 'bg-gray-100 text-gray-700'}`}>
-                                  Priority: {capitalizeLevel(rec.priority)}
-                                </span>
-                                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${IMPACT_STYLES[rec.estimated_impact] ?? 'bg-gray-100 text-gray-700'}`}>
-                                  Impact: {capitalizeLevel(rec.estimated_impact)}
-                                </span>
-                              </div>
-                            </div>
-                            <p className="mt-2 text-sm text-gray-700 leading-relaxed">{rec.reason}</p>
-                            {rec.explanation && (
-                              <p className="mt-1 text-xs text-gray-500 italic leading-relaxed">
-                                Why it matters: {rec.explanation}
+                              <p className="mt-2 text-sm text-gray-700 leading-relaxed">
+                                {single
+                                  ? item.reason
+                                  : `CareerOS found this issue in ${group.recommendations.length} ${noun}.`}
                               </p>
-                            )}
-                            <p className="mt-1 text-xs text-gray-400">{capitalizeLevel(rec.confidence)} confidence</p>
-                            {rec.suggested_action && (
-                              <div className="mt-3">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Suggested Action</p>
-                                <p className="mt-1 text-sm text-gray-800">{rec.suggested_action}</p>
-                              </div>
-                            )}
-                            {rec.examples && rec.examples.length > 0 && (
-                              <div className="mt-3">
-                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Examples</p>
-                                <ul className="mt-1 space-y-1">
-                                  {rec.examples.map((example, i) => (
-                                    <li key={i} className="flex items-start text-sm text-gray-700">
-                                      <span className="mr-2 text-gray-400">•</span>
-                                      <span>{example}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            <details className="mt-3 border-t border-gray-100 pt-3">
-                              <summary className="flex items-center text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer hover:text-gray-700">
-                                Why CareerOS made this recommendation
-                              </summary>
-                              <div className="mt-3 space-y-3">
-                                {rec.detected_pattern && (
-                                  <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Detected Pattern</p>
-                                    <p className="mt-1 text-sm text-gray-700">{rec.detected_pattern}</p>
+                              {single ? (
+                                <div data-recommendation-id={item.id} className="mt-3 border-t border-gray-100 pt-2.5">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <p className="min-w-0 text-sm font-medium text-gray-900">
+                                      {elementDisplayName(item, selectedProfile)}
+                                    </p>
+                                    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                                      {canResolve(item) && (
+                                        <button
+                                          onClick={() => toggleResolutionPanel(item)}
+                                          className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                                        >
+                                          {openResolutionId === item.id ? 'Close panel' : 'Resolve'}
+                                        </button>
+                                      )}
+                                      {itemActionLabel && (
+                                        <button
+                                          onClick={() => handleGoToSection(item)}
+                                          className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                        >
+                                          Go to section
+                                        </button>
+                                      )}
+                                      {reviewedIds.has(item.id) ? (
+                                        <button
+                                          onClick={() => toggleReviewed(item.id)}
+                                          className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 border border-green-200 transition-colors"
+                                        >
+                                          Reviewed — undo
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => toggleReviewed(item.id)}
+                                          className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                                        >
+                                          Mark as reviewed
+                                        </button>
+                                      )}
+                                      {dismissedIds.has(item.id) ? (
+                                        <button
+                                          onClick={() => toggleDismissed(item.id)}
+                                          className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                                        >
+                                          Dismissed — restore
+                                        </button>
+                                      ) : (
+                                        <button
+                                          onClick={() => toggleDismissed(item.id)}
+                                          className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                                        >
+                                          Dismiss
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
-                                )}
-                                {rec.missing_information && rec.missing_information.length > 0 && (
-                                  <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Missing Information</p>
-                                    <ul className="mt-1 space-y-1">
-                                      {rec.missing_information.map((item, i) => (
-                                        <li key={i} className="flex items-start text-sm text-gray-700">
-                                          <span className="mr-2 text-gray-400">•</span>
-                                          <span>{item}</span>
-                                        </li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                                {rec.recruiter_impact && (
-                                  <div>
-                                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Recruiter Impact</p>
-                                    <p className="mt-1 text-sm text-gray-700">{rec.recruiter_impact}</p>
-                                  </div>
-                                )}
-                                {rec.triggered_rule && (
-                                  <p className="text-xs text-gray-400">
-                                    Triggered by: <span className="font-medium text-gray-500">{rec.triggered_rule}</span>
-                                  </p>
-                                )}
-                              </div>
-                            </details>
-                            <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
-                              {actionLabel && (
-                                <button
-                                  onClick={() => handleGoToSection(rec)}
-                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                                >
-                                  Go to section
-                                </button>
-                              )}
-                              {reviewed ? (
-                                <button
-                                  onClick={() => toggleReviewed(rec.id)}
-                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 border border-green-200 transition-colors"
-                                >
-                                  Reviewed — undo
-                                </button>
+                                  {renderRecommendationDetails(item)}
+                                  {openResolutionId === item.id && renderResolutionPanel(item)}
+                                </div>
                               ) : (
-                                <button
-                                  onClick={() => toggleReviewed(rec.id)}
-                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
-                                >
-                                  Mark as reviewed
-                                </button>
-                              )}
-                              {dismissed ? (
-                                <button
-                                  onClick={() => toggleDismissed(rec.id)}
-                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
-                                >
-                                  Dismissed — restore
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => toggleDismissed(rec.id)}
-                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-                                >
-                                  Dismiss
-                                </button>
+                                <details className="mt-3 border-t border-gray-100 pt-2">
+                                  <summary className="cursor-pointer select-none text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-700">
+                                    View {group.recommendations.length} affected {noun}
+                                  </summary>
+                                  <div className="mt-1 divide-y divide-gray-100">
+                                    {group.recommendations.map((rec) => {
+                                      const target = resolveRecommendationTarget(rec);
+                                      const actionLabel = target ? SECTION_ACTION_LABELS[target.section] : null;
+                                      const reviewed = reviewedIds.has(rec.id);
+                                      const dismissed = dismissedIds.has(rec.id);
+                                      return (
+                                        <div key={rec.id} data-recommendation-id={rec.id} className="py-2.5">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                              <p className="text-sm font-medium text-gray-900">
+                                                {elementDisplayName(rec, selectedProfile)}
+                                              </p>
+                                              <p className="mt-0.5 text-xs text-gray-500 leading-relaxed">{rec.reason}</p>
+                                              {reviewed && (
+                                                <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                  Reviewed
+                                                </span>
+                                              )}
+                                              {dismissed && (
+                                                <span className="mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600">
+                                                  Dismissed
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                                              {canResolve(rec) && (
+                                                <button
+                                                  onClick={() => toggleResolutionPanel(rec)}
+                                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                                                >
+                                                  {openResolutionId === rec.id ? 'Close panel' : 'Resolve'}
+                                                </button>
+                                              )}
+                                              {actionLabel && (
+                                                <button
+                                                  onClick={() => handleGoToSection(rec)}
+                                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                                                >
+                                                  Go to section
+                                                </button>
+                                              )}
+                                              {reviewed ? (
+                                                <button
+                                                  onClick={() => toggleReviewed(rec.id)}
+                                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 border border-green-200 transition-colors"
+                                                >
+                                                  Reviewed — undo
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  onClick={() => toggleReviewed(rec.id)}
+                                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors"
+                                                >
+                                                  Mark as reviewed
+                                                </button>
+                                              )}
+                                              {dismissed ? (
+                                                <button
+                                                  onClick={() => toggleDismissed(rec.id)}
+                                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors"
+                                                >
+                                                  Dismissed — restore
+                                                </button>
+                                              ) : (
+                                                <button
+                                                  onClick={() => toggleDismissed(rec.id)}
+                                                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+                                                >
+                                                  Dismiss
+                                                </button>
+                                              )}
+                                            </div>
+                                          </div>
+                                          {renderRecommendationDetails(rec)}
+                                          {openResolutionId === rec.id && renderResolutionPanel(rec)}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </details>
                               )}
                             </div>
-                          </div>
                           );
                         })}
                       </div>

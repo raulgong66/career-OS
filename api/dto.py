@@ -223,6 +223,7 @@ def to_profile_details(data: dict[str, Any], profile_id: str, state: ProfileStat
             "type": _infer_artifact_type(art),
             "name": art.get("title", ""),
             "sourceCount": len(art.get("sourceRefs", [])),
+            "status": art.get("status", "current"),
         })
 
     result: dict[str, Any] = {

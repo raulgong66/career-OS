@@ -759,6 +759,12 @@
           "type": "string",
           "description": "The profile version or source state from which the artifact was derived."
         },
+        "status": {
+          "type": "string",
+          "enum": ["current", "stale"],
+          "default": "current",
+          "description": "Freshness state of the generated artifact relative to the canonical profile."
+        },
         "dateRange": {
           "$ref": "#/$defs/dateRange",
           "description": "The lifecycle period associated with the artifact."

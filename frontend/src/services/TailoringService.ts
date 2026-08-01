@@ -1,4 +1,4 @@
-import type { Recommendation, OptimizationStatus, OptimizationSummary, ProfileInfo } from '../types';
+import type { ProfileDetails, Recommendation, OptimizationStatus, OptimizationSummary, ProfileInfo } from '../types';
 
 interface GenerateArtifactResponse {
   artifact: string;
@@ -6,6 +6,14 @@ interface GenerateArtifactResponse {
   optimizationMessage: string;
   optimizationSummary: OptimizationSummary | null;
   recommendations: Recommendation[];
+}
+
+interface RegenerateArtifactResponse {
+  artifactId: string;
+  artifact: string;
+  status: 'current' | 'stale';
+  outputFormat: string;
+  profile?: ProfileDetails;
 }
 
 export class TailoringService {
@@ -87,6 +95,40 @@ export class TailoringService {
       };
     } catch (error) {
       console.error('Failed to generate tailored artifact:', error);
+      throw error;
+    }
+  }
+
+  async regenerateTailoredArtifact(
+    profileId: string,
+    artifactId: string,
+    outputFormat: string
+  ): Promise<RegenerateArtifactResponse> {
+    try {
+      const response = await fetch(
+        `${this.BASE}/profiles/${profileId}/artifacts/${artifactId}/regenerate`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            output_format: outputFormat,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status} ${response.statusText}`);
+      }
+
+      const body: RegenerateArtifactResponse = await response.json();
+      if (!body.artifact) {
+        throw new Error('Regeneration returned no artifact content.');
+      }
+      return body;
+    } catch (error) {
+      console.error('Failed to regenerate tailored artifact:', error);
       throw error;
     }
   }

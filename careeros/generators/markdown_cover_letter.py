@@ -81,11 +81,11 @@ class MarkdownCoverLetterGenerator:
     def _extract_requirements(job_description: str) -> list[str]:
         """Extract normalised requirement tokens from a job description.
 
-        Delegates to the well-tested ``CVOptimizer._extract_requirements``
+        Delegates to the well-tested ``CVOptimizer.extract_requirements``
         static method.  Returns a deduplicated, sorted list of lower-cased
         requirement strings.
         """
-        return CVOptimizer._extract_requirements(job_description)
+        return CVOptimizer.extract_requirements(job_description)
 
     # ------------------------------------------------------------------
     # Open / close paragraphs

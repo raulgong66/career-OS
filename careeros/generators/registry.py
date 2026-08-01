@@ -8,8 +8,10 @@ from ..exceptions import ValidationError
 from ..export_contract import ExportContract
 from .docx_cv import DocxCVGenerator
 from .docx_letter import DocxLetterGenerator
+from .docx_preparation_guide import DocxPreparationGuideGenerator
 from .markdown_cover_letter import MarkdownCoverLetterGenerator
 from .markdown_cv import MarkdownCVGenerator
+from .markdown_preparation_guide import MarkdownPreparationGuideGenerator
 
 
 class ArtifactGenerator(Protocol):
@@ -60,4 +62,14 @@ def default_generator_registry() -> GeneratorRegistry:
     registry.register("COVER_LETTER", "docx", docx_letter_generator)
     registry.register("INTEREST_LETTER", "markdown", markdown_cover_letter_generator)
     registry.register("INTEREST_LETTER", "docx", docx_letter_generator)
+    registry.register(
+        "INTERVIEW_PREPARATION_GUIDE",
+        "markdown",
+        MarkdownPreparationGuideGenerator(),
+    )
+    registry.register(
+        "INTERVIEW_PREPARATION_GUIDE",
+        "docx",
+        DocxPreparationGuideGenerator(),
+    )
     return registry

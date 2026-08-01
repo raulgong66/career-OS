@@ -39,6 +39,16 @@ from careeros.acquisition import AcquisitionPipeline, DocumentReadError, Pipelin
 from careeros.profile_repository import ProfileRepository, ProfileState
 
 from .dto import to_import_response, to_profile_details, to_profile_summary
+from careeros.reasoning.rules.recommendation_rules import TECHNOLOGY_KEYWORDS
+from careeros.resolution import (
+    AchievementNotMeasurableError,
+    InvalidAchievementError,
+    RESOLVABLE_RULES,
+    ResolutionTargetNotFoundError,
+    UnsupportedRuleError,
+    _ARTIFACT_STATUS_CURRENT,
+    apply_resolution,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
 
@@ -186,6 +196,225 @@ class CreateArtifactResponse(BaseModel):
 
     artifactId: str = Field(description="ID of the created artifact.")
     artifact: dict[str, Any] = Field(description="The full artifact definition.")
+
+
+class ResolveRecommendationRequest(BaseModel):
+    """Request payload for guided recommendation resolution.
+
+    Carries only the rule type, the target element, and the user's selections.
+    No free-form payloads: the server applies the exact canonical edit for the
+    rule type and persists it to the canonical profile.
+    """
+
+    triggeredRule: str = Field(description="Rule class name that produced the recommendation.")
+    elementId: str = Field(description="ID of the profile element the resolution targets.")
+    skillIds: list[str] = Field(default_factory=list, description="Selected skill references (project tagging / technologies / achievement skills).")
+    experienceIds: list[str] = Field(default_factory=list, description="Selected experience references (project / skill evidence).")
+    technologies: list[str] = Field(default_factory=list, description="Technology tags to attach to an experience.")
+    achievementStatement: str = Field(default="", description="Measurable achievement statement to persist (NoMeasurableAchievementRule).")
+
+
+class RegenerateArtifactRequest(BaseModel):
+    """Request payload for explicitly regenerating a stale artifact.
+
+    Regeneration always rebuilds the ExportContract from the canonical profile
+    through the existing generation pipeline. It never mutates previously
+    generated markdown/docx directly.
+    """
+
+    output_format: str = Field(default="markdown", description="Output format to regenerate (markdown or docx).")
+    job_description: Optional[str] = Field(default=None, description="Optional job description to reproduce a tailored artifact.")
+
+
+@app.post("/profiles/{profile_id}/resolve")
+def resolve_profile_recommendation(profile_id: str, request: ResolveRecommendationRequest) -> dict[str, Any]:
+    """Apply a guided recommendation resolution to the canonical profile and persist it.
+
+    Only the M1.7/M1.8 rule types are supported. The edit is deterministic and
+    schema-compliant, the canonical YAML is rewritten, and the updated profile
+    DTO is returned so the frontend can re-analyze.
+    """
+    if request.triggeredRule not in RESOLVABLE_RULES:
+        raise HTTPException(status_code=400, detail=ApiErrorResponse(
+            error="UNSUPPORTED_RULE",
+            detail=f"Resolution is not supported for rule: {request.triggeredRule}",
+        ).model_dump())
+
+    try:
+        record = PROFILE_REPOSITORY.get(profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    data = record.data
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail="Profile data is malformed.",
+        ).model_dump())
+
+    try:
+        apply_resolution(
+            data,
+            triggered_rule=request.triggeredRule,
+            element_id=request.elementId,
+            skill_ids=request.skillIds,
+            experience_ids=request.experienceIds,
+            technologies=request.technologies,
+            achievement_statement=request.achievementStatement or "",
+        )
+    except (UnsupportedRuleError, InvalidAchievementError, AchievementNotMeasurableError) as exc:
+        error = {
+            UnsupportedRuleError: "UNSUPPORTED_RULE",
+            InvalidAchievementError: "INVALID_ACHIEVEMENT",
+            AchievementNotMeasurableError: "ACHIEVEMENT_NOT_MEASURABLE",
+        }[type(exc)]
+        raise HTTPException(status_code=400, detail=ApiErrorResponse(
+            error=error,
+            detail=str(exc),
+        ).model_dump())
+    except ResolutionTargetNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail=f"Failed to apply resolution: {exc}",
+        ).model_dump())
+
+    try:
+        Path(record.path).write_text(
+            yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail=f"Failed to persist profile: {exc}",
+        ).model_dump())
+
+    try:
+        updated = PROFILE_REPOSITORY.get(profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    return {"profile": to_profile_details(updated.data, profile_id, state=updated.state)}
+
+
+@app.post("/profiles/{profile_id}/artifacts/{artifact_id}/regenerate")
+def regenerate_profile_artifact(
+    profile_id: str,
+    artifact_id: str,
+    request: RegenerateArtifactRequest,
+) -> dict[str, Any]:
+    """Explicitly regenerate a stale artifact from the canonical profile.
+
+    Rebuilds the ExportContract and regenerates Markdown/DOCX through the existing
+    generation pipeline, then clears the artifact's stale flag and persists the
+    updated profile. The generated output is returned to the client; previously
+    generated content is never mutated in place.
+    """
+    try:
+        record = PROFILE_REPOSITORY.get(profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    data = record.data
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail="Profile data is malformed.",
+        ).model_dump())
+
+    artifact = next(
+        (a for a in data.get("artifacts", []) if a.get("id") == artifact_id),
+        None,
+    )
+    if artifact is None:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=f"Artifact not found: {artifact_id}",
+        ).model_dump())
+
+    try:
+        result = generate_artifact(
+            record.path,
+            artifact_id,
+            request.output_format,
+            SCHEMA_LOADER,
+            job_description=request.job_description,
+        )
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="VALIDATION_ERROR",
+            detail=str(exc),
+        ).model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail=f"Failed to regenerate artifact: {exc}",
+        ).model_dump())
+
+    if request.job_description and isinstance(result, tuple):
+        output, optimization_result = result
+    else:
+        output = result
+        optimization_result = None
+
+    artifact["status"] = _ARTIFACT_STATUS_CURRENT
+    artifact["derivedFromProfileVersion"] = data.get("profileVersion", "")
+
+    try:
+        Path(record.path).write_text(
+            yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail=f"Failed to persist profile: {exc}",
+        ).model_dump())
+
+    response: dict[str, Any] = {
+        "artifactId": artifact_id,
+        "output_format": request.output_format,
+        "artifact": output.decode("utf-8") if isinstance(output, bytes) else output,
+        "status": _ARTIFACT_STATUS_CURRENT,
+        "profile": to_profile_details(data, profile_id, state=record.state),
+    }
+
+    if optimization_result is not None:
+        response["optimizationStatus"] = optimization_result.status.value
+        response["optimizationMessage"] = optimization_result.message
+        if optimization_result.summary:
+            response["optimizationSummary"] = optimization_result.summary.to_dict()
+        if optimization_result.recommendations:
+            response["recommendations"] = [
+                rec.to_dict() for rec in optimization_result.recommendations
+            ]
+
+    return response
+
+
+@app.get("/technologies")
+def list_technology_keywords() -> dict[str, Any]:
+    """List the technology keywords recognized by the recommendation engine."""
+    return {"keywords": sorted(set(TECHNOLOGY_KEYWORDS))}
 
 
 

@@ -73,6 +73,7 @@ export interface ProfileDetails {
     type: string;
     name: string;
     sourceCount: number;
+    status: 'current' | 'stale';
   }>;
   summary: string | null;
   importedAt: string;

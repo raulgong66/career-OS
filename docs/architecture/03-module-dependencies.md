@@ -10,7 +10,9 @@ career-OS/
 ├── careeros/             # Core library
 │   ├── acquisition/      #   Data ingestion
 │   │   └── builders/     #   Entity builders
+│   ├── ai/               #   AI provider abstraction (openai/ollama/mock)
 │   ├── generators/       #   Artifact generators
+│   ├── interview/        #   Interview Intelligence module (M1.14)
 │   ├── knowledge/        #   Knowledge graph
 │   └── reasoning/        #   Reasoning engine
 │       ├── rules/        #     Rule implementations
@@ -81,6 +83,25 @@ graph TB
             G_MD_CV["generators/markdown_cv.py"]
             G_MD_CL["generators/markdown_cover_letter.py"]
             G_DOCX["generators/docx_cv.py"]
+            G_DOCX_UTILS["generators/docx_utils.py (M1.16)"]
+            G_MD_PG["generators/markdown_preparation_guide.py (M1.16)"]
+            G_DOCX_PG["generators/docx_preparation_guide.py (M1.16)"]
+        end
+
+        subgraph AI["AI Provider Abstraction"]
+            AI_BASE["ai/base.py"]
+            AI_FACTORY["ai/factory.py"]
+            AI_OPENAI["ai/openai_provider.py"]
+            AI_OLLAMA["ai/ollama_provider.py"]
+            AI_MOCK["ai/mock_provider.py"]
+        end
+
+        subgraph Interview["Interview Intelligence (module)"]
+            I_DOMAIN["interview/domain.py"]
+            I_ENGINE["interview/engine.py"]
+            I_TEMPLATES["interview/templates.py"]
+            I_BUILDER["interview/question_builder.py"]
+            I_COMP["interview/competency.py"]
         end
 
         EXPORT["export_contract.py"]
@@ -162,12 +183,46 @@ graph TB
     A_BUILDER --> A_BUILDERS
     A_EXTRACTOR --> A_DATA
 
+    %% Core -> AI provider abstraction
+    AI_OPENAI --> AI_BASE
+    AI_OLLAMA --> AI_BASE
+    AI_MOCK --> AI_BASE
+    AI_FACTORY --> AI_OPENAI
+    AI_FACTORY --> AI_OLLAMA
+    AI_FACTORY --> AI_MOCK
+    A_EXTRACTOR --> AI_BASE
+    A_EXTRACTOR --> AI_FACTORY
+    A_EXTRACTOR --> AI_OPENAI
+    A_EXTRACTOR --> AI_OLLAMA
+    G_MD_CV --> AI_BASE
+    G_MD_CV --> AI_FACTORY
+
+    %% Interview Intelligence → Core (module consumes Core only, ADR-005)
+    I_ENGINE --> I_DOMAIN
+    I_ENGINE --> I_TEMPLATES
+    I_ENGINE --> I_BUILDER
+    I_ENGINE --> I_COMP
+    I_BUILDER --> I_DOMAIN
+    I_COMP --> I_DOMAIN
+    I_ENGINE --> KG_BUILDER
+    I_ENGINE --> KG_MODELS
+    I_COMP --> OPT
+
     G_MD_CV --> EXPORT
     G_MD_CL --> EXPORT
     G_MD_CL --> G_MD_CV
     G_DOCX --> EXPORT
     G_DOCX --> G_MD_CV
     G_REGISTRY --> Docx
+
+    %% M1.16 — Interview Preparation Guide generators
+    G_MD_PG --> EXPORT
+    G_MD_PG --> I_DOMAIN
+    G_DOCX_PG --> EXPORT
+    G_DOCX_PG --> G_MD_PG
+    G_DOCX_UTILS --> Docx
+    G_DOCX --> G_DOCX_UTILS
+    PIPELINES --> I_ENGINE
 
     OPT --> EXPORT
     DOCX_RENDER --> OPT
@@ -205,9 +260,9 @@ Both `DocxCVGenerator` and `MarkdownCoverLetterGenerator` compose `MarkdownCVGen
 
 `ReasoningEngine.analyze()` imports and instantiates `KnowledgeGraphBuilder`. This is a runtime dependency introduced during consolidation (PKR-006.5). The original `run()` method accepts a pre-built graph — the two paths have different coupling levels.
 
-### 4. Acquisition Pipeline Depends on External LLM Service
+### 4. LLM Access Was Embedded in Core Consumers
 
-`OpenAILLMExtractor` makes HTTP calls to the OpenAI API. This dependency is optional (the abstract `LLMExtractor` base allows alternative implementations), but the HTTP dependency (`httpx`) is not declared in `pyproject.toml`.
+`OpenAILLMExtractor` and `MarkdownCVGenerator` previously made HTTP calls to vendor APIs directly, with duplicated request/error-handling code. **Resolved in M1.13 (ADR-006):** all vendor/HTTP code moved behind the `careeros/ai/` provider abstraction (`AIProvider.generate`); consumers depend only on the interface and the `create_ai_provider()` factory, and `httpx` is a declared dependency in `pyproject.toml`. See [ADR-006](../platform-beta/ADR-006-AI-Provider-Agnostic-Foundation.md).
 
 ### 5. Frontend Is a Build Artifact with No Source
 
@@ -216,9 +271,10 @@ The `frontend/dist/` directory contains compiled JavaScript/CSS. No `package.jso
 ## Architectural Risk Summary
 
 | Risk | Severity | Description |
-|---|---|---|
-| Missing dependency declaration (`httpx`) | Medium | Runtime error if OpenAI extraction is used without `httpx` installed |
-| Implicit cross-generator coupling | Low | Private helpers reused across generators |
+|---|---|---|---|
+| LLM vendor coupling | ~~Medium~~ Low (M1.13) | All vendor/HTTP code isolated in `careeros/ai/` (ADR-006) |
+| Implicit cross-generator coupling | ~~Low~~ Resolved (M1.16) | `docx_utils.py` extracted as the single source of truth for Markdown→DOCX rendering; `docx_cv.py` and `docx_letter.py` now delegate to it |
+| Interview plan on ExportContract | Low | `ExportContract.interview_plan` typed via `TYPE_CHECKING` to avoid a Core→module runtime dependency; same pattern may apply to future module artifacts |
 | Frontend source not in repo | Medium | Cannot modify or rebuild the frontend from this repository |
 | Flat-layout package discovery | Low | `pyproject.toml` cannot use `pip install -e .` due to multiple top-level packages |
 | No abstract graph interface | Low | `ReasoningEngine` depends on concrete `KnowledgeGraph` class |

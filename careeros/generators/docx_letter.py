@@ -8,6 +8,7 @@ from docx import Document
 
 from ..exceptions import ValidationError
 from ..export_contract import ExportContract
+from .docx_utils import add_inline_text, add_markdown_line
 from .markdown_cover_letter import MarkdownCoverLetterGenerator
 
 
@@ -37,33 +38,10 @@ class DocxLetterGenerator:
 
     @staticmethod
     def _add_markdown_line(document: Document, line: str) -> None:
-        """Add a Markdown-derived line to a DOCX document."""
-        if not line:
-            return
-        if line.startswith("# "):
-            document.add_heading(line[2:], level=0)
-            return
-        if line.startswith("## "):
-            document.add_heading(line[3:], level=1)
-            return
-        if line.startswith("- "):
-            paragraph = document.add_paragraph(style="List Bullet")
-            DocxLetterGenerator._add_inline_text(paragraph, line[2:])
-            return
-        if line.startswith("_") and line.endswith("_"):
-            paragraph = document.add_paragraph()
-            run = paragraph.add_run(line.strip("_"))
-            run.italic = True
-            return
-        paragraph = document.add_paragraph()
-        DocxLetterGenerator._add_inline_text(paragraph, line)
+        """Thin wrapper that delegates to the shared DOCX markdown helper."""
+        add_markdown_line(document, line)
 
     @staticmethod
     def _add_inline_text(paragraph, text: str) -> None:
-        """Add a line of text with minimal Markdown bold support."""
-        parts = text.split("**")
-        for index, part in enumerate(parts):
-            if not part:
-                continue
-            run = paragraph.add_run(part)
-            run.bold = index % 2 == 1
+        """Thin wrapper that delegates to the shared DOCX inline-text helper."""
+        add_inline_text(paragraph, text)

@@ -9,6 +9,7 @@ from typing import Union
 from .evidence_selector import EvidenceSelector
 from .export_contract import ExportContractBuilder
 from .generators import GeneratorRegistry, default_generator_registry
+from .interview import build_preparation_plan
 from .reasoning import ReasoningFindings
 from .optimizer import CVOptimizer, OptimizationResult
 from .profile_loader import ProfileLoader
@@ -42,6 +43,8 @@ def _infer_artifact_type(artifact: dict) -> str:
         return "INTEREST_LETTER"
     if "cover" in art_id or "cover" in title:
         return "COVER_LETTER"
+    if "interview" in art_id or "interview" in title:
+        return "INTERVIEW_PREPARATION_GUIDE"
     if "cv" in art_id or "cv" in title or "resume" in art_id or "resume" in title:
         return "CV"
     return ""
@@ -87,6 +90,11 @@ def generate_artifact(
 
     # Attach job description so JD-aware generators can consume it
     selected_contract.job_description = job_description
+
+    if artifact_type == "INTERVIEW_PREPARATION_GUIDE":
+        selected_contract.interview_plan = build_preparation_plan(
+            profile, target_contexts=selected_contract.target_contexts
+        )
 
     generator = generator_registry.resolve(selected_contract.artifact_type, output_format)
     return generator.generate(selected_contract)

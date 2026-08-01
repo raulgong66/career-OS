@@ -133,6 +133,14 @@ projects:
   name: accent-mvp
   description: Software platform integrating Agentic AI to autonomously process and
     analyze linguistic patterns and data.
+  skillRefs:
+  - id: skill-agentic-ai
+    type: skill
+  - id: skill-web-databases
+    type: skill
+  experienceRefs:
+  - id: exp-cabonline
+    type: experience
 skills:
 - id: skill-agentic-ai
   name: Agentic AI & Engineering

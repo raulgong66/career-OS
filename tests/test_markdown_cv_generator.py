@@ -154,3 +154,43 @@ def test_markdown_cv_generator_rejects_non_cv_contract(repo_root: Path, profile:
 
     with pytest.raises(ValidationError, match="Unsupported artifact type"):
         MarkdownCVGenerator().generate(contract)
+
+
+def test_markdown_cv_renders_linked_achievement_under_experience(repo_root: Path, profile: dict) -> None:
+    """Achievement sources linked to an experience render as bullets under it."""
+    profile["experiences"][0]["achievementRefs"] = [{"id": "achievement-2", "type": "achievement"}]
+    profile["achievements"].append(
+        {
+            "id": "achievement-2",
+            "statement": "Reduced deployment time by 60% through CI/CD automation.",
+            "contextRefs": [{"id": "experience-1", "type": "experience"}],
+        }
+    )
+    profile["artifacts"][0]["sourceRefs"].append({"id": "achievement-2", "type": "achievement"})
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+
+    markdown = MarkdownCVGenerator().generate(contract)
+
+    assert "Reduced deployment time by 60% through CI/CD automation." in markdown
+    # Rendered under the experience, not as an internal id or source ref
+    assert "achievement-2" not in markdown
+    assert "sourceRefs" not in markdown
+    assert "• Reduced deployment time by 60% through CI/CD automation." in markdown
+
+
+def test_markdown_cv_links_achievement_via_context_refs(repo_root: Path, profile: dict) -> None:
+    """An achievement source with contextRefs to an experience is placed under it."""
+    profile["achievements"].append(
+        {
+            "id": "achievement-2",
+            "statement": "Cut infrastructure cost by 25% while migrating 40 microservices.",
+            "contextRefs": [{"id": "experience-1", "type": "experience"}],
+        }
+    )
+    profile["artifacts"][0]["sourceRefs"].append({"id": "achievement-2", "type": "achievement"})
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+
+    markdown = MarkdownCVGenerator().generate(contract)
+
+    assert "Cut infrastructure cost by 25% while migrating 40 microservices." in markdown
+    assert "achievement-2" not in markdown

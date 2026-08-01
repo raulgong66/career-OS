@@ -25,6 +25,11 @@ Platform Beta builds on this baseline. It does not replace it.
 | [README.md](README.md) | This index and architecture principles |
 | [M1 Evidence Model](m1-evidence-model/) | Professional Evidence Model design (ADR-002) |
 | [M2 Claim Model](m2-claim-model/) | Professional Claim Model design (ADR-003) |
+| [ADR-004: Core Platform Boundaries](ADR-004-Core-Platform-Boundaries.md) | Core vs module architecture boundary for future Platform Beta modules |
+| [Interview Intelligence](interview-intelligence/) | Interview Intelligence module design (ADR-005) |
+| [ADR-006: AI Provider-Agnostic Foundation](ADR-006-AI-Provider-Agnostic-Foundation.md) | Capability-oriented AI provider interface in Core (openai/ollama/mock) |
+| M1.14 Interview Intelligence foundation | Deterministic engine + domain models in `careeros/interview/` (no AI/UI yet) |
+| M1.16 Interview Preparation Guide | First-class artifact generated from `InterviewPlan` through the generic `generate_artifact` pipeline (Markdown + DOCX); `docx_utils.py` extracted as shared rendering helper; 34 new tests, 705 total green |
 
 ## Architecture Principles
 

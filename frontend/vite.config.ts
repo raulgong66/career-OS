@@ -16,6 +16,7 @@ export default defineConfig({
       '/search': { target: 'http://localhost:8001', changeOrigin: true },
       '/optimize-cv': { target: 'http://localhost:8001', changeOrigin: true },
       '/analyze': { target: 'http://localhost:8001', changeOrigin: true },
+      '/technologies': { target: 'http://localhost:8001', changeOrigin: true },
     },
   },
 })

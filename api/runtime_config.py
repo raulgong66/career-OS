@@ -12,9 +12,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-BACKEND_VERSION = "1.0.0"
+from careeros.ai import SUPPORTED_PROVIDERS
 
-SUPPORTED_PROVIDERS = ("ollama", "openai")
+BACKEND_VERSION = "1.0.0"
 
 
 class RuntimeConfigurationError(Exception):
@@ -64,15 +64,24 @@ def validate_runtime_config(env_path: Optional[Path] = None) -> RuntimeConfig:
     provider = _get_env("LLM_PROVIDER").lower()
     if not provider:
         raise RuntimeConfigurationError(
-            "LLM_PROVIDER is not configured. Add 'LLM_PROVIDER=ollama' or "
-            "'LLM_PROVIDER=openai' to the .env file."
+            "LLM_PROVIDER is not configured. Add 'LLM_PROVIDER=<provider>' "
+            "to the .env file."
         )
     if provider not in SUPPORTED_PROVIDERS:
         raise RuntimeConfigurationError(
-            f"Unknown LLM_PROVIDER: {provider!r}. Expected 'ollama' or 'openai'."
+            f"Unknown LLM_PROVIDER: {provider!r}. "
+            f"Expected one of: {', '.join(SUPPORTED_PROVIDERS)}."
         )
 
     openai_configured = bool(_get_env("OPENAI_API_KEY"))
+
+    if provider == "mock":
+        return RuntimeConfig(
+            env_loaded=env_loaded,
+            provider="mock",
+            ollama_model=None,
+            openai_configured=False,
+        )
 
     if provider == "ollama":
         model = _get_env("OLLAMA_MODEL")

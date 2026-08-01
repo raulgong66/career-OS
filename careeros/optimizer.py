@@ -876,6 +876,16 @@ class CVOptimizer:
         return self._resolve_concepts(reqs)
 
     @staticmethod
+    def extract_requirements(text: Union[str, None]) -> list[str]:
+        """Extract normalized job requirements from text.
+
+        Public entry point to the shared requirement-extraction heuristic so
+        other modules (e.g. cover-letter generators) never call the private
+        ``_extract_requirements`` directly.
+        """
+        return CVOptimizer._extract_requirements(text)
+
+    @staticmethod
     def _extract_requirements(text: Union[str, None]) -> list[str]:
         """Extract normalized job requirements from text.
 

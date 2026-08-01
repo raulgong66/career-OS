@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
-import os
-from abc import ABC, abstractmethod
 from typing import Any
 
 from careeros.exceptions import CareerOSException, LLMConfigurationError
+
+from careeros.ai import AIError, AIProvider, create_ai_provider
+from careeros.ai.ollama_provider import OllamaProvider
+from careeros.ai.openai_provider import OpenAIProvider
 
 from .person_data import EducationData, ExperienceData, ExtractionResult, PersonData, SkillData
 
@@ -14,12 +16,41 @@ class LLMExtractionError(CareerOSException):
     pass
 
 
-class LLMExtractor(ABC):
-    @abstractmethod
+class LLMExtractor:
+    """Acquisition-domain service: extract structured profile data via an AI provider.
+
+    Prompt construction and response parsing are business logic and stay here.
+    The provider (an ``AIProvider``) only supplies the ``generate`` capability.
+    """
+
+    extraction_temperature = 0.1
+    extraction_timeout = 60.0
+
+    def __init__(self, provider: AIProvider | None = None) -> None:
+        self.provider = provider
+
+    def _resolve_provider(self) -> AIProvider:
+        if self.provider is None:
+            self.provider = create_ai_provider()
+        return self.provider
+
+    def _complete(self, prompt: str) -> str:
+        try:
+            return self._resolve_provider().generate(
+                prompt,
+                temperature=self.extraction_temperature,
+                timeout=self.extraction_timeout,
+            )
+        except AIError as exc:
+            raise LLMExtractionError(f"LLM call failed: {exc}") from exc
+
     def extract(
         self, text: str, schema: dict[str, Any] | None = None
     ) -> ExtractionResult:
-        ...
+        prompt = self.build_prompt(text, schema)
+        response = self._complete(prompt)
+        data = self.parse_response(response)
+        return self.to_result(data)
 
     def build_prompt(self, text: str, schema: dict[str, Any] | None = None) -> str:
         prompt = (
@@ -209,107 +240,45 @@ class LLMExtractor(ABC):
 
 
 class OpenAILLMExtractor(LLMExtractor):
+    """Backward-compatible OpenAI extractor backed by the OpenAI provider adapter."""
+
     def __init__(
         self,
         api_key: str | None = None,
         model: str = "gpt-4o",
+        provider: OpenAIProvider | None = None,
+        transport: Any | None = None,
     ) -> None:
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
-        if not self.api_key:
-            raise LLMConfigurationError(
-                "OpenAI API key is required. Set the OPENAI_API_KEY environment variable "
-                "or pass api_key to OpenAILLMExtractor."
-            )
-        self.model = model
-
-    def extract(
-        self, text: str, schema: dict[str, Any] | None = None
-    ) -> ExtractionResult:
-        import httpx
-
-        prompt = self.build_prompt(text, schema)
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1,
-        }
-        try:
-            with httpx.Client(timeout=60) as client:
-                response = client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers=headers,
-                    json=body,
-                )
-                response.raise_for_status()
-                result = response.json()
-        except Exception as exc:
-            raise LLMExtractionError(f"OpenAI API call failed: {exc}") from exc
-
-        choices = result.get("choices", [])
-        if not choices:
-            raise LLMExtractionError("OpenAI returned no choices")
-
-        content = choices[0].get("message", {}).get("content", "")
-        data = self.parse_response(content)
-        return self.to_result(data)
+        if provider is None:
+            provider = OpenAIProvider(api_key=api_key, model=model, transport=transport)
+        super().__init__(provider=provider)
+        self.api_key = provider.api_key
+        self.model = provider.model
 
 
 class OllamaLLMExtractor(LLMExtractor):
+    """Backward-compatible Ollama extractor backed by the local provider adapter."""
+
+    extraction_timeout = 300.0
+
     def __init__(
         self,
         host: str | None = None,
         model: str | None = None,
+        provider: OllamaProvider | None = None,
+        transport: Any | None = None,
     ) -> None:
-        self.host = (host or os.environ.get("OLLAMA_HOST", "http://localhost:11434")).rstrip("/")
-        self.model = model or os.environ.get("OLLAMA_MODEL", "qwen2.5:3b")
-
-    def extract(
-        self, text: str, schema: dict[str, Any] | None = None
-    ) -> ExtractionResult:
-        import httpx
-
-        prompt = self.build_prompt(text, schema)
-        body = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": 0.1},
-        }
-        try:
-            with httpx.Client(timeout=300) as client:
-                response = client.post(
-                    f"{self.host}/api/generate",
-                    json=body,
-                )
-                response.raise_for_status()
-                result = response.json()
-        except Exception as exc:
-            raise LLMExtractionError(f"Ollama API call failed: {exc}") from exc
-
-        content = result.get("response", "")
-        if not content:
-            raise LLMExtractionError("Ollama returned empty response")
-
-        data = self.parse_response(content)
-        return self.to_result(data)
+        if provider is None:
+            provider = OllamaProvider(host=host, model=model, transport=transport)
+        super().__init__(provider=provider)
+        self.host = provider.host
+        self.model = provider.model
 
 
 def create_llm_extractor() -> LLMExtractor:
-    provider = os.environ.get("LLM_PROVIDER")
-    if not provider:
-        raise LLMConfigurationError(
-            "LLM_PROVIDER is not configured. Configure it in the .env file."
-        )
-    provider = provider.strip().lower()
-    if provider == "openai":
-        return OpenAILLMExtractor()
-    elif provider == "ollama":
-        return OllamaLLMExtractor()
-    else:
-        raise LLMConfigurationError(
-            f"Unknown LLM_PROVIDER: {provider}. Expected 'openai' or 'ollama'."
-        )
+    provider = create_ai_provider()
+    if isinstance(provider, OpenAIProvider):
+        return OpenAILLMExtractor(provider=provider)
+    if isinstance(provider, OllamaProvider):
+        return OllamaLLMExtractor(provider=provider)
+    return LLMExtractor(provider=provider)
