@@ -89,6 +89,14 @@ The engine must fail explicitly for:
 
 Failure behavior should be deterministic and expressed as domain-specific exceptions or error results, not as in-band state mutations.
 
+### Implementation notes
+
+- `start_session()` accepts sessions in `Draft` or `Ready`. Regardless of entry state, the resulting state is always `InProgress`.
+- `next_question()` signals the end of the interview through `NoActiveQuestionError`, not via sentinel values or nullable returns. This preserves deterministic engine behavior.
+- `InterviewSession` may contain optional session-scoped `metadata`. Metadata belongs exclusively to runtime state and never becomes part of the Canonical Professional Profile.
+- `plan_ref` is derived deterministically from the `InterviewPlan` identity fields. It is an implementation detail, not a new architectural concept.
+- `started_at`, `paused_at`, and `completed_at` exist on the runtime model, but the Session Engine intentionally does not populate them because deterministic orchestration must not depend on wall-clock time. Timestamp population belongs to future persistence/runtime layers.
+
 ### Module boundaries
 
 - The engine depends on Core domain models such as `InterviewPlan`, `InterviewQuestion`, and evidence reference conventions.

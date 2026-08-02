@@ -22,12 +22,15 @@ Interview Simulation is a runtime activity that consumes professional knowledge,
 ## Implementation Status
 
 - ✓ Architecture (Frozen)
+- ✓ Session Engine implemented for M1.17.3
 - □ Domain Models
-- □ Session Engine
 - □ Answer Evaluation
 - □ REST API
 - □ Frontend
 
+## Synchronization note
+
+M1.17.3 has completed the Session Engine implementation. Architecture documentation is synchronized with implementation and remains the authoritative reference for Interview Simulation.
 ## Future Scope
 
 Interview Simulation fits inside Platform Beta as a Professional Activity layer that consumes the canonical profile and Core reasoning services. It complements Interview Intelligence and other future activities such as Career Planning, Learning Sessions, and Skill Assessment.
