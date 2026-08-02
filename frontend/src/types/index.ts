@@ -183,3 +183,131 @@ export interface OptimizationResult {
   message: string;
   summary: OptimizationSummary | null;
 }
+
+export type InterviewSessionState = 'draft' | 'ready' | 'in_progress' | 'paused' | 'completed' | 'reviewed' | 'archived';
+
+export interface EvidenceCitation {
+  elementType: string;
+  elementId: string;
+  quote: string | null;
+}
+
+export interface SuggestedAnswerOutline {
+  situation: string | null;
+  task: string | null;
+  action: string | null;
+  result: string | null;
+  evidence: EvidenceCitation[];
+  achievement: string | null;
+}
+
+export interface InterviewQuestionInstance {
+  id: string;
+  session_id: string;
+  question_text: string;
+  category: string;
+  difficulty: string;
+  competency_ids: string[];
+  context_refs: Array<{ id: string; type: string }>;
+  evidence_citations: EvidenceCitation[];
+  order: number;
+  time_limit_seconds: number | null;
+  suggested_answer?: SuggestedAnswerOutline;
+}
+
+export interface AnswerEvaluation {
+  covers_claim: boolean;
+  has_metric: boolean;
+  cites_evidence: boolean;
+  follows_structure: boolean;
+  matches_question_competencies: boolean;
+  citations: EvidenceCitation[];
+}
+
+export interface InterviewFeedback {
+  id: string;
+  question_id: string;
+  answer_id: string;
+  missing: string[];
+  improvement_recommendation: string | null;
+  citations: EvidenceCitation[];
+}
+
+export interface InterviewAnswer {
+  id: string;
+  session_id: string;
+  question_id: string;
+  text: string;
+  answered_at: string | null;
+  duration_seconds: number | null;
+  evaluation?: AnswerEvaluation;
+  feedback?: InterviewFeedback;
+}
+
+export interface SessionMetrics {
+  total_questions: number;
+  answered_questions: number;
+  average_duration_seconds: number | null;
+  total_duration_seconds: number | null;
+}
+
+export interface InterviewSummary {
+  total_questions: number;
+  answered_questions: number;
+  covered_claims: number;
+  metric_citations: number;
+  evidence_citations: number;
+  structured_answers: number;
+  strong_answers: number;
+  weak_answers: number;
+}
+
+export interface EvaluationSummary {
+  total_answers: number;
+  coverage: number;
+  evidence: number;
+  claim_alignment: number;
+  measurability: number;
+  structure: number;
+  inconsistent_answers: number;
+}
+
+export interface InterviewSession {
+  id: string;
+  plan_ref: string;
+  profile_id: string;
+  state: InterviewSessionState;
+  questions: InterviewQuestionInstance[];
+  answers: InterviewAnswer[];
+  started_at: string | null;
+  completed_at: string | null;
+  paused_at: string | null;
+  metrics?: SessionMetrics;
+  summary?: InterviewSummary;
+  metadata?: Record<string, unknown>;
+}
+
+export interface InterviewReport {
+  id: string;
+  session_id: string;
+  profile_id: string;
+  plan_ref: string;
+  summary: InterviewSummary;
+  session_metrics: SessionMetrics;
+  answers: InterviewAnswer[];
+  strengths: string[];
+  weaknesses: string[];
+  recommendations: string[];
+}
+
+export interface SubmitAnswerResponse {
+  session: InterviewSession;
+  answer: InterviewAnswer;
+}
+
+export interface NextStepResponse {
+  completed: boolean;
+  session: InterviewSession;
+  question?: InterviewQuestionInstance;
+  report?: InterviewReport;
+}

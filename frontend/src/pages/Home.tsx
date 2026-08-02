@@ -111,6 +111,24 @@ export default function Home() {
               </button>
             </div>
 
+            <div className="bg-white border-2 border-blue-500 rounded-lg p-6 shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Interview Preparation</h2>
+                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                  READY
+                </span>
+              </div>
+              <p className="text-sm text-gray-600 mb-4">
+                Practice evidence-backed interview questions with instant answer evaluation and feedback.
+              </p>
+              <button
+                onClick={() => navigate('/interviews/practice')}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-200"
+              >
+                Open Demo
+              </button>
+            </div>
+
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold text-gray-900">Architecture</h2>
@@ -160,13 +178,6 @@ export default function Home() {
           <div className="mt-8">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Future Modules</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              <div className="bg-gray-100 border border-gray-200 rounded-lg p-6 opacity-60">
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">Interview Preparation</h2>
-                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">
-                  COMING NEXT
-                </span>
-              </div>
-
               <div className="bg-gray-100 border border-gray-200 rounded-lg p-6 opacity-60">
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">Career Analytics</h2>
                 <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700">

@@ -8,6 +8,7 @@ import os
 import shutil
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -37,6 +38,28 @@ from careeros import CVOptimizer, EntityValidator, FileSystemRepository, Optimiz
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.profile_repository import ProfileRepository, ProfileState
+from careeros.interview import (
+    EvaluationEngine,
+    EvaluationSummary,
+    InterviewAnswer,
+    InterviewEngine,
+    InterviewReport,
+    InterviewSession,
+    InterviewSummary,
+    SessionEngine,
+    SessionMetrics,
+    SessionState,
+)
+from careeros.interview.exceptions import InvalidProfileError
+from careeros.interview.simulation.exceptions import (
+    EvaluationPreconditionError,
+    InvalidAnswerError,
+    InvalidClaimError,
+    InvalidQuestionError,
+    InvalidSessionStateError,
+    MissingEvidenceReferenceError,
+    NoActiveQuestionError,
+)
 
 from .dto import to_import_response, to_profile_details, to_profile_summary
 from careeros.reasoning.rules.recommendation_rules import TECHNOLOGY_KEYWORDS
@@ -75,6 +98,15 @@ PROFILE_REPOSITORY = ProfileRepository(PROFILES_ROOT)
 SCHEMA_LOADER = SchemaLoader(SCHEMA_ROOT)
 VALIDATOR = EntityValidator(SCHEMA_LOADER)
 REPOSITORY = FileSystemRepository(REPO_ROOT / "data", SCHEMA_LOADER)
+
+# Interview simulation (M1.18). Session state is external runtime state, not
+# profile state: it lives in an in-memory registry owned by the API layer.
+# The engines are stateless and deterministic; persistence is deferred to the
+# session-persistence milestone.
+INTERVIEW_ENGINE = InterviewEngine()
+SESSION_ENGINE = SessionEngine()
+EVALUATION_ENGINE = EvaluationEngine()
+_INTERVIEW_SESSIONS: dict[str, InterviewSession] = {}
 
 
 class HealthResponse(BaseModel):
@@ -224,6 +256,20 @@ class RegenerateArtifactRequest(BaseModel):
 
     output_format: str = Field(default="markdown", description="Output format to regenerate (markdown or docx).")
     job_description: Optional[str] = Field(default=None, description="Optional job description to reproduce a tailored artifact.")
+
+
+class CreateInterviewSessionRequest(BaseModel):
+    """Request payload for creating an interview simulation session."""
+
+    profile_id: str = Field(description="Profile identifier (filename without extension).")
+    target_role: Optional[str] = Field(default=None, description="Optional target role to tailor the question plan.")
+
+
+class SubmitInterviewAnswerRequest(BaseModel):
+    """Request payload for submitting an answer to the current question."""
+
+    text: str = Field(description="The candidate's answer text.")
+    duration_seconds: Optional[int] = Field(default=None, description="Optional time spent answering in seconds.")
 
 
 @app.post("/profiles/{profile_id}/resolve")
@@ -415,6 +461,287 @@ def regenerate_profile_artifact(
 def list_technology_keywords() -> dict[str, Any]:
     """List the technology keywords recognized by the recommendation engine."""
     return {"keywords": sorted(set(TECHNOLOGY_KEYWORDS))}
+
+
+# ---------------------------------------------------------------------------
+# Interview simulation (M1.18)
+# ---------------------------------------------------------------------------
+
+
+def _get_interview_session(session_id: str) -> InterviewSession:
+    """Resolve a live session from the in-memory registry."""
+    session = _INTERVIEW_SESSIONS.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=f"Interview session not found: {session_id}",
+        ).model_dump())
+    return session
+
+
+def _store_interview_session(session: InterviewSession) -> None:
+    """Persist an updated session into the in-memory registry."""
+    _INTERVIEW_SESSIONS[session.id] = session
+
+
+def _attach_summary(session: InterviewSession, summary: InterviewSummary) -> InterviewSession:
+    """Attach a computed ``InterviewSummary`` to a completed session."""
+    return InterviewSession(
+        id=session.id,
+        plan_ref=session.plan_ref,
+        profile_id=session.profile_id,
+        state=session.state,
+        questions=session.questions,
+        answers=session.answers,
+        started_at=session.started_at,
+        completed_at=session.completed_at,
+        paused_at=session.paused_at,
+        metrics=session.metrics,
+        summary=summary,
+        metadata=session.metadata,
+    )
+
+
+def _build_report(
+    session: InterviewSession,
+    evaluation_summary: EvaluationSummary,
+) -> InterviewReport:
+    """Build the export-oriented report for a completed session.
+
+    Strengths / weaknesses / recommendations are advisory text derived
+    deterministically from the qualitative evaluation counts (ADR-003) —
+    never numeric scores and never fabricated assertions.
+    """
+    total = evaluation_summary.total_answers or 1
+    dimensions = (
+        ("Coverage", evaluation_summary.coverage, "answers addressed the question intent"),
+        ("Evidence", evaluation_summary.evidence, "answers were grounded in canonical profile evidence"),
+        ("Claim alignment", evaluation_summary.claim_alignment, "answers aligned with the question competencies"),
+        ("Measurability", evaluation_summary.measurability, "answers included a measurable outcome"),
+        ("Structure", evaluation_summary.structure, "answers followed a structured (STAR) narrative"),
+    )
+    strengths: list[str] = []
+    weaknesses: list[str] = []
+    recommendations: list[str] = []
+    for name, count, qualifier in dimensions:
+        if count > 0:
+            strengths.append(f"{name}: {count} of {total} {qualifier}.")
+        if count < total:
+            weaknesses.append(f"{name}: only {count} of {total} {qualifier}.")
+    if evaluation_summary.inconsistent_answers:
+        weaknesses.append(
+            f"Consistency: {evaluation_summary.inconsistent_answers} answer(s) "
+            "contained contradictory or unsupported claims."
+        )
+    if weaknesses:
+        recommendations.append(
+            "Ground answers in canonical profile evidence and keep claims consistent."
+        )
+        if evaluation_summary.measurability < total:
+            recommendations.append(
+                "Include a measurable outcome (metric, percentage, or business result) in each answer."
+            )
+        if evaluation_summary.structure < total:
+            recommendations.append(
+                "Structure answers around Situation, Task, Action, and Result (STAR)."
+            )
+
+    return InterviewReport(
+        id=f"{session.id}:report",
+        session_id=session.id,
+        profile_id=session.profile_id,
+        plan_ref=session.plan_ref,
+        summary=session.summary or SESSION_ENGINE.build_summary(session),
+        session_metrics=session.metrics or SessionMetrics(),
+        answers=session.answers,
+        strengths=tuple(strengths),
+        weaknesses=tuple(weaknesses),
+        recommendations=tuple(recommendations),
+    )
+
+
+@app.post("/interviews/sessions", status_code=status.HTTP_201_CREATED)
+def create_interview_session(request: CreateInterviewSessionRequest) -> dict[str, Any]:
+    """Create and start an interview simulation session for a profile.
+
+    Builds a deterministic ``InterviewPlan`` from the canonical profile with
+    ``InterviewEngine`` and starts a session via ``SessionEngine``. The
+    returned session carries the materialized question instances; the first
+    question is served by ``POST /interviews/sessions/{id}/next``.
+    """
+    try:
+        record = PROFILE_REPOSITORY.get(request.profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    data = record.data
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail="Profile data is malformed.",
+        ).model_dump())
+
+    try:
+        plan = INTERVIEW_ENGINE.generate_plan(data, target_role=request.target_role)
+    except InvalidProfileError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="INVALID_PROFILE",
+            detail=str(exc),
+        ).model_dump())
+
+    session = SESSION_ENGINE.create_session(
+        plan,
+        session_id=f"interview-{uuid.uuid4().hex[:12]}",
+    )
+    session = SESSION_ENGINE.start_session(session)
+    _store_interview_session(session)
+    return session.to_dict()
+
+
+@app.post("/interviews/sessions/{session_id}/answers")
+def submit_interview_answer(
+    session_id: str,
+    request: SubmitInterviewAnswerRequest,
+) -> dict[str, Any]:
+    """Record an answer to the active question with immediate evaluation.
+
+    The answer is evaluated deterministically by ``EvaluationEngine`` and
+    stored on the session with its ``AnswerEvaluation`` and ``InterviewFeedback``
+    so the candidate sees results immediately after answering.
+    """
+    session = _get_interview_session(session_id)
+    try:
+        question = SESSION_ENGINE.next_question(session)
+    except NoActiveQuestionError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="NO_ACTIVE_QUESTION",
+            detail=str(exc),
+        ).model_dump())
+
+    answer = InterviewAnswer(
+        id=f"{session.id}:{question.id}:answer",
+        session_id=session.id,
+        question_id=question.id,
+        text=request.text,
+        duration_seconds=request.duration_seconds,
+    )
+    try:
+        evaluation = EVALUATION_ENGINE.evaluate_answer(answer, question, session)
+        feedback = EVALUATION_ENGINE.build_feedback(answer, question, session, evaluation)
+    except (
+        InvalidAnswerError,
+        InvalidQuestionError,
+        MissingEvidenceReferenceError,
+        InvalidClaimError,
+        EvaluationPreconditionError,
+    ) as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="INVALID_ANSWER",
+            detail=str(exc),
+        ).model_dump())
+
+    evaluated = InterviewAnswer(
+        id=answer.id,
+        session_id=answer.session_id,
+        question_id=answer.question_id,
+        text=answer.text,
+        answered_at=answer.answered_at,
+        duration_seconds=answer.duration_seconds,
+        evaluation=evaluation,
+        feedback=feedback,
+    )
+    try:
+        session = SESSION_ENGINE.submit_answer(session, evaluated)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_STATE",
+            detail=str(exc),
+        ).model_dump())
+    _store_interview_session(session)
+    return {"session": session.to_dict(), "answer": evaluated.to_dict()}
+
+
+@app.post("/interviews/sessions/{session_id}/next")
+def advance_interview_session(session_id: str) -> dict[str, Any]:
+    """Advance the session to the next question or complete it.
+
+    When the question sequence is exhausted the session is completed, an
+    ``EvaluationSummary`` and ``InterviewSummary`` are computed, and the
+    export-oriented ``InterviewReport`` is returned alongside the session.
+    """
+    session = _get_interview_session(session_id)
+    try:
+        question = SESSION_ENGINE.next_question(session)
+    except NoActiveQuestionError:
+        completed = SESSION_ENGINE.complete_session(session)
+        evaluation_summary = EVALUATION_ENGINE.evaluate_session(completed)
+        summary = SESSION_ENGINE.build_summary(completed)
+        completed = _attach_summary(completed, summary)
+        _store_interview_session(completed)
+        report = _build_report(completed, evaluation_summary)
+        return {
+            "completed": True,
+            "session": completed.to_dict(),
+            "report": report.to_dict(),
+        }
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_STATE",
+            detail=str(exc),
+        ).model_dump())
+    return {"completed": False, "session": session.to_dict(), "question": question.to_dict()}
+
+
+@app.post("/interviews/sessions/{session_id}/pause")
+def pause_interview_session(session_id: str) -> dict[str, Any]:
+    """Pause an in-progress interview session."""
+    session = _get_interview_session(session_id)
+    try:
+        session = SESSION_ENGINE.pause_session(session)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_STATE",
+            detail=str(exc),
+        ).model_dump())
+    _store_interview_session(session)
+    return session.to_dict()
+
+
+@app.post("/interviews/sessions/{session_id}/resume")
+def resume_interview_session(session_id: str) -> dict[str, Any]:
+    """Resume a paused interview session."""
+    session = _get_interview_session(session_id)
+    try:
+        session = SESSION_ENGINE.resume_session(session)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_STATE",
+            detail=str(exc),
+        ).model_dump())
+    _store_interview_session(session)
+    return session.to_dict()
+
+
+@app.get("/interviews/sessions/{session_id}")
+def get_interview_session(session_id: str) -> dict[str, Any]:
+    """Retrieve the current state of an interview session."""
+    return _get_interview_session(session_id).to_dict()
+
+
+@app.get("/interviews/sessions/{session_id}/report")
+def get_interview_report(session_id: str) -> dict[str, Any]:
+    """Retrieve the export-oriented report for a completed session."""
+    session = _get_interview_session(session_id)
+    if session.state != SessionState.COMPLETED:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_STATE",
+            detail="The interview report is only available for completed sessions.",
+        ).model_dump())
+    evaluation_summary = EVALUATION_ENGINE.evaluate_session(session)
+    return _build_report(session, evaluation_summary).to_dict()
 
 
 
