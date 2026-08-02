@@ -10,6 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.exceptions import RequestValidationError
@@ -37,6 +38,25 @@ from careeros import CVOptimizer, EntityValidator, FileSystemRepository, Optimiz
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.profile_repository import ProfileRepository, ProfileState
+from careeros.interview import InterviewEngine
+from careeros.interview.exceptions import InvalidProfileError
+from careeros.interview.simulation import (
+    EvaluationEngine,
+    InterviewAnswer,
+    InterviewSession,
+    InterviewSessionState,
+    SessionEngine,
+)
+from careeros.interview.simulation.exceptions import (
+    InterviewSimulationError,
+    InvalidAnswerError,
+    InvalidQuestionError,
+    InvalidSessionStateError,
+    MissingEvidenceReferenceError,
+    NoActiveQuestionError,
+)
+
+from .interview_dto import to_session_response
 
 from .dto import to_import_response, to_profile_details, to_profile_summary
 from careeros.reasoning.rules.recommendation_rules import TECHNOLOGY_KEYWORDS
@@ -224,6 +244,67 @@ class RegenerateArtifactRequest(BaseModel):
 
     output_format: str = Field(default="markdown", description="Output format to regenerate (markdown or docx).")
     job_description: Optional[str] = Field(default=None, description="Optional job description to reproduce a tailored artifact.")
+
+
+class EvidenceReferenceRequest(BaseModel):
+    """A single ADR-002 evidence reference ``{id, type}``."""
+
+    id: str = Field(description="Canonical element identifier.")
+    type: str = Field(description="Canonical element type (experience, skill, ...).")
+
+
+class CreateInterviewSessionRequest(BaseModel):
+    """Request payload for creating an interview simulation session."""
+
+    profile: dict[str, Any] = Field(..., description="Canonical profile used to build the deterministic InterviewPlan.")
+    target_role: str | None = Field(default=None, description="Optional target role used to steer plan generation.")
+    target_context_id: str | None = Field(default=None, description="Optional target context identifier.")
+    metadata: dict[str, Any] | None = Field(default=None, description="Optional session metadata carried as-is.")
+
+
+class SubmitAnswerRequest(BaseModel):
+    """Request payload for submitting an answer to the active question."""
+
+    question_id: str = Field(description="ID of the active question being answered.")
+    text: str = Field(description="Free-form answer text.")
+    evidence_references: list[EvidenceReferenceRequest] = Field(default_factory=list, description="ADR-002 evidence references grounding the answer.")
+
+
+class InterviewSessionResponse(BaseModel):
+    """Transport DTO for an interview session."""
+
+    session_id: str
+    profile_id: str
+    state: str
+    current_question_index: int
+    question_count: int
+    answered_count: int
+    current_question: dict[str, Any] | None = None
+    answers: list[dict[str, Any]] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SubmitAnswerResponse(BaseModel):
+    """Response payload for a submitted answer."""
+
+    session: InterviewSessionResponse
+    evaluation: dict[str, Any]
+
+
+class AdvanceSessionResponse(BaseModel):
+    """Response payload for advancing to the next question."""
+
+    completed: bool
+    session: InterviewSessionResponse
+    next_question: dict[str, Any] | None = None
+    report: dict[str, Any] | None = None
+
+
+class InterviewReportResponse(BaseModel):
+    """Response payload for a completed session report."""
+
+    session_id: str
+    summary: dict[str, Any]
 
 
 @app.post("/profiles/{profile_id}/resolve")
@@ -884,6 +965,219 @@ def delete_entity(entity: str, id: str) -> None:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+# ---------------------------------------------------------------------------
+# Interview Simulation API (M1.19)
+# ---------------------------------------------------------------------------
+
+_INTERVIEW_SESSIONS: dict[str, InterviewSession] = {}
+SESSION_ENGINE = SessionEngine()
+EVALUATION_ENGINE = EvaluationEngine()
+INTERVIEW_ENGINE = InterviewEngine()
+
+
+def _get_interview_session(session_id: str) -> InterviewSession:
+    """Resolve a live session from the in-memory registry (M1.19: no persistence)."""
+    session = _INTERVIEW_SESSIONS.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=f"Interview session not found: {session_id}",
+        ).model_dump())
+    return session
+
+
+def _store_interview_session(session: InterviewSession) -> None:
+    """Keep an updated session in the in-memory registry."""
+    _INTERVIEW_SESSIONS[session.session_id] = session
+
+
+@app.post("/interviews/sessions", response_model=InterviewSessionResponse, status_code=status.HTTP_201_CREATED)
+def create_interview_session(request: CreateInterviewSessionRequest) -> InterviewSessionResponse:
+    """Create and start an interview simulation session from a canonical profile.
+
+    Builds a deterministic ``InterviewPlan`` via ``InterviewEngine`` and starts a
+    session via ``SessionEngine``. The API performs no evaluation or report
+    assembly itself (M1.19 spec).
+    """
+    try:
+        plan = INTERVIEW_ENGINE.generate_plan(
+            request.profile,
+            target_role=request.target_role,
+            target_context_id=request.target_context_id,
+        )
+    except InvalidProfileError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="INVALID_PROFILE",
+            detail=str(exc),
+        ).model_dump())
+
+    session = SESSION_ENGINE.create_session(
+        plan=plan,
+        session_id=uuid4().hex,
+        metadata=request.metadata,
+    )
+    session = SESSION_ENGINE.start_session(session)
+    _store_interview_session(session)
+    return InterviewSessionResponse(**to_session_response(session))
+
+
+@app.post("/interviews/sessions/{session_id}/answers", response_model=SubmitAnswerResponse)
+def submit_interview_answer(session_id: str, request: SubmitAnswerRequest) -> SubmitAnswerResponse:
+    """Record an answer for the active question and return evaluation signals.
+
+    Evaluation is delegated to the domain ``EvaluationEngine``; the API only
+    orchestrates and maps the results into the response DTO.
+    """
+    session = _get_interview_session(session_id)
+    current = session.current_question_instance()
+    if current is None:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="NO_ACTIVE_QUESTION",
+            detail="No active question to answer.",
+        ).model_dump())
+
+    answer = InterviewAnswer(
+        question_id=request.question_id,
+        text=request.text,
+        evidence_references=tuple(
+            {"id": ref.id, "type": ref.type} for ref in request.evidence_references
+        ),
+    )
+
+    try:
+        evaluation = EVALUATION_ENGINE.evaluate_answer(current.question, answer)
+    except InvalidQuestionError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_QUESTION",
+            detail=str(exc),
+        ).model_dump())
+    except MissingEvidenceReferenceError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="MISSING_EVIDENCE_REFERENCE",
+            detail=str(exc),
+        ).model_dump())
+    except InvalidAnswerError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="INVALID_ANSWER",
+            detail=str(exc),
+        ).model_dump())
+
+    try:
+        updated = SESSION_ENGINE.submit_answer(session, answer)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_SESSION_STATE",
+            detail=str(exc),
+        ).model_dump())
+    except InvalidQuestionError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_QUESTION",
+            detail=str(exc),
+        ).model_dump())
+    except InvalidAnswerError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="INVALID_ANSWER",
+            detail=str(exc),
+        ).model_dump())
+    except NoActiveQuestionError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="NO_ACTIVE_QUESTION",
+            detail=str(exc),
+        ).model_dump())
+
+    _store_interview_session(updated)
+    return SubmitAnswerResponse(
+        session=InterviewSessionResponse(**to_session_response(updated)),
+        evaluation=evaluation.to_dict(),
+    )
+
+
+@app.post("/interviews/sessions/{session_id}/next", response_model=AdvanceSessionResponse)
+def advance_interview_session(session_id: str) -> AdvanceSessionResponse:
+    """Advance the session to the next question or complete it deterministically."""
+    session = _get_interview_session(session_id)
+    try:
+        advanced = SESSION_ENGINE.next_question(session)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_SESSION_STATE",
+            detail=str(exc),
+        ).model_dump())
+    except NoActiveQuestionError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="NO_ACTIVE_QUESTION",
+            detail=str(exc),
+        ).model_dump())
+
+    _store_interview_session(advanced)
+    completed = advanced.state == InterviewSessionState.COMPLETED
+    next_question = advanced.current_question_instance()
+    report = None
+    if completed:
+        report = SESSION_ENGINE.build_report(advanced).to_dict()
+    return AdvanceSessionResponse(
+        completed=completed,
+        session=InterviewSessionResponse(**to_session_response(advanced)),
+        next_question=next_question.to_dict() if next_question else None,
+        report=report,
+    )
+
+
+@app.post("/interviews/sessions/{session_id}/pause", response_model=InterviewSessionResponse)
+def pause_interview_session(session_id: str) -> InterviewSessionResponse:
+    """Pause an in-progress session, preserving runtime state."""
+    session = _get_interview_session(session_id)
+    try:
+        paused = SESSION_ENGINE.pause_session(session)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_SESSION_STATE",
+            detail=str(exc),
+        ).model_dump())
+    _store_interview_session(paused)
+    return InterviewSessionResponse(**to_session_response(paused))
+
+
+@app.post("/interviews/sessions/{session_id}/resume", response_model=InterviewSessionResponse)
+def resume_interview_session(session_id: str) -> InterviewSessionResponse:
+    """Resume a paused session, restoring the active question context."""
+    session = _get_interview_session(session_id)
+    try:
+        resumed = SESSION_ENGINE.resume_session(session)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_SESSION_STATE",
+            detail=str(exc),
+        ).model_dump())
+    _store_interview_session(resumed)
+    return InterviewSessionResponse(**to_session_response(resumed))
+
+
+@app.get("/interviews/sessions/{session_id}", response_model=InterviewSessionResponse)
+def get_interview_session(session_id: str) -> InterviewSessionResponse:
+    """Retrieve the current interview session state."""
+    return InterviewSessionResponse(**to_session_response(_get_interview_session(session_id)))
+
+
+@app.get("/interviews/sessions/{session_id}/report", response_model=InterviewReportResponse)
+def get_interview_report(session_id: str) -> InterviewReportResponse:
+    """Return the deterministic summary report for a completed session."""
+    session = _get_interview_session(session_id)
+    if session.state not in (InterviewSessionState.COMPLETED, InterviewSessionState.REVIEWED):
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="SESSION_NOT_COMPLETED",
+            detail="The interview report is only available for completed sessions.",
+        ).model_dump())
+    try:
+        report = SESSION_ENGINE.build_report(session)
+    except InvalidSessionStateError as exc:
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="INVALID_SESSION_STATE",
+            detail=str(exc),
+        ).model_dump())
+    return InterviewReportResponse(session_id=report.session_id, summary=report.summary.to_dict())
+
+
 @app.exception_handler(RequestValidationError)
 def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
     """Return consistent error responses for malformed requests."""
@@ -894,6 +1188,15 @@ def handle_validation_error(request: Request, exc: RequestValidationError) -> JS
 def handle_careeros_exception(request: Request, exc: CareerOSException) -> JSONResponse:
     """Return consistent error responses for core library exceptions."""
     return JSONResponse(status_code=500, content={"detail": str(exc)})
+
+
+@app.exception_handler(InterviewSimulationError)
+def handle_interview_simulation_error(request: Request, exc: InterviewSimulationError) -> JSONResponse:
+    """Translate unhandled Interview Simulation domain errors consistently."""
+    return JSONResponse(status_code=500, content=ApiErrorResponse(
+        error="INTERNAL_ERROR",
+        detail=str(exc),
+    ).model_dump())
 
 
 @app.exception_handler(HTTPException)
