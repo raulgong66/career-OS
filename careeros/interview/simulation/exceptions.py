@@ -22,3 +22,13 @@ class InvalidSessionStateError(InterviewSessionError):
 class InvalidAnswerError(InterviewSessionError):
     """Raised when an answer fails validation (e.g. empty text, wrong session,
     unknown question)."""
+
+
+class InvalidPlanError(InterviewSessionError):
+    """Raised when a session cannot be created from an invalid or
+    incompatible ``InterviewPlan``."""
+
+
+class NoActiveQuestionError(InterviewSessionError):
+    """Raised when no active question remains in the session (the question
+    sequence is exhausted)."""

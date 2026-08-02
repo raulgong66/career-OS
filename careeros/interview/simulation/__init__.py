@@ -18,10 +18,13 @@ from .domain import (
     SessionMetrics,
     SessionState,
 )
+from .engine import SessionEngine
 from .exceptions import (
     InterviewSessionError,
     InvalidAnswerError,
+    InvalidPlanError,
     InvalidSessionStateError,
+    NoActiveQuestionError,
 )
 
 __all__ = [
@@ -34,7 +37,10 @@ __all__ = [
     "InterviewSessionError",
     "InterviewSummary",
     "InvalidAnswerError",
+    "InvalidPlanError",
     "InvalidSessionStateError",
+    "NoActiveQuestionError",
+    "SessionEngine",
     "SessionMetrics",
     "SessionState",
 ]

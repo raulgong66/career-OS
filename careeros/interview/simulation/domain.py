@@ -236,6 +236,7 @@ class InterviewSession:
     paused_at: str | None = None
     metrics: SessionMetrics | None = None
     summary: InterviewSummary | None = None
+    metadata: dict[str, Any] | None = None
 
     @property
     def question_count(self) -> int:
@@ -261,6 +262,8 @@ class InterviewSession:
             result["metrics"] = self.metrics.to_dict()
         if self.summary is not None:
             result["summary"] = self.summary.to_dict()
+        if self.metadata is not None:
+            result["metadata"] = dict(self.metadata)
         return result
 
     def to_json(self, indent: int = 2) -> str:
