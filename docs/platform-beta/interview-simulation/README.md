@@ -17,6 +17,7 @@ Interview Simulation is a runtime activity that consumes professional knowledge,
 - [05 API Proposal](05-api-proposal.md)
 - [06 Implementation Guidelines](06-implementation-guidelines.md)
 - [07 Session Engine Design](07-session-engine-design.md)
+- [08 Answer Evaluation Design](08-answer-evaluation-design.md)
 - [ADR-007: Interview Simulation & Session Lifecycle](../ADR-007-Interview-Simulation-and-Session-Lifecycle.md)
 
 ## Implementation Status
