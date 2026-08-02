@@ -33,7 +33,9 @@ It supersedes the module analysis in [03-module-dependencies.md](03-module-depen
 | Evidence selection | `careeros/evidence_selector.py` | Deterministic filtering of export sources |
 | Artifact templates | `careeros/artifact_templates.py` | `TemplateRegistry`, `StandardCVTemplate` |
 | Generation pipeline | `careeros/pipelines.py` | `generate_artifact`, `generate_markdown_cv` |
-| Generators | `careeros/generators/` | Registry, `MarkdownCVGenerator`, `DocxCVGenerator` |
+| Generators | `careeros/generators/` | Registry, `MarkdownCVGenerator`, `DocxCVGenerator`, `MarkdownPreparationGuideGenerator`, `DocxPreparationGuideGenerator` |
+| **Measurability** | `careeros/measurability.py` | NEW (M1.17): `is_measurable(text: str) -> bool` — deterministic heuristic for measurable-outcome detection. Extracted from private reasoning rules to a public Core API. Available to all modules. |
+| **Shared DOCX rendering** | `careeros/generators/docx_utils.py` | NEW (M1.16): shared `add_markdown_line` / `add_inline_text` extracted from duplicated code in `docx_cv.py` / `docx_letter.py` |
 
 ### AI Tailoring module (current)
 
@@ -62,7 +64,7 @@ It supersedes the module analysis in [03-module-dependencies.md](03-module-depen
 | **Shared DOCX helpers** | `careeros/generators/docx_utils.py` | NEW (M1.16): extracted from duplicated `docx_cv.py` / `docx_letter.py` `_add_markdown_line` / `_add_inline_text`; single source of truth for Markdown→DOCX conversion. |
 | **Plan builder (artifact pipeline)** | `careeros/interview/engine.py` → `build_preparation_plan` | NEW (M1.16): called by `careeros/pipelines.generate_artifact` when artifact type is `INTERVIEW_PREPARATION_GUIDE`; attaches the plan to `ExportContract.interview_plan`. |
 
-**Shared reasoning rules.** `reasoning/rules/` mixes profile-quality rules (Core-reusable: `ProjectWithoutSkillsRule`, `ExperienceNoTechnologiesRule`, `SkillWithoutExperienceRule`, `NoMeasurableAchievementRule`, tenure/skill rules) with tailoring-oriented recommendation rules. The engine is generic; the rules are the only tailoring-ish part. Rules that suggest CV edits (e.g. "add skills to project") remain useful to other modules (Skill Gap Analysis, Interview Preparation), so they are treated as Core with a tailoring consumer, not as module code.
+**Shared reasoning rules.** `reasoning/rules/` mixes profile-quality rules (Core-reusable: `ProjectWithoutSkillsRule`, `ExperienceNoTechnologiesRule`, `SkillWithoutExperienceRule`, `NoMeasurableAchievementRule`, tenure/skill rules) with tailoring-oriented recommendation rules. The measurability heuristic previously embedded in `_is_measurable` has been promoted to Core (`careeros/measurability.py`); the rules file retains a thin wrapper that delegates to the public `careeros.measurability.is_measurable` while still handling dict-specific fields (`metrics` array). Resolution Engine no longer imports from reasoning internals — it consumes the public Core API. The engine is generic; the rules are the only tailoring-ish part. Rules that suggest CV edits (e.g. "add skills to project") remain useful to other modules (Skill Gap Analysis, Interview Preparation), so they are treated as Core with a tailoring consumer, not as module code.
 
 ## Dependency Review
 
@@ -70,7 +72,7 @@ It supersedes the module analysis in [03-module-dependencies.md](03-module-depen
 
 | # | Dependency | Direction | Verdict |
 |---|---|---|---|
-| 1 | `api/main.py` → `careeros.reasoning.rules.recommendation_rules` (`TECHNOLOGY_KEYWORDS`, `_is_measurable`) | app → rules internals | **Fixed** (private `_is_measurable` now consumed inside `careeros/resolution.py`; app imports only `TECHNOLOGY_KEYWORDS`) |
+| 1 | `api/main.py` → `careeros.reasoning.rules.recommendation_rules` (`TECHNOLOGY_KEYWORDS`, `_is_measurable`) | app → rules internals | **Fixed** (M1.17: `_is_measurable` promoted to Core public API `careeros.measurability.is_measurable`; resolution.py now imports from Core; app imports only `TECHNOLOGY_KEYWORDS`) |
 | 2 | `careeros/generators/markdown_cover_letter.py` → `CVOptimizer._extract_requirements` | core generator → tailoring optimizer (private) | **Fixed** (public `CVOptimizer.extract_requirements` wrapper; generator uses public API) |
 | 3 | `careeros/pipelines.py` → `CVOptimizer`, `OptimizationResult`, `RecommendationApplier` | core pipeline → tailoring optimizer | Accepted for M1.11 (see debt) |
 | 4 | `careeros/generators/markdown_cv.py` + `careeros/acquisition/llm_extractor.py` → vendor HTTP/`httpx` | core consumers → AI providers | **Fixed (M1.13)** — moved behind `careeros/ai/` capability interface (ADR-006) |
@@ -102,6 +104,15 @@ It supersedes the module analysis in [03-module-dependencies.md](03-module-depen
     - `build_preparation_plan()` in `careeros/interview/engine.py` — derives target role from the artifact's resolved target contexts
     - Generators registered in `default_generator_registry` under `("INTERVIEW_PREPARATION_GUIDE", "markdown")` / `("INTERVIEW_PREPARATION_GUIDE", "docx")`
     - The artifact lifecycle (sourceRefs + stale marking via Resolution Engine) works identically to CVs and cover letters
+
+### Delivered in M1.17 (Public Measurability API)
+
+9. **Measurability promoted to Core.** The private `_is_measurable` helper in `careeros.reasoning.rules.recommendation_rules` is now a public, module-neutral Core API at `careeros/measurability.py`.
+    - Public function: `careeros.measurability.is_measurable(text: str) -> bool`
+    - The reasoning rules file retains a thin dict-wrapper `_is_measurable(dict)` that delegates to the Core function for text analysis while still handling the `metrics` array field — no behavior change for rules consumers.
+    - `careeros/resolution.py` now imports `is_measurable` from Core (`from .measurability import is_measurable`) instead of the private module. The old private import path in dependency finding #1 is fully resolved.
+    - Exported from `careeros/__init__.py` (`from careeros import is_measurable`)
+    - 28 new tests covering measurable/non-measurable statements, edge cases, determinism, facad export, resolution regression, and backward-compatibility of the dict wrapper.
 
 ## Proposed Target Architecture
 

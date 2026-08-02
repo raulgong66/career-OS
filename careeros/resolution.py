@@ -28,7 +28,7 @@ import copy
 from typing import Any, Sequence
 
 from .exceptions import CareerOSException
-from .reasoning.rules.recommendation_rules import _is_measurable
+from .measurability import is_measurable
 
 RESOLVABLE_RULES: set[str] = {
     "ProjectWithoutSkillsRule",
@@ -185,7 +185,7 @@ def apply_resolution(
             raise InvalidAchievementError(
                 "A measurable achievement statement is required to resolve this recommendation."
             )
-        if not _is_measurable({"statement": statement}):
+        if not is_measurable(statement):
             raise AchievementNotMeasurableError(
                 "The achievement statement does not look measurable. Add a metric, "
                 "percentage, or business outcome (e.g. 'Reduced deployment time by 60%')."

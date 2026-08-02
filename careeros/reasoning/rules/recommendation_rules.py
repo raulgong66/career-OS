@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from careeros.measurability import is_measurable as _core_is_measurable
 from careeros.reasoning import ReasoningResult, Rule, RuleContext
 from careeros.reasoning.utils import word_boundary_match
 
@@ -378,6 +379,7 @@ class NoMeasurableAchievementRule(Rule):
 
 
 def _is_measurable(achievement: dict[str, Any] | None) -> bool:
+    """Backward-compatible dict wrapper.  New consumers should use the Core API directly."""
     if not achievement:
         return False
     metrics = achievement.get("metrics", [])
@@ -387,9 +389,7 @@ def _is_measurable(achievement: dict[str, Any] | None) -> bool:
     description = str(achievement.get("description", "") or "")
     impact = str(achievement.get("impact", "") or "")
     combined = f"{statement} {description} {impact}"
-    if NUMBER_PATTERN.search(combined):
-        return True
-    return any(word_boundary_match(word, combined) for word in BUSINESS_OUTCOME_WORDS)
+    return _core_is_measurable(combined)
 
 
 # ---------------------------------------------------------------------------

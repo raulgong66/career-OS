@@ -10,6 +10,7 @@ from .ai import (
     SUPPORTED_PROVIDERS,
     create_ai_provider,
 )
+from .measurability import is_measurable
 from .artifact_templates import (
     TemplateRegistry,
     default_template_registry,
@@ -96,6 +97,7 @@ __all__ = [
     "OpenAIProvider",
     "SUPPORTED_PROVIDERS",
     "create_ai_provider",
+    "is_measurable",
     "EntityNotFoundError",
     "EntityRecord",
     "EntityValidator",
