@@ -51,6 +51,8 @@ from .simulation import (
     SessionEngine,
     SessionMetrics,
     SessionState,
+    attach_summary,
+    build_report,
 )
 from .templates import (
     QUESTION_TEMPLATES,
@@ -83,6 +85,8 @@ __all__ = [
     "SessionEngine",
     "SessionMetrics",
     "SessionState",
+    "attach_summary",
+    "build_report",
     "build_preparation_plan",
     "CompetencyMapper",
     "QuestionBuilder",

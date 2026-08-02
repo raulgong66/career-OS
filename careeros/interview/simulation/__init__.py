@@ -22,6 +22,7 @@ from .domain import (
 )
 from .engine import SessionEngine
 from .evaluation import EVALUATION_RULE_IDS, EvaluationEngine
+from .report import attach_summary, build_report
 from .exceptions import (
     EvaluationPreconditionError,
     InterviewSessionError,
@@ -57,4 +58,6 @@ __all__ = [
     "SessionEngine",
     "SessionMetrics",
     "SessionState",
+    "attach_summary",
+    "build_report",
 ]

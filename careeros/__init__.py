@@ -90,7 +90,9 @@ from .interview import (
     SessionState,
     SuggestedAnswer,
     UnsupportedQuestionTypeError,
+    attach_summary,
     build_preparation_plan,
+    build_report,
     template_for,
     templates_for,
 )

@@ -43,12 +43,11 @@ from careeros.interview import (
     EvaluationSummary,
     InterviewAnswer,
     InterviewEngine,
-    InterviewReport,
     InterviewSession,
-    InterviewSummary,
     SessionEngine,
-    SessionMetrics,
     SessionState,
+    attach_summary,
+    build_report,
 )
 from careeros.interview.exceptions import InvalidProfileError
 from careeros.interview.simulation.exceptions import (
@@ -484,82 +483,6 @@ def _store_interview_session(session: InterviewSession) -> None:
     _INTERVIEW_SESSIONS[session.id] = session
 
 
-def _attach_summary(session: InterviewSession, summary: InterviewSummary) -> InterviewSession:
-    """Attach a computed ``InterviewSummary`` to a completed session."""
-    return InterviewSession(
-        id=session.id,
-        plan_ref=session.plan_ref,
-        profile_id=session.profile_id,
-        state=session.state,
-        questions=session.questions,
-        answers=session.answers,
-        started_at=session.started_at,
-        completed_at=session.completed_at,
-        paused_at=session.paused_at,
-        metrics=session.metrics,
-        summary=summary,
-        metadata=session.metadata,
-    )
-
-
-def _build_report(
-    session: InterviewSession,
-    evaluation_summary: EvaluationSummary,
-) -> InterviewReport:
-    """Build the export-oriented report for a completed session.
-
-    Strengths / weaknesses / recommendations are advisory text derived
-    deterministically from the qualitative evaluation counts (ADR-003) —
-    never numeric scores and never fabricated assertions.
-    """
-    total = evaluation_summary.total_answers or 1
-    dimensions = (
-        ("Coverage", evaluation_summary.coverage, "answers addressed the question intent"),
-        ("Evidence", evaluation_summary.evidence, "answers were grounded in canonical profile evidence"),
-        ("Claim alignment", evaluation_summary.claim_alignment, "answers aligned with the question competencies"),
-        ("Measurability", evaluation_summary.measurability, "answers included a measurable outcome"),
-        ("Structure", evaluation_summary.structure, "answers followed a structured (STAR) narrative"),
-    )
-    strengths: list[str] = []
-    weaknesses: list[str] = []
-    recommendations: list[str] = []
-    for name, count, qualifier in dimensions:
-        if count > 0:
-            strengths.append(f"{name}: {count} of {total} {qualifier}.")
-        if count < total:
-            weaknesses.append(f"{name}: only {count} of {total} {qualifier}.")
-    if evaluation_summary.inconsistent_answers:
-        weaknesses.append(
-            f"Consistency: {evaluation_summary.inconsistent_answers} answer(s) "
-            "contained contradictory or unsupported claims."
-        )
-    if weaknesses:
-        recommendations.append(
-            "Ground answers in canonical profile evidence and keep claims consistent."
-        )
-        if evaluation_summary.measurability < total:
-            recommendations.append(
-                "Include a measurable outcome (metric, percentage, or business result) in each answer."
-            )
-        if evaluation_summary.structure < total:
-            recommendations.append(
-                "Structure answers around Situation, Task, Action, and Result (STAR)."
-            )
-
-    return InterviewReport(
-        id=f"{session.id}:report",
-        session_id=session.id,
-        profile_id=session.profile_id,
-        plan_ref=session.plan_ref,
-        summary=session.summary or SESSION_ENGINE.build_summary(session),
-        session_metrics=session.metrics or SessionMetrics(),
-        answers=session.answers,
-        strengths=tuple(strengths),
-        weaknesses=tuple(weaknesses),
-        recommendations=tuple(recommendations),
-    )
-
-
 @app.post("/interviews/sessions", status_code=status.HTTP_201_CREATED)
 def create_interview_session(request: CreateInterviewSessionRequest) -> dict[str, Any]:
     """Create and start an interview simulation session for a profile.
@@ -679,9 +602,9 @@ def advance_interview_session(session_id: str) -> dict[str, Any]:
         completed = SESSION_ENGINE.complete_session(session)
         evaluation_summary = EVALUATION_ENGINE.evaluate_session(completed)
         summary = SESSION_ENGINE.build_summary(completed)
-        completed = _attach_summary(completed, summary)
+        completed = attach_summary(completed, summary)
         _store_interview_session(completed)
-        report = _build_report(completed, evaluation_summary)
+        report = build_report(completed, evaluation_summary)
         return {
             "completed": True,
             "session": completed.to_dict(),
@@ -741,7 +664,7 @@ def get_interview_report(session_id: str) -> dict[str, Any]:
             detail="The interview report is only available for completed sessions.",
         ).model_dump())
     evaluation_summary = EVALUATION_ENGINE.evaluate_session(session)
-    return _build_report(session, evaluation_summary).to_dict()
+    return build_report(session, evaluation_summary).to_dict()
 
 
 
