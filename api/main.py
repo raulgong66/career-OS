@@ -650,6 +650,32 @@ def get_profile(profile_id: str) -> dict[str, Any]:
     return to_profile_details(data, profile_id, state=record.state)
 
 
+@app.get("/profiles/{profile_id}/canonical", response_model=dict[str, Any])
+def get_canonical_profile(profile_id: str) -> dict[str, Any]:
+    """Return the validated canonical profile exactly as persisted.
+
+    Transport-only: no flattening or transformation. The canonical profile is
+    the single source of career data and is consumed by Interview Simulation,
+    artifact generation, and future modules — never the presentation DTO.
+    """
+    try:
+        record = PROFILE_REPOSITORY.get(profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    data = record.data
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail="Profile data is malformed.",
+        ).model_dump())
+
+    return data
+
+
 @app.delete("/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_profile(profile_id: str) -> None:
     """Delete a profile and its associated data from the filesystem."""

@@ -42,6 +42,17 @@ export class ProfileService {
     return response.json();
   }
 
+  async getCanonicalProfile(profileId: string): Promise<Record<string, unknown>> {
+    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}/canonical`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch canonical profile');
+    }
+
+    return response.json();
+  }
+
   async getProfiles(): Promise<ProfileSummary[]> {
     const response = await fetch(`${BASE}/profiles`);
 

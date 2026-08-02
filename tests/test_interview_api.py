@@ -323,6 +323,27 @@ class TestRetrieveSession:
             assert response.status_code == 404, f"{method} {url} -> {response.status_code}"
 
 
+class TestCanonicalProfileContract:
+
+    def test_canonical_payload_feeds_session_creation(self) -> None:
+        """A canonical payload from /profiles/{id}/canonical creates a full session.
+
+        M1.20 frontend contract: the canonical endpoint returns the persisted
+        profile so the client can build a deterministic InterviewPlan without
+        duplicating mapping logic in the browser.
+        """
+        response = client.get("/profiles/raul-gongora-profile/canonical")
+        assert response.status_code == 200
+        profile = response.json()
+        assert profile["person"]["id"]
+        created = client.post("/interviews/sessions", json={"profile": profile})
+        assert created.status_code == 201, created.text
+        body = created.json()
+        assert body["profile_id"] == profile["person"]["id"]
+        assert body["question_count"] > 0
+        assert body["current_question"]["question"]["evidence_citations"]
+
+
 class TestReport:
 
     def test_report_requires_completed_session(self) -> None:

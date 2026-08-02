@@ -183,3 +183,93 @@ export interface OptimizationResult {
   message: string;
   summary: OptimizationSummary | null;
 }
+
+export type InterviewSessionState =
+  | 'draft'
+  | 'ready'
+  | 'in_progress'
+  | 'paused'
+  | 'completed'
+  | 'reviewed'
+  | 'archived';
+
+export interface EvidenceReference {
+  id: string;
+  type: string;
+}
+
+export interface InterviewQuestion {
+  id: string;
+  category: string;
+  text: string;
+  competency_ids: string[];
+  context_refs: EvidenceReference[];
+  evidence_citations: EvidenceReference[];
+  difficulty: string;
+}
+
+export interface InterviewQuestionInstance {
+  index: number;
+  total: number;
+  question: InterviewQuestion;
+}
+
+export interface InterviewAnswerRecord {
+  question_id: string;
+  text: string;
+  evidence_references: EvidenceReference[];
+}
+
+export interface InterviewSession {
+  session_id: string;
+  profile_id: string;
+  state: InterviewSessionState;
+  current_question_index: number;
+  question_count: number;
+  answered_count: number;
+  current_question: InterviewQuestionInstance | null;
+  answers: InterviewAnswerRecord[];
+  metadata: Record<string, unknown>;
+}
+
+export type FeedbackSeverity = 'info' | 'warning' | 'error';
+
+export interface InterviewFeedback {
+  code: string;
+  message: string;
+  severity: FeedbackSeverity;
+}
+
+export interface AnswerEvaluation {
+  question_id: string;
+  coverage_score: number;
+  evidence_score: number;
+  structure_score: number;
+  overall_score: number;
+  feedback: InterviewFeedback[];
+}
+
+export interface SubmitAnswerResponse {
+  session: InterviewSession;
+  evaluation: AnswerEvaluation;
+}
+
+export interface InterviewSummary {
+  session_id: string;
+  question_count: number;
+  answered_questions: number;
+  average_score: number;
+  feedback: InterviewFeedback[];
+}
+
+export interface InterviewReport {
+  session_id: string;
+  summary: InterviewSummary;
+}
+
+export interface AdvanceSessionResponse {
+  completed: boolean;
+  session: InterviewSession;
+  next_question: InterviewQuestionInstance | null;
+  report: InterviewReport | null;
+}

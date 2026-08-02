@@ -604,6 +604,33 @@ def test_get_profile_not_found() -> None:
     assert body["error"] == "NOT_FOUND"
 
 
+def test_get_canonical_profile_returns_persisted_profile() -> None:
+    """GET /profiles/{id}/canonical returns the canonical profile exactly as persisted.
+
+    The payload must keep canonical internals (profileVersion, person.names,
+    person.positioning) and must not be flattened into the presentation DTO.
+    """
+    response = client.get("/profiles/raul-gongora-profile/canonical")
+    assert response.status_code == 200
+    body = response.json()
+    assert "profileVersion" in body
+    person = body["person"]
+    assert person["id"]
+    assert isinstance(person["names"], list)
+    assert "positioning" in person
+    # Presentation-DTO fields must NOT leak into the canonical payload
+    assert "firstName" not in person
+    assert "headline" not in person
+
+
+def test_get_canonical_profile_not_found() -> None:
+    """GET /profiles/{id}/canonical returns 404 for non-existent profile."""
+    response = client.get("/profiles/non-existent-profile/canonical")
+    assert response.status_code == 404
+    body = response.json()
+    assert body["error"] == "NOT_FOUND"
+
+
 def test_get_profile_returns_clean_dto_no_canonical_leakage() -> None:
     """GET /profiles/{id} must not leak canonical model internals into the DTO."""
     response = client.get("/profiles/raul-gongora-profile")
