@@ -7,6 +7,7 @@ export default defineConfig({
     proxy: {
       '/profiles': { target: 'http://localhost:8001', changeOrigin: true },
       '/generate': { target: 'http://localhost:8001', changeOrigin: true },
+      '/artifact-templates': { target: 'http://localhost:8001', changeOrigin: true },
       '/entities': { target: 'http://localhost:8001', changeOrigin: true },
       '/health': { target: 'http://localhost:8001', changeOrigin: true },
       '/version': { target: 'http://localhost:8001', changeOrigin: true },

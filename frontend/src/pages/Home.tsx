@@ -81,7 +81,7 @@ export default function Home() {
       <main className="flex-1 px-6 py-12">
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+            <div className="bg-white border-2 border-blue-500 rounded-lg p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold text-gray-900">Resume Generation</h2>
                 <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
@@ -91,6 +91,12 @@ export default function Home() {
               <p className="text-sm text-gray-600 mb-4">
                 Generate professional career artifacts from a structured profile.
               </p>
+              <button
+                onClick={() => navigate('/artifacts')}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-md transition-colors duration-200"
+              >
+                Open Demo
+              </button>
             </div>
 
             <div className="bg-white border-2 border-blue-500 rounded-lg p-6 shadow-sm">

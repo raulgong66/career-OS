@@ -99,6 +99,12 @@ export interface ProfileInfo {
   importedAt: string;
 }
 
+export interface ArtifactTemplate {
+  id: string;
+  displayName: string;
+  artifactType: string;
+}
+
 export interface Artifact {
   id: string;
   type: string;
