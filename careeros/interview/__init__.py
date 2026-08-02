@@ -4,6 +4,8 @@ A Core consumer module (ADR-005): domain models + a deterministic question
 engine that turns a canonical profile into an evidence-backed ``InterviewPlan``.
 No LLM, no REST, no frontend — the future AI layer will enrich question prose
 and answer outlines without redesigning this foundation.
+
+Interview Simulation (M1.17.2, ADR-007): runtime models for interview sessions.
 """
 
 from __future__ import annotations
@@ -26,6 +28,20 @@ from .exceptions import (
     UnsupportedQuestionTypeError,
 )
 from .question_builder import QuestionBuilder
+from .simulation import (
+    AnswerEvaluation,
+    InterviewAnswer,
+    InterviewFeedback,
+    InterviewQuestionInstance,
+    InterviewReport,
+    InterviewSession,
+    InterviewSessionError,
+    InterviewSummary,
+    InvalidAnswerError,
+    InvalidSessionStateError,
+    SessionMetrics,
+    SessionState,
+)
 from .templates import (
     QUESTION_TEMPLATES,
     QuestionTemplate,
@@ -34,7 +50,19 @@ from .templates import (
 )
 
 __all__ = [
+    "AnswerEvaluation",
+    "InterviewAnswer",
     "InterviewEngine",
+    "InterviewFeedback",
+    "InterviewQuestionInstance",
+    "InterviewReport",
+    "InterviewSession",
+    "InterviewSessionError",
+    "InterviewSummary",
+    "InvalidAnswerError",
+    "InvalidSessionStateError",
+    "SessionMetrics",
+    "SessionState",
     "build_preparation_plan",
     "CompetencyMapper",
     "QuestionBuilder",
