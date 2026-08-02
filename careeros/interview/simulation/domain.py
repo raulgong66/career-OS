@@ -214,6 +214,37 @@ class InterviewSummary:
 
 
 @dataclass(frozen=True)
+class EvaluationSummary:
+    """Session-level aggregation of answer evaluations (M1.17.4).
+
+    Produced deterministically by the evaluation engine from the
+    evaluations of the session's answered questions. Counts mirror the
+    evaluation dimensions in the design document — coverage, evidence,
+    claim alignment, and measurability — plus qualitative structure and
+    consistency signals.  No numeric scores are stored (ADR-003).
+    """
+
+    total_answers: int = 0
+    coverage: int = 0
+    evidence: int = 0
+    claim_alignment: int = 0
+    measurability: int = 0
+    structure: int = 0
+    inconsistent_answers: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total_answers": self.total_answers,
+            "coverage": self.coverage,
+            "evidence": self.evidence,
+            "claim_alignment": self.claim_alignment,
+            "measurability": self.measurability,
+            "structure": self.structure,
+            "inconsistent_answers": self.inconsistent_answers,
+        }
+
+
+@dataclass(frozen=True)
 class InterviewSession:
     """A planned or in-progress interview simulation (runtime object).
 
