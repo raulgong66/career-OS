@@ -68,11 +68,13 @@ def test_docx_cv_generator_renders_expected_content(repo_root: Path, profile: di
 
     assert "Jane Doe" in text
     assert "AI product builder" in text
-    assert "AI Platform CV" in text
     assert "Professional Summary" in text
     assert "AI product builder focused on reliable workflow systems." in text
     assert "AI workflow design" in text
-    assert "Derived from profile version: 1.0.0" in text
+
+    # No internal implementation metadata leaks into the document
+    for leak in ("Artifact:", "Derived from profile version", "profileVersion", "artifact_id", "artifactId"):
+        assert leak not in text
 
 
 def test_docx_cv_generator_rejects_non_cv_contract(repo_root: Path, profile: dict) -> None:
@@ -81,3 +83,35 @@ def test_docx_cv_generator_rejects_non_cv_contract(repo_root: Path, profile: dic
 
     with pytest.raises(ValidationError, match="Unsupported artifact type"):
         DocxCVGenerator().generate(contract)
+
+
+def test_docx_cv_renders_linked_achievement_under_experience(repo_root: Path, profile: dict) -> None:
+    """Achievement sources linked to an experience render in DOCX like in Markdown."""
+    profile["experiences"] = [
+        {
+            "id": "experience-1",
+            "title": "Senior DevSecOps Specialist",
+            "dateRange": {"start": "2024", "end": "2026"},
+            "achievementRefs": [{"id": "achievement-2", "type": "achievement"}],
+        }
+    ]
+    profile["achievements"] = [
+        {
+            "id": "achievement-2",
+            "statement": "Reduced deployment time by 60% through CI/CD automation.",
+            "contextRefs": [{"id": "experience-1", "type": "experience"}],
+        }
+    ]
+    profile["artifacts"][0]["sourceRefs"] = [
+        {"id": "experience-1", "type": "experience"},
+        {"id": "achievement-2", "type": "achievement"},
+    ]
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+
+    output = DocxCVGenerator().generate(contract)
+    document = Document(BytesIO(output))
+    text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+
+    assert "Senior DevSecOps Specialist" in text
+    assert "Reduced deployment time by 60% through CI/CD automation." in text
+    assert "achievement-2" not in text

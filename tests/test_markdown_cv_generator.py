@@ -112,17 +112,26 @@ def test_markdown_cv_generator_uses_only_export_contract(repo_root: Path, profil
 
     assert markdown.startswith("# Jane Doe\n")
     assert "AI product builder" in markdown
-    assert "**Artifact:** AI Platform CV" in markdown
-    assert "## Target Context\nAI Product Engineer, AI platforms, en" in markdown
     assert "## Professional Summary" in markdown
-    assert "- AI product builder focused on reliable workflow systems." in markdown
-    assert "- **Product Engineer** (2024 - 2026): Built AI-native career workflows." in markdown
-    assert "- **CareerOS**: Schema-driven career operating system." in markdown
-    assert "- AI workflow design (AI)" in markdown
-    assert "- Reduced manual tailoring effort through structured reuse." in markdown
-    assert "- MSc in Computer Science" in markdown
-    assert "- AI Product Certification (Credential ID: CERT-1)" in markdown
-    assert "_Derived from profile version: 1.0.0_" in markdown
+    assert "AI product builder focused on reliable workflow systems." in markdown
+    assert "## Core Competencies" in markdown
+    assert "AI workflow design" in markdown
+    assert "## Professional Experience" in markdown
+    assert "Product Engineer" in markdown
+    assert "Built AI-native career workflows." in markdown
+    assert "## Projects" in markdown
+    assert "**CareerOS**: Schema-driven career operating system." in markdown
+    assert "## Education" in markdown
+    assert "MSc in Computer Science" in markdown
+    assert "## Certifications" in markdown
+    assert "AI Product Certification" in markdown
+
+    # No internal implementation metadata leaks into the document
+    for leak in ("Artifact:", "Derived from profile version", "profileVersion", "artifact_id", "artifactId"):
+        assert leak not in markdown
+
+    # Individual entries render as plain text, never as headings
+    assert not any(line.startswith("###") for line in markdown.splitlines())
 
 
 def test_markdown_cv_generator_preserves_contract_source_order_within_sections(repo_root: Path, profile: dict) -> None:
@@ -136,7 +145,7 @@ def test_markdown_cv_generator_preserves_contract_source_order_within_sections(r
 
     markdown = MarkdownCVGenerator().generate(contract)
 
-    assert markdown.index("- AI workflow design (AI)") < markdown.index("- Schema design")
+    assert markdown.index("AI workflow design") < markdown.index("Schema design")
 
 
 def test_markdown_cv_generator_rejects_non_cv_contract(repo_root: Path, profile: dict) -> None:
@@ -145,3 +154,43 @@ def test_markdown_cv_generator_rejects_non_cv_contract(repo_root: Path, profile:
 
     with pytest.raises(ValidationError, match="Unsupported artifact type"):
         MarkdownCVGenerator().generate(contract)
+
+
+def test_markdown_cv_renders_linked_achievement_under_experience(repo_root: Path, profile: dict) -> None:
+    """Achievement sources linked to an experience render as bullets under it."""
+    profile["experiences"][0]["achievementRefs"] = [{"id": "achievement-2", "type": "achievement"}]
+    profile["achievements"].append(
+        {
+            "id": "achievement-2",
+            "statement": "Reduced deployment time by 60% through CI/CD automation.",
+            "contextRefs": [{"id": "experience-1", "type": "experience"}],
+        }
+    )
+    profile["artifacts"][0]["sourceRefs"].append({"id": "achievement-2", "type": "achievement"})
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+
+    markdown = MarkdownCVGenerator().generate(contract)
+
+    assert "Reduced deployment time by 60% through CI/CD automation." in markdown
+    # Rendered under the experience, not as an internal id or source ref
+    assert "achievement-2" not in markdown
+    assert "sourceRefs" not in markdown
+    assert "• Reduced deployment time by 60% through CI/CD automation." in markdown
+
+
+def test_markdown_cv_links_achievement_via_context_refs(repo_root: Path, profile: dict) -> None:
+    """An achievement source with contextRefs to an experience is placed under it."""
+    profile["achievements"].append(
+        {
+            "id": "achievement-2",
+            "statement": "Cut infrastructure cost by 25% while migrating 40 microservices.",
+            "contextRefs": [{"id": "experience-1", "type": "experience"}],
+        }
+    )
+    profile["artifacts"][0]["sourceRefs"].append({"id": "achievement-2", "type": "achievement"})
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+
+    markdown = MarkdownCVGenerator().generate(contract)
+
+    assert "Cut infrastructure cost by 25% while migrating 40 microservices." in markdown
+    assert "achievement-2" not in markdown

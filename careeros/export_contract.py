@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .exceptions import EntityNotFoundError, ValidationError
 from .schema_loader import SchemaLoader
 from .validator import EntityValidator
+
+if TYPE_CHECKING:
+    from .interview.domain import InterviewPlan
 
 
 _SOURCE_COLLECTIONS = {
@@ -26,7 +29,7 @@ _SOURCE_COLLECTIONS = {
 }
 
 
-@dataclass(slots=True)
+@dataclass
 class ExportSource:
     """A resolved canonical profile element selected for export."""
 
@@ -40,7 +43,10 @@ class ExportSource:
         return {"type": self.type, "id": self.id, "data": self.data, "ref": self.ref}
 
 
-@dataclass(slots=True)
+from .reasoning import ReasoningFindings
+
+
+@dataclass
 class ExportContract:
     """Provider-agnostic input contract for generated career artifacts."""
 
@@ -51,6 +57,9 @@ class ExportContract:
     artifact: dict[str, Any]
     target_contexts: list[dict[str, Any]] = field(default_factory=list)
     sources: list[ExportSource] = field(default_factory=list)
+    reasoning: ReasoningFindings | None = field(default=None, compare=False)
+    job_description: str | None = None
+    interview_plan: "InterviewPlan | None" = field(default=None, compare=False)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert the contract to a serializable dictionary."""
@@ -72,13 +81,21 @@ class ExportContractBuilder:
         """Create a builder bound to the existing profile schema."""
         self.validator = EntityValidator(schema_loader)
 
-    def build(self, profile: dict[str, Any], artifact_id: str, *, validate: bool = True) -> ExportContract:
+    def build(
+        self,
+        profile: dict[str, Any],
+        artifact_id: str,
+        *,
+        validate: bool = True,
+        reasoning: ReasoningFindings | None = None,
+    ) -> ExportContract:
         """Build an export contract for a profile artifact.
 
         Args:
             profile: Canonical profile payload.
             artifact_id: Identifier of the artifact to export.
             validate: Whether to validate the profile against the existing schema.
+            reasoning: Optional ReasoningFindings from the deterministic Reasoning Engine.
 
         Returns:
             A provider-agnostic export contract.
@@ -99,14 +116,31 @@ class ExportContractBuilder:
         target_contexts = self._resolve_target_contexts(profile, artifact.get("targetContextRefs", []))
         sources = self._resolve_sources(profile, artifact.get("sourceRefs", []))
 
+        def _infer_type(a: dict) -> str:
+            explicit = a.get("artifactType")
+            if explicit:
+                return str(explicit)
+            a_id = str(a.get("id", "")).lower()
+            a_title = str(a.get("title", "")).lower()
+            if "interest" in a_id or "interest" in a_title:
+                return "INTEREST_LETTER"
+            if "cover" in a_id or "cover" in a_title:
+                return "COVER_LETTER"
+            if "interview" in a_id or "interview" in a_title:
+                return "INTERVIEW_PREPARATION_GUIDE"
+            if "cv" in a_id or "cv" in a_title or "resume" in a_id or "resume" in a_title:
+                return "CV"
+            return ""
+
         return ExportContract(
             profile_version=str(profile.get("profileVersion", "")),
             artifact_id=artifact_id,
-            artifact_type=str(artifact.get("artifactType", "")),
+            artifact_type=_infer_type(artifact),
             person=profile.get("person", {}),
             artifact=artifact,
             target_contexts=target_contexts,
             sources=sources,
+            reasoning=reasoning,
         )
 
     def _resolve_target_contexts(self, profile: dict[str, Any], refs: list[dict[str, Any]]) -> list[dict[str, Any]]:

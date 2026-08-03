@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 from .exceptions import SchemaLoadError
 
@@ -13,7 +13,7 @@ from .exceptions import SchemaLoadError
 class SchemaLoader:
     """Discover, cache, and load JSON Schema documents for CareerOS entities."""
 
-    def __init__(self, schema_root: str | Path | None = None) -> None:
+    def __init__(self, schema_root: Union[str, Path, None] = None) -> None:
         """Initialize the loader with a schema directory.
 
         Args:
@@ -69,7 +69,7 @@ class SchemaLoader:
         """Return the discovered entity names."""
         return sorted(self._schema_cache.keys())
 
-    def resolve_relative_schema_path(self, schema: dict[str, Any], base_path: str | Path) -> str:
+    def resolve_relative_schema_path(self, schema: dict[str, Any], base_path: Union[str, Path]) -> str:
         """Resolve a relative schema path against the configured schema root.
 
         Args:

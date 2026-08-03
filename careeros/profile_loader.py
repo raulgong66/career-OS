@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import yaml
 
@@ -20,7 +20,7 @@ class ProfileLoader:
         """Create a profile loader bound to a schema loader."""
         self.validator = EntityValidator(schema_loader)
 
-    def load(self, file_path: str | Path, *, validate: bool = True) -> dict[str, Any]:
+    def load(self, file_path: Union[str, Path], *, validate: bool = True) -> dict[str, Any]:
         """Load a profile from a JSON or YAML file.
 
         Args:

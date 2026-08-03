@@ -32,3 +32,15 @@ AI agents must clearly distinguish:
 6. If a push cannot be completed because of missing authentication, permissions, tooling, or other environmental limitations, clearly explain the reason and stop without attempting alternative publication methods.
 7. Repository publication is a user-controlled action unless explicitly delegated.
 8. Maintain a decision log for major architectural decisions.
+
+## Pre-submit verification
+
+Run these commands before considering a task complete:
+
+```bash
+cd C:\Users\raul\AI\careeros\career-OS
+python -m pytest -v        # 555 tests expected (requires fastapi + httpx + python-multipart for full suite)
+cd frontend
+npm run build              # tsc + vite build
+npm run lint               # oxlint (must be clean)
+```

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import yaml
 
@@ -17,7 +17,7 @@ from .validator import EntityValidator
 class FileSystemRepository:
     """A filesystem-based repository for persisting CareerOS entities."""
 
-    def __init__(self, root_path: str | Path, schema_loader: SchemaLoader) -> None:
+    def __init__(self, root_path: Union[str, Path], schema_loader: SchemaLoader) -> None:
         """Initialize the repository.
 
         Args:
@@ -118,7 +118,7 @@ class FileSystemRepository:
         except OSError as exc:
             raise RepositoryError(f"Failed to delete entity {entity_id}") from exc
 
-    def search(self, entity_type: str, entity_id: str) -> EntityRecord | None:
+    def search(self, entity_type: str, entity_id: str) -> Union[EntityRecord, None]:
         """Return an entity if it exists, otherwise ``None``."""
         try:
             return self.get(entity_type, entity_id)

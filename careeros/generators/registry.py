@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, Union
 
 from ..exceptions import ValidationError
 from ..export_contract import ExportContract
 from .docx_cv import DocxCVGenerator
+from .docx_letter import DocxLetterGenerator
+from .docx_preparation_guide import DocxPreparationGuideGenerator
 from .markdown_cover_letter import MarkdownCoverLetterGenerator
 from .markdown_cv import MarkdownCVGenerator
+from .markdown_preparation_guide import MarkdownPreparationGuideGenerator
 
 
 class ArtifactGenerator(Protocol):
     """Protocol implemented by artifact generators."""
 
-    def generate(self, contract: ExportContract) -> str | bytes:
+    def generate(self, contract: ExportContract) -> Union[str, bytes]:
         """Generate an artifact from an export contract."""
         ...
 
@@ -50,9 +53,23 @@ def default_generator_registry() -> GeneratorRegistry:
     markdown_cv_generator = MarkdownCVGenerator()
     markdown_cover_letter_generator = MarkdownCoverLetterGenerator()
     docx_cv_generator = DocxCVGenerator()
+    docx_letter_generator = DocxLetterGenerator()
     registry.register("CV", "markdown", markdown_cv_generator)
     registry.register("RESUME", "markdown", markdown_cv_generator)
     registry.register("CV", "docx", docx_cv_generator)
     registry.register("RESUME", "docx", docx_cv_generator)
     registry.register("COVER_LETTER", "markdown", markdown_cover_letter_generator)
+    registry.register("COVER_LETTER", "docx", docx_letter_generator)
+    registry.register("INTEREST_LETTER", "markdown", markdown_cover_letter_generator)
+    registry.register("INTEREST_LETTER", "docx", docx_letter_generator)
+    registry.register(
+        "INTERVIEW_PREPARATION_GUIDE",
+        "markdown",
+        MarkdownPreparationGuideGenerator(),
+    )
+    registry.register(
+        "INTERVIEW_PREPARATION_GUIDE",
+        "docx",
+        DocxPreparationGuideGenerator(),
+    )
     return registry
