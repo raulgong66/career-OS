@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import Any, Literal
 
 from careeros.knowledge import GraphEdge, GraphNode, KnowledgeGraph
 
+from .grammar import classify
 from .models import (
     Citation,
     StructuredQueryResult,
@@ -44,8 +46,9 @@ class CSKSQueryEngine:
         "for", "with", "about", "into", "over", "all", "any", "that",
     })
 
-    def __init__(self, graph: "KnowledgeGraph") -> None:
+    def __init__(self, graph: "KnowledgeGraph", repo_root: "Path | None" = None) -> None:
         self.graph = graph
+        self.repo_root = repo_root
         self._node_cache: dict[str, "GraphNode"] = {}
         self._edge_index: dict[str, list] = defaultdict(list)
         self._reverse_edge_index: dict[str, list] = defaultdict(list)
@@ -75,6 +78,9 @@ class CSKSQueryEngine:
         # CamelCase identifiers (e.g. InterviewEngine, ProfileLoader)
         candidates += re.findall(r'\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)*\b', question)
 
+        # Acronym + number identifiers (e.g. ADR-008, ADR 008, ADR008)
+        candidates += re.findall(r'\b[A-Z]{2,}[- ]?\d+\b', question)
+
         # Capitalized multi-word phrases
         candidates += re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', question)
 
@@ -98,13 +104,60 @@ class CSKSQueryEngine:
         terms.sort(key=lambda t: len(t), reverse=True)
         return terms
 
+    @staticmethod
+    def _normalize_identifier(value: str) -> str:
+        """Normalize an identifier to a canonical dotted form.
+
+        Equivalent separators (``-``, spaces, ``.``) collapse to ``.`` and a
+        separator is inserted between letters and digits, so ``ADR-008``,
+        ``adr 008``, ``ADR008`` and ``adr.008`` all normalize to ``adr.008``.
+        """
+        import re
+
+        normalized = value.lower().replace("-", ".").replace(" ", ".")
+        return re.sub(r"([a-z])(\d)", r"\1.\2", normalized)
+
     def _resolve_target(self, question: str, preferred_types: tuple[str, ...] | None = None) -> "GraphNode | None":
         """Find the best-matching entity node for a question.
 
-        Exact label matches win, then exact ID suffix matches, then substring
-        matches. ``preferred_types`` limits the candidate node types; otherwise
-        all types compete and a type-priority ranking breaks ties.
+        Milestone identifiers (``M1.22``) resolve via tag-prefix match so the
+        result is deterministic regardless of graph node ordering. Otherwise
+        exact label matches win, then exact ID suffix matches, then substring
+        matches. ``preferred_types`` limits the candidate node types.
         """
+        if preferred_types is None or "milestone" in preferred_types:
+            import re
+
+            milestone = re.search(r"\bm(\d+\.\d+)\b", question.lower())
+            if milestone:
+                prefix = "m" + milestone.group(1)
+                for node in self.graph.nodes.values():
+                    if node.type == "milestone" and node.properties.get("tag", "").lower().startswith(prefix):
+                        return node
+
+        for term in self._extract_terms(question):
+            node = self._resolve_token(term, preferred_types)
+            if node is not None:
+                return node
+        return None
+
+    def _resolve_token(self, token: str, preferred_types: tuple[str, ...] | None = None) -> "GraphNode | None":
+        """Resolve a single raw token (identifier or label) to a graph node.
+
+        The alias registry is consulted first (canonical domain names like
+        ``Knowledge Layer`` or ``Reasoning Engine``), then exact labels, ID
+        suffixes, normalized identifiers, and finally substrings. Unlike
+        :meth:`_resolve_target`, the token is used verbatim, so
+        underscore-prefixed names (e.g. ``_map_experiences``) resolve.
+        """
+        from .aliases import resolve_alias
+
+        alias = resolve_alias(token)
+        if alias is not None and alias.kind == "entity" and alias.entity_id:
+            node = self.graph.nodes.get(alias.entity_id)
+            if node is not None and (preferred_types is None or node.type in preferred_types):
+                return node
+
         type_priority = {
             "domain": 0,
             "component": 1,
@@ -123,55 +176,59 @@ class CSKSQueryEngine:
             "mermaid_edge": 22,
         }
 
-        terms = self._extract_terms(question)
-        for term in terms:
-            term_lower = term.lower()
-            best: "GraphNode | None" = None
-            best_score: int | None = None
-            for node in self.graph.nodes.values():
-                if preferred_types and node.type not in preferred_types:
-                    continue
-                label_lower = node.label.lower()
-                id_lower = node.id.lower()
-                if term_lower == label_lower:
-                    score = 0
-                elif id_lower == term_lower or id_lower.endswith("." + term_lower):
-                    score = 1
-                elif term_lower in label_lower:
-                    score = 10
-                elif term_lower in id_lower:
-                    score = 20
-                else:
-                    continue
+        token_lower = token.lower()
+        norm_lower = self._normalize_identifier(token)
+        best: "GraphNode | None" = None
+        best_score: int | None = None
+        for node in self.graph.nodes.values():
+            if preferred_types and node.type not in preferred_types:
+                continue
+            label_lower = node.label.lower()
+            id_lower = node.id.lower()
+            if token_lower == label_lower:
+                score = 0
+            elif id_lower == token_lower or id_lower.endswith("." + token_lower):
+                score = 1
+            elif id_lower == norm_lower or id_lower.endswith("." + norm_lower):
+                score = 1
+            elif token_lower in label_lower:
+                score = 10
+            elif token_lower in id_lower:
+                score = 20
+            else:
+                continue
 
-                type_bonus = 100 - type_priority.get(node.type, 50)
-                candidate_score = score - type_bonus
-                if best is None or candidate_score < best_score:
-                    best = node
-                    best_score = candidate_score
+            type_bonus = 100 - type_priority.get(node.type, 50)
+            candidate_score = score - type_bonus
+            if best is None or candidate_score < best_score:
+                best = node
+                best_score = candidate_score
 
-            if best is not None:
-                return best
-        return None
+        return best
 
     def query(self, question: str) -> "StructuredQueryResult":
         """Execute a natural language or structured query and return structured result."""
         start_time = time.perf_counter()
-        query_type = self._classify_query(question)
+        intent = classify(question)
+        query_type = intent.query_type
         if query_type == "entity_lookup":
             result = self._handle_entity_lookup(question)
         elif query_type == "type_filter":
             result = self._handle_type_filter(question)
         elif query_type == "dependency_traversal":
             result = self._handle_dependency_traversal(question)
+        elif query_type == "reverse_dependency":
+            result = self._handle_reverse_dependency(question, intent)
         elif query_type == "data_flow_path":
-            result = self._handle_data_flow_path(question)
+            result = self._handle_data_flow_path(question, intent)
         elif query_type == "capability_check":
             result = self._handle_capability_check(question)
         elif query_type == "status_check":
             result = self._handle_status_check(question)
         elif query_type == "impact_analysis":
             result = self._handle_impact_analysis(question)
+        elif query_type == "search":
+            result = self._handle_search(question, intent)
         else:
             result = self._handle_unknown(question)
 
@@ -180,26 +237,8 @@ class CSKSQueryEngine:
         return self._format_result(result, query_type, query_time_ms)
 
     def _classify_query(self, question: str) -> str:
-        """Classify the query type based on keywords."""
-        q = question.lower()
-
-        if any(kw in q for kw in ["what is", "what are", "define", "describe", "tell me about"]):
-            return "entity_lookup"
-        elif any(kw in q for kw in ["list", "show all", "enumerate"]):
-            return "type_filter"
-        elif any(kw in q for kw in ["depends on", "depends upon", "dependencies of", "what depends on", "who uses"]):
-            return "dependency_traversal"
-        elif any(kw in q for kw in ["data flow", "flow", "pipeline", "steps", "sequence"]):
-            return "data_flow_path"
-        elif any(kw in q for kw in ["support", "capability", "does careeros", "is there", "can careeros"]):
-            return "capability_check"
-        elif any(kw in q for kw in ["status", "version", "tag", "milestone"]):
-            return "status_check"
-        elif any(kw in q for kw in ["breaks", "impact", "affect", "what breaks", "impact of"]):
-            return "impact_analysis"
-        elif self._has_type_keyword(q):
-            return "type_filter"
-        return "unknown"
+        """Classify the query type using the M1.23 deterministic grammar."""
+        return classify(question).query_type
 
     def _has_type_keyword(self, question: str) -> bool:
         """True when the question names a CSKS entity type to list."""
@@ -212,15 +251,77 @@ class CSKSQueryEngine:
         }
         return any(kw in question for kw in type_keywords)
 
+    def _cluster_from_question(self, question: str) -> tuple[Any, list] | None:
+        """Return (AliasEntry, [nodes]) when the question names a cluster alias."""
+        from .aliases import DOMAIN_ALIASES, _fold
+
+        folded = _fold(question)
+        for entry in DOMAIN_ALIASES:
+            if entry.kind != "cluster" or not entry.module_prefix:
+                continue
+            if _fold(entry.alias) in folded:
+                nodes = [
+                    n for n in self.graph.nodes.values()
+                    if n.type == "component"
+                    and n.properties.get("module", "").startswith(entry.module_prefix)
+                ]
+                return entry, nodes
+        return None
+
     def _handle_entity_lookup(self, question: str) -> dict:
         """Handle entity lookup queries."""
+        cluster = self._cluster_from_question(question)
+        if cluster is not None:
+            entry, nodes = cluster
+            return self._format_cluster_result(entry, nodes)
+
         node = self._resolve_target(question)
         if node is None:
             return {"answer": f"Could not find entity matching: {question}", "citations": [], "entities": []}
         return self._format_entity_result(node)
 
+    def _format_cluster_result(self, entry, nodes: list) -> dict:
+        """Build a lookup result for an alias cluster (e.g. Interview Intelligence)."""
+        if not nodes:
+            return {
+                "answer": f"{entry.canonical_name}: {entry.absent_hint or 'no matching components found.'}",
+                "citations": [],
+                "entities": [],
+            }
+
+        answer_lines = [f"{entry.canonical_name} ({len(nodes)} components):"]
+        citations = []
+        entities = []
+        for node in sorted(nodes, key=lambda n: n.label)[:50]:
+            answer_lines.append(f"  - {node.label} ({node.id})")
+            entities.append(node.id)
+            citations.append({
+                "file": node.properties.get("source_path", ""),
+                "line_start": node.properties.get("line_start", 0),
+                "line_end": node.properties.get("line_end", 0),
+                "text": f"{node.label} - {node.type}",
+                "entity_id": node.id,
+            })
+        answer_lines.append("")
+        answer_lines.append(entry.absent_hint)
+        return {
+            "answer": "\n".join(answer_lines),
+            "citations": citations,
+            "entities": entities,
+        }
+
     def _format_entity_result(self, node: "GraphNode") -> dict:
         """Build a lookup result describing a single entity."""
+        from .rich_format import RichFormatter
+
+        if node.type in RichFormatter._SPECIALISED:
+            render = RichFormatter(self.graph, root=self.repo_root).format(node)
+            return {
+                "answer": render.text,
+                "citations": render.citations,
+                "entities": [node.id],
+            }
+
         props = node.properties
         detail_lines = [
             f"{node.type.title()}: {node.label} ({node.id})",
@@ -400,27 +501,33 @@ class CSKSQueryEngine:
 
         return dependents
 
-    def _handle_data_flow_path(self, question: str) -> dict:
+    def _handle_data_flow_path(self, question: str, intent: "ClassifiedIntent | None" = None) -> dict:
         """Handle data flow path queries."""
         # Look for known data flow patterns
         flow_patterns = {
             "artifact generation": ["Profile", "Load", "Validate", "Knowledge Graph", "Reasoning", "Contract", "Generate"],
             "artifact": ["Profile", "Load", "Validate", "Knowledge Graph", "Reasoning", "Contract", "Generate"],
+            "cv": ["Profile", "Load", "Validate", "Knowledge Graph", "Reasoning", "Contract", "Generate", "Render CV"],
+            "cv generation": ["Profile", "Load", "Validate", "Knowledge Graph", "Reasoning", "Contract", "Generate", "Render CV"],
             "acquisition": ["Source DOCX", "Reader", "Text Extractor", "LLM Extractor", "Canonical Profile Builder", "Validator", "YAML Writer"],
             "reasoning": ["Profile", "Graph Build", "Rule Execution", "Result Assembly"],
+            "interview preparation": ["Profile", "Load", "Knowledge Graph", "Reasoning", "Interview Simulation", "Preparation Guide Generator"],
         }
 
         q = question.lower()
+        topic = (intent.target or "").lower() if intent else ""
+        haystack = f"{topic} {q}"
         matched_flow = None
         for pattern, steps in flow_patterns.items():
-            if pattern in q:
+            if pattern in haystack:
                 matched_flow = steps
+                flow_label = pattern
                 break
 
         if not matched_flow:
-            return {"answer": "Unknown data flow. Known flows: 'artifact generation', 'acquisition', 'reasoning'.", "citations": [], "entities": []}
+            return {"answer": "Unknown data flow. Known flows: 'artifact generation', 'cv', 'interview preparation', 'acquisition', 'reasoning'.", "citations": [], "entities": []}
 
-        answer_lines = [f"Data flow for artifact generation:"]
+        answer_lines = [f"Data flow for {flow_label}:"]
         for i, step in enumerate(matched_flow, 1):
             answer_lines.append(f"  {i}. {step}")
 
@@ -442,6 +549,148 @@ class CSKSQueryEngine:
                 "entity_id": node.id,
             })
 
+        return {
+            "answer": "\n".join(answer_lines),
+            "citations": citations,
+            "entities": entities,
+        }
+
+    def _handle_reverse_dependency(self, question: str, intent: "ClassifiedIntent | None" = None) -> dict:
+        """Handle reverse dependency queries (what does X depend on)."""
+        target = None
+        preferred = ("component", "rule", "generator", "domain", "schema", "api_endpoint")
+        if intent is not None and intent.target:
+            target = self._resolve_token(intent.target, preferred)
+        if target is None:
+            target = self._resolve_target(question, preferred_types=preferred)
+
+        if not target:
+            return {"answer": "Could not identify target entity for dependency analysis.", "citations": [], "entities": []}
+
+        # What the target consumes: explicit outgoing edges plus import edges
+        # captured by dependency nodes whose source module matches the target.
+        dependencies = self._dependencies_of(target)
+
+        if not dependencies:
+            return {"answer": f"{target.label} ({target.id}) has no known dependencies.", "citations": [], "entities": []}
+
+        answer_lines = [f"{target.label} ({target.id}) depends on {len(dependencies)} entit(y/ies):"]
+        citations = []
+        entities = []
+        for node in sorted(dependencies, key=lambda n: n.label):
+            answer_lines.append(f"  - {self._describe_node(node)}")
+            entities.append(node.id)
+            citations.append({
+                "file": node.properties.get("source_path", ""),
+                "line_start": node.properties.get("line_start", 0),
+                "line_end": node.properties.get("line_end", 0),
+                "text": f"{target.label} depends on {node.label}",
+                "entity_id": node.id,
+            })
+
+        return {
+            "answer": "\n".join(answer_lines),
+            "citations": citations,
+            "entities": [n.id for n in dependencies],
+        }
+
+    def _dependencies_of(self, node: "GraphNode") -> list["GraphNode"]:
+        """Return what a node depends on, deterministically.
+
+        Combines explicit outgoing ``depends_on`` edges with the import
+        relationships captured by ``dependency`` nodes whose ``source_module``
+        matches the node's module. When the builder could not link an import
+        to a node (e.g. generator entities with type-prefixed ids), the
+        imported name is resolved by exact label.
+        """
+        results: dict[str, "GraphNode"] = {}
+        for edge in self.graph._outgoing.get(node.id, []):
+            target = self.graph.nodes.get(edge.target_id)
+            if target:
+                results[target.id] = target
+
+        module = node.properties.get("module", "")
+        if module:
+            for dep in self.graph.nodes.values():
+                if dep.type != "dependency":
+                    continue
+                if dep.properties.get("source_module") != module:
+                    continue
+                edge_targets = [
+                    t for t in (self.graph.nodes.get(e.target_id) for e in self.graph._outgoing.get(dep.id, []))
+                    if t is not None
+                ]
+                if edge_targets:
+                    for target in edge_targets:
+                        results[target.id] = target
+                    continue
+                resolved = self._resolve_imported(dep)
+                if resolved is not None:
+                    results[resolved.id] = resolved
+        return list(results.values())
+
+    def _resolve_imported(self, dep: "GraphNode") -> "GraphNode | None":
+        """Resolve a dependency node's imported name to a graph entity by label."""
+        imported_name = dep.properties.get("imported_name", "")
+        if not imported_name or not re.match(r"[A-Za-z_]\w*$", imported_name):
+            return None
+
+        priority = {
+            "domain": 0, "component": 1, "rule": 2, "generator": 3,
+            "schema": 4, "adr": 5, "milestone": 6, "api_endpoint": 7,
+            "cli_command": 8, "configuration": 9, "test": 10,
+        }
+        best: "GraphNode | None" = None
+        best_rank = -1
+        for candidate in self.graph.nodes.values():
+            if candidate.type not in priority:
+                continue
+            if candidate.label != imported_name:
+                continue
+            rank = priority[candidate.type]
+            if best is None or rank < best_rank:
+                best = candidate
+                best_rank = rank
+        return best
+
+    def _handle_search(self, question: str, intent: "ClassifiedIntent | None" = None) -> dict:
+        """Handle search queries by delegating to the grouped term search."""
+        from .search import grouped_search
+
+        term = (intent.target if intent else None) or question.strip()
+        term = term.strip(" .?!")
+
+        groups = grouped_search(self.graph, term)
+        total = groups["total"]
+        if total == 0:
+            return {
+                "answer": f"No entities found matching '{term}'.",
+                "citations": [],
+                "entities": [],
+            }
+
+        answer_lines = [f'Search results for "{term}":']
+        citations = []
+        entities = []
+        for group_name in ("Domains", "Components", "APIs", "Schemas", "Rules",
+                           "Generators", "Tests", "Milestones", "ADRs",
+                           "CLI commands", "Configurations", "Documents"):
+            items = groups["groups"].get(group_name, [])
+            if not items:
+                continue
+            answer_lines.append(f"{group_name}:")
+            for item in items:
+                answer_lines.append(f"  - {item['label']} ({item['id']}) — {item['location']}")
+                entities.append(item["id"])
+                citations.append({
+                    "file": item["file"],
+                    "line_start": item["line_start"],
+                    "line_end": item["line_end"],
+                    "text": f"{item['label']} - {item['type']}",
+                    "entity_id": item["id"],
+                })
+
+        answer_lines.append(f"Total matches: {total}")
         return {
             "answer": "\n".join(answer_lines),
             "citations": citations,
@@ -530,8 +779,14 @@ class CSKSQueryEngine:
         }
 
     def _handle_unknown(self, question: str) -> dict:
+        from .grammar import suggest
+
+        suggestions = suggest(question)
+        answer_lines = ["I could not classify your query.", "Did you mean:"]
+        for suggestion in suggestions:
+            answer_lines.append(f"  - {suggestion}")
         return {
-            "answer": f"Unknown query type. Try: 'What is X?', 'List all domains', 'What depends on X?', 'Data flow for artifact generation', 'M1.21 status', 'What breaks if I change ProfileLoader?'",
+            "answer": "\n".join(answer_lines),
             "citations": [],
             "entities": [],
         }

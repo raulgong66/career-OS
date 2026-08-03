@@ -89,6 +89,32 @@ def test_cli_query_end_to_end(csks_sample_repo: Path) -> None:
     assert "domain.profile_management" in result.output
 
 
+def test_cli_default_repo_root_is_repo_root() -> None:
+    from careeros.csks.cli import _default_repo_root
+
+    root = _default_repo_root()
+    assert (root / "careeros" / "csks" / "cli.py").is_file()
+    assert (root / "careeros" / "csks").is_dir()
+
+
+def test_cli_query_without_repo_root(
+    monkeypatch: pytest.MonkeyPatch, csks_sample_repo: Path
+) -> None:
+    from careeros.csks import cli
+
+    monkeypatch.setattr(cli, "_default_repo_root", lambda: csks_sample_repo)
+    runner = CliRunner()
+
+    for question, expected in [
+        ("List domains", "domain.profile_management"),
+        ("List API endpoints", "api.get.profiles"),
+        ("What is ADR-008?", "adr.008"),
+    ]:
+        result = runner.invoke(CSKS_APP, ["query", question])
+        assert result.exit_code == 0, result.output
+        assert expected in result.output
+
+
 def test_cli_query_json_output(csks_sample_repo: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(

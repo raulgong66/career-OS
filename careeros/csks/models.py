@@ -74,7 +74,9 @@ QueryType = Literal[
     "capability_check",
     "status_check",
     "impact_analysis",
-    "unknown"
+    "unknown",
+    "reverse_dependency",
+    "search"
 ]
 
 

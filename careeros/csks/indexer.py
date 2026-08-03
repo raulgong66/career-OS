@@ -53,7 +53,7 @@ class CSKSIndexer:
 
         graph = CSKSKnowledgeGraphBuilder().build(entities, relationships)
         self.graph = graph
-        self.query_engine = CSKSQueryEngine(graph)
+        self.query_engine = CSKSQueryEngine(graph, repo_root=self.repo_root)
 
         self._metadata = IndexMetadata(
             version="1.0",

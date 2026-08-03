@@ -44,6 +44,28 @@ def test_entity_lookup_unknown(engine: CSKSQueryEngine) -> None:
     assert "Could not find entity" in result.answer
 
 
+def test_entity_lookup_adr_hyphen(engine: CSKSQueryEngine) -> None:
+    result = engine.query("What is ADR-001?")
+    assert result.query_type == "entity_lookup"
+    assert "adr.001" in result.matched_entities
+
+
+def test_entity_lookup_adr_space(engine: CSKSQueryEngine) -> None:
+    result = engine.query("What is ADR 001?")
+    assert "adr.001" in result.matched_entities
+
+
+def test_entity_lookup_adr_compact(engine: CSKSQueryEngine) -> None:
+    result = engine.query("What is ADR001?")
+    assert "adr.001" in result.matched_entities
+
+
+def test_identifier_normalization_equivalent_forms() -> None:
+    normalize = CSKSQueryEngine._normalize_identifier
+    for form in ("ADR-008", "ADR 008", "ADR008", "adr.008", "adr-008", "adr 008"):
+        assert normalize(form) == "adr.008"
+
+
 def test_type_filter_domains(engine: CSKSQueryEngine) -> None:
     result = engine.query("List all domains")
     assert result.query_type == "type_filter"

@@ -189,6 +189,19 @@ def csks_sample_repo(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
 
+    (repo / "docs" / "adr" / "ADR-008-CSKS-Foundation.md").write_text(
+        "# ADR 008: CSKS Foundation\n"
+        "\n"
+        "## Status\n"
+        "\n"
+        "Accepted\n"
+        "\n"
+        "## Context\n"
+        "\n"
+        "CSKS provides the repository knowledge graph.\n",
+        encoding="utf-8",
+    )
+
     (repo / "schemas" / "skill.schema.json").write_text(
         "{\n"
         "  \"title\": \"Skill\",\n"

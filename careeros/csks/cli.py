@@ -21,7 +21,7 @@ console = Console()
 
 def _default_repo_root() -> Path:
     """Resolve the repository root relative to this package."""
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def build_csks_app() -> typer.Typer:
@@ -93,14 +93,37 @@ def build_csks_app() -> typer.Typer:
 
     @csks_app.command("search")
     def search(
+        term: str = typer.Argument(None, help="Search term for grouped results."),
         entity_type: str = typer.Option(None, "--type", help="Filter by entity type."),
         domain: str = typer.Option(None, "--domain", help="Filter by domain property."),
         limit: int = typer.Option(50, "--limit", help="Maximum number of results."),
         repo_root: Path = typer.Option(None, "--repo-root", help="Repository root. Defaults to the package root."),
     ) -> None:
-        """Search the knowledge graph entities."""
+        """Search the knowledge graph. With a <term>, returns grouped results."""
         root = repo_root or _default_repo_root()
         indexer = CSKSIndexer(root)
+        if term:
+            from .search import grouped_search
+
+            groups = grouped_search(indexer.get_graph(), term, limit=limit)
+            if groups["total"] == 0:
+                console.print(f"[bold yellow]No entities found matching[/bold yellow] '{term}'.")
+                return
+            console.print(f'[bold]Search results for "{term}":[/bold]')
+            for group_name in (
+                "Domains", "Components", "APIs", "Schemas", "Rules",
+                "Generators", "Tests", "Milestones", "ADRs",
+                "CLI commands", "Configurations", "Documents",
+            ):
+                items = groups["groups"].get(group_name, [])
+                if not items:
+                    continue
+                console.print(f"[bold]{group_name}:[/bold]")
+                for item in items:
+                    console.print(f"  - {item['label']} ({item['id']}) — {item['location']}")
+            console.print(f"Total matches: {groups['total']}")
+            return
+
         results = indexer.search(entity_type=entity_type, domain=domain, limit=limit)
         table = Table(title="CSKS Entities")
         table.add_column("ID")
