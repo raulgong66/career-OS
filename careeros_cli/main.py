@@ -28,6 +28,7 @@ from careeros import (
     generate_tailored_artifact as run_tailored_artifact_pipeline,
 )
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
+from careeros.csks.cli import CSKS_APP
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 
 app = typer.Typer(
@@ -36,6 +37,7 @@ app = typer.Typer(
     add_completion=True,
     rich_markup_mode="rich",
 )
+app.add_typer(CSKS_APP)
 console = Console()
 
 
