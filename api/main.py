@@ -27,6 +27,8 @@ from .runtime_config import (
     validate_runtime_config,
 )
 
+from careeros.csks.api import CSKS_ROUTER
+
 try:
     runtime_config = validate_runtime_config()
 except RuntimeConfigurationError as exc:
@@ -73,6 +75,7 @@ from careeros.resolution import (
 logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(message)s")
 
 app = FastAPI(title="CareerOS API", version=BACKEND_VERSION)
+app.include_router(CSKS_ROUTER)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

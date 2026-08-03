@@ -31,3 +31,6 @@ package-lock.json
 # Profile workspace working data (imported profiles awaiting review)
 profiles/staging/
 profiles/archived/
+
+# CSKS index cache (regenerated)
+.csks-index/
