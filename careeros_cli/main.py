@@ -30,6 +30,10 @@ from careeros import (
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.csks.cli import CSKS_APP
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
+from careeros.profile_quality.cli import (
+    print_improvement_queue as print_profile_quality_queue,
+    print_profile_health,
+)
 
 app = typer.Typer(
     name="careeros",
@@ -470,6 +474,51 @@ def analyze_profile(
         return
 
     console.print_json(report.to_json())
+
+
+@app.command("profile-health")
+def profile_health(
+    profile_file: Path = typer.Argument(..., help="Path to canonical profile YAML/JSON"),
+    output: str = typer.Option("json", "--output", "-o", help="json|table"),
+) -> None:
+    """Compute and display profile health score with dimension breakdown."""
+    try:
+        profile_data = _load_payload(profile_file)
+    except Exception as exc:
+        console.print(f"[bold red]Failed to load profile file: {exc}[/bold red]")
+        raise typer.Exit(code=1)
+
+    try:
+        print_profile_health(profile_data, output=output)
+    except Exception as exc:
+        console.print(f"[bold red]Profile health error: {exc}[/bold red]")
+        raise typer.Exit(code=1)
+
+
+@app.command("improvement-queue")
+def improvement_queue(
+    profile_file: Path = typer.Argument(..., help="Path to canonical profile YAML/JSON"),
+    priority: str = typer.Option(None, "--priority", "-p", help="Filter: high|medium|low"),
+    resolution_type: str = typer.Option(None, "--resolution", "-r", help="Filter: auto|guided|none"),
+    output: str = typer.Option("json", "--output", "-o", help="json|table"),
+) -> None:
+    """List prioritized profile-quality findings with resolution actions."""
+    try:
+        profile_data = _load_payload(profile_file)
+    except Exception as exc:
+        console.print(f"[bold red]Failed to load profile file: {exc}[/bold red]")
+        raise typer.Exit(code=1)
+
+    try:
+        print_profile_quality_queue(
+            profile_data,
+            priority=priority,
+            resolution_type=resolution_type,
+            output=output,
+        )
+    except Exception as exc:
+        console.print(f"[bold red]Improvement queue error: {exc}[/bold red]")
+        raise typer.Exit(code=1)
 
 
 def _print_summary(summary: Any) -> None:
