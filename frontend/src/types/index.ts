@@ -190,6 +190,70 @@ export interface OptimizationResult {
   summary: OptimizationSummary | null;
 }
 
+export interface HealthDimensionScore {
+  name: string;
+  score: number;
+  weight: number;
+}
+
+export interface QualityCitation {
+  entity_id: string;
+  entity_type: string;
+  property_path: string;
+  snippet: string;
+}
+
+export type ResolutionType = 'auto' | 'guided' | 'none';
+
+export interface QualityFinding {
+  rule_id: string;
+  dimension: string;
+  element_id: string;
+  element_type: string;
+  title: string;
+  reason: string;
+  suggested_action: string;
+  resolution_type: ResolutionType;
+  evidence_refs: string[];
+  priority: RecommendationPriority;
+  estimated_impact: RecommendationImpact;
+  confidence: RecommendationConfidence;
+  citations: QualityCitation[];
+}
+
+export interface QualityReport {
+  health_score: number;
+  dimensions: HealthDimensionScore[];
+  findings: QualityFinding[];
+  citations: QualityCitation[];
+}
+
+export type UnifiedRecommendationSource = 'profile_quality' | 'optimization';
+
+export interface UnifiedRecommendation {
+  id: string;
+  source: UnifiedRecommendationSource;
+  rule_id: string;
+  element_id: string;
+  element_type: string;
+  title: string;
+  reason: string;
+  suggested_action: string;
+  resolution_type: ResolutionType;
+  evidence_refs: string[];
+  priority: RecommendationPriority;
+  estimated_impact: RecommendationImpact;
+  confidence: RecommendationConfidence;
+  jd_match_score: number | null;
+  context_match_score: number | null;
+  weighted_total: number | null;
+}
+
+export interface QueueFilters {
+  priority: '' | RecommendationPriority;
+  resolutionType: '' | ResolutionType;
+}
+
 export type InterviewSessionState =
   | 'draft'
   | 'ready'
