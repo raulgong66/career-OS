@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProfileService } from '../services/ProfileService';
+import HealthScore from '../components/HealthScore';
+import ImprovementQueue from '../components/ImprovementQueue';
+import type { QueueFilters, QualityReport, UnifiedRecommendation } from '../types';
 
 type BackendStatus = 'checking' | 'connected' | 'disconnected';
 
@@ -10,6 +13,15 @@ export default function Home() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const [profileCount, setProfileCount] = useState(0);
+  const [qualityReport, setQualityReport] = useState<QualityReport | null>(null);
+  const [improvementQueue, setImprovementQueue] = useState<UnifiedRecommendation[]>([]);
+  const [queueFilters, setQueueFilters] = useState<QueueFilters>({
+    priority: '',
+    resolutionType: '',
+  });
+  const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -18,11 +30,49 @@ export default function Home() {
       .then((profiles) => {
         setBackendStatus('connected');
         setProfileCount(profiles.length);
+        if (profiles.length > 0) {
+          setActiveProfileId(profiles[0].id);
+          void loadAnalysis(profiles[0].id);
+        }
       })
       .catch(() => {
         setBackendStatus('disconnected');
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadAnalysis = async (profileId: string, filters?: QueueFilters) => {
+    const activeFilters = filters ?? queueFilters;
+    setAnalysisLoading(true);
+    setAnalysisError('');
+    try {
+      const service = ProfileService.getInstance();
+      const [report, queue] = await Promise.all([
+        service.getQualityReport(profileId),
+        service.getImprovementQueue(profileId, {
+          priority: activeFilters.priority || undefined,
+          resolutionType: activeFilters.resolutionType || undefined,
+        }),
+      ]);
+      setQualityReport(report);
+      setImprovementQueue(queue);
+    } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : 'Failed to load profile analysis');
+    } finally {
+      setAnalysisLoading(false);
+    }
+  };
+
+  const handleFilterChange = (filters: QueueFilters) => {
+    setQueueFilters(filters);
+    if (!activeProfileId) return;
+    void loadAnalysis(activeProfileId, filters);
+  };
+
+  const handleRefreshAnalysis = () => {
+    if (!activeProfileId) return;
+    void loadAnalysis(activeProfileId);
+  };
 
   const handleImportProfile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -183,6 +233,56 @@ export default function Home() {
                   Backend API, AI Generator, Recommendation Engine
                 </p>
               </div>
+            </div>
+          </div>
+
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Profile Health</h3>
+            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              {analysisLoading && !qualityReport ? (
+                <p className="text-sm text-gray-500" data-testid="health-loading">
+                  Loading profile analysis...
+                </p>
+              ) : analysisError && !qualityReport ? (
+                <div>
+                  <p className="text-sm text-red-600" data-testid="health-error">{analysisError}</p>
+                </div>
+              ) : qualityReport ? (
+                <div className="space-y-6">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <HealthScore score={qualityReport.health_score} dimensions={qualityReport.dimensions} />
+                    </div>
+                    <button
+                      onClick={handleRefreshAnalysis}
+                      disabled={analysisLoading}
+                      className="mt-1 flex-shrink-0 text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {analysisLoading ? 'Refreshing...' : 'Refresh'}
+                    </button>
+                  </div>
+
+                  {qualityReport.findings.length > 0 && (
+                    <p className="text-sm text-gray-500">
+                      {qualityReport.findings.length} improvement{qualityReport.findings.length !== 1 ? 's' : ''}{' '}
+                      suggested across {qualityReport.dimensions.length} health dimensions.
+                    </p>
+                  )}
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-3">Improvement Queue</h4>
+                    <ImprovementQueue
+                      recommendations={improvementQueue}
+                      filters={queueFilters}
+                      onFilterChange={handleFilterChange}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-400 italic" data-testid="health-empty">
+                  Import a profile to see its health score and improvement recommendations.
+                </p>
+              )}
             </div>
           </div>
 

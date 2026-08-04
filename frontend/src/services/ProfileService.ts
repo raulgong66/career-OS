@@ -1,4 +1,11 @@
-import type { AnalyzeResponse, ImportResponse, ProfileDetails, ProfileSummary } from '../types';
+import type {
+  AnalyzeResponse,
+  ImportResponse,
+  ProfileDetails,
+  ProfileSummary,
+  QualityReport,
+  UnifiedRecommendation,
+} from '../types';
 
 const BASE = '';
 
@@ -85,6 +92,39 @@ export class ProfileService {
     if (!response.ok) {
       const error = await response.json();
       throw new Error(error.detail || 'Failed to analyze profile');
+    }
+
+    return response.json();
+  }
+
+  async getQualityReport(profileId: string): Promise<QualityReport> {
+    const response = await fetch(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}/quality-report`,
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch quality report');
+    }
+
+    return response.json();
+  }
+
+  async getImprovementQueue(
+    profileId: string,
+    filters?: { priority?: string; resolutionType?: string },
+  ): Promise<UnifiedRecommendation[]> {
+    const params = new URLSearchParams();
+    if (filters?.priority) params.set('priority', filters.priority);
+    if (filters?.resolutionType) params.set('resolution_type', filters.resolutionType);
+    const query = params.toString();
+    const response = await fetch(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}/improvement-queue${query ? `?${query}` : ''}`,
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to fetch improvement queue');
     }
 
     return response.json();
