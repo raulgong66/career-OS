@@ -37,7 +37,7 @@ except RuntimeConfigurationError as exc:
     raise SystemExit(1) from exc
 print_configuration_banner(runtime_config)
 
-from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv
+from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv, run_profile_quality
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.profile_repository import ProfileRepository, ProfileState
@@ -214,6 +214,12 @@ class CreateArtifactRequest(BaseModel):
 
     template: str = Field(description="Template identifier (e.g. 'standard_cv').")
     title: str | None = Field(default=None, description="Optional human-readable artifact title.")
+
+
+class TemplatePreviewRequest(BaseModel):
+    """Request payload for rendering a template preview."""
+
+    profile_id: str = Field(description="Profile identifier (filename without extension).")
 
 
 class CreateArtifactResponse(BaseModel):
@@ -522,6 +528,69 @@ def version() -> VersionResponse:
 def list_artifact_templates() -> list[dict[str, str]]:
     """Return all available artifact templates."""
     return default_template_registry().list()
+
+
+@app.post("/artifact-templates/{template_id}/preview")
+def preview_artifact_template(template_id: str, request: TemplatePreviewRequest) -> dict[str, Any]:
+    """Render a template preview for a profile (render-only, no side effects).
+
+    Transport-only wrapper around the existing generation pipeline: the template
+    renders markdown from the current canonical profile without creating an
+    artifact, persisting anything, or re-running the reasoning engine.
+    """
+    try:
+        record = PROFILE_REPOSITORY.get(request.profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    data = record.data
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail="Profile data is malformed.",
+        ).model_dump())
+
+    registry = default_template_registry()
+    try:
+        template = registry.get(template_id)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=ApiErrorResponse(
+            error="INVALID_TEMPLATE",
+            detail=f"Unknown artifact template: '{template_id}'. Available: {[t['id'] for t in registry.list()]}",
+        ).model_dump())
+
+    try:
+        markdown = template.preview(data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="VALIDATION_ERROR",
+            detail=str(exc),
+        ).model_dump())
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail=f"Failed to render template preview: {exc}",
+        ).model_dump())
+
+    virtual_artifact = template.build(data, title="Preview")
+    try:
+        health_score = run_profile_quality(data).health_score
+    except Exception:
+        health_score = None
+
+    return {
+        "markdown": markdown,
+        "source_count": len(virtual_artifact.get("sourceRefs", [])),
+        "estimated_health_score": health_score,
+    }
 
 
 ACCEPTED_MIME_TYPES = {
