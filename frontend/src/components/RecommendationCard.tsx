@@ -1,5 +1,6 @@
 import type { UnifiedRecommendation } from '../types';
 import { capitalizeLevel } from './healthDisplay';
+import { isResolvableRecommendation } from './resolution';
 
 const PRIORITY_STYLES: Record<UnifiedRecommendation['priority'], string> = {
   high: 'bg-red-100 text-red-800',
@@ -15,9 +16,10 @@ const RESOLUTION_STYLES: Record<UnifiedRecommendation['resolution_type'], string
 
 interface RecommendationCardProps {
   recommendation: UnifiedRecommendation;
+  onResolve?: (rec: UnifiedRecommendation) => void;
 }
 
-export default function RecommendationCard({ recommendation }: RecommendationCardProps) {
+export default function RecommendationCard({ recommendation, onResolve }: RecommendationCardProps) {
   const { title, priority, resolution_type, reason, suggested_action, element_type, element_id, evidence_refs } =
     recommendation;
   const evidence = evidence_refs ?? [];
@@ -83,6 +85,18 @@ export default function RecommendationCard({ recommendation }: RecommendationCar
           )}
         </div>
       </details>
+
+      {onResolve && isResolvableRecommendation(recommendation) && (
+        <div className="mt-3">
+          <button
+            onClick={() => onResolve(recommendation)}
+            className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+            data-testid="resolve-button"
+          >
+            Resolve
+          </button>
+        </div>
+      )}
     </div>
   );
 }

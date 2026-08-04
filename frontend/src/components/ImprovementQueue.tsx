@@ -6,6 +6,7 @@ interface ImprovementQueueProps {
   recommendations: UnifiedRecommendation[];
   filters: QueueFilters;
   onFilterChange: (filters: QueueFilters) => void;
+  onResolve?: (rec: UnifiedRecommendation) => void;
 }
 
 const PRIORITY_RANK: Record<RecommendationPriority, number> = {
@@ -66,6 +67,7 @@ export default function ImprovementQueue({
   recommendations,
   filters,
   onFilterChange,
+  onResolve,
 }: ImprovementQueueProps) {
   const groups = groupRecommendations(recommendations);
 
@@ -133,7 +135,11 @@ export default function ImprovementQueue({
               </div>
               <div className="space-y-2">
                 {group.recommendations.map((recommendation) => (
-                  <RecommendationCard key={recommendation.id} recommendation={recommendation} />
+                  <RecommendationCard
+                    key={recommendation.id}
+                    recommendation={recommendation}
+                    onResolve={onResolve}
+                  />
                 ))}
               </div>
             </div>

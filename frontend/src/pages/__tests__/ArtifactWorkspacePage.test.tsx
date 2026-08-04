@@ -105,6 +105,24 @@ const QUEUE = [
     context_match_score: null,
     weighted_total: null,
   },
+  {
+    id: 'rec-2',
+    source: 'profile_quality',
+    rule_id: 'recommendation_add_measurable_achievement',
+    element_id: 'exp-1',
+    element_type: 'experience',
+    title: 'Add measurable achievements',
+    reason: 'This experience has no quantified outcomes.',
+    suggested_action: 'Add a measurable achievement statement.',
+    resolution_type: 'auto',
+    evidence_refs: ['exp-1.details'],
+    priority: 'high',
+    estimated_impact: 'high',
+    confidence: 'medium',
+    jd_match_score: null,
+    context_match_score: null,
+    weighted_total: null,
+  },
 ];
 
 function jsonResponse(data: unknown, status = 200): Response {
@@ -116,6 +134,10 @@ function jsonResponse(data: unknown, status = 200): Response {
 
 function textResponse(text: string, status = 200): Response {
   return new Response(text, { status, headers: { 'Content-Type': 'text/markdown' } });
+}
+
+function methodOf(init?: RequestInit): string {
+  return init?.method ?? 'GET';
 }
 
 function renderPage() {
@@ -152,6 +174,9 @@ describe('ArtifactWorkspacePage', () => {
       }
       if (method === 'GET' && url.includes('/profiles/profile-1/improvement-queue')) {
         return Promise.resolve(jsonResponse(QUEUE));
+      }
+      if (method === 'GET' && url.endsWith('/technologies')) {
+        return Promise.resolve(jsonResponse({ keywords: ['python', 'docker', 'kubernetes'] }));
       }
       if (method === 'POST' && url.endsWith('/artifact-templates/standard_cv/preview')) {
         return previewPending
@@ -317,5 +342,93 @@ describe('ArtifactWorkspacePage', () => {
 
     expect(await screen.findByText('Preview exploded')).toBeTruthy();
     expect(screen.getByText('Try again')).toBeTruthy();
+  });
+
+  it('resolvable recommendation shows a Resolve button that opens the panel', async () => {
+    renderPage();
+    await screen.findByTestId('health-score');
+
+    const resolveButtons = screen.getAllByTestId('resolve-button');
+    expect(resolveButtons.length).toBe(1);
+
+    fireEvent.click(resolveButtons[0]);
+
+    expect(await screen.findByTestId('resolution-panel')).toBeTruthy();
+    expect(screen.getByText('Resolve recommendation')).toBeTruthy();
+  });
+
+  it('apply resolution calls resolve endpoint and triggers auto-refresh chain', async () => {
+    let resolveFinished: (value: Response | PromiseLike<Response>) => void;
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+
+      if (method === 'GET' && url.endsWith('/artifact-templates')) {
+        return Promise.resolve(jsonResponse(TEMPLATES));
+      }
+      if (method === 'GET' && url.endsWith('/profiles')) {
+        return Promise.resolve(jsonResponse(PROFILES));
+      }
+      if (method === 'GET' && /\/profiles\/profile-1$/.test(url)) {
+        return Promise.resolve(jsonResponse(PROFILE_DETAILS));
+      }
+      if (method === 'GET' && url.endsWith('/profiles/profile-1/quality-report')) {
+        return Promise.resolve(jsonResponse(QUALITY_REPORT));
+      }
+      if (method === 'GET' && url.includes('/profiles/profile-1/improvement-queue')) {
+        return Promise.resolve(jsonResponse(QUEUE));
+      }
+      if (method === 'GET' && url.endsWith('/technologies')) {
+        return Promise.resolve(jsonResponse({ keywords: [] }));
+      }
+      if (method === 'POST' && url.endsWith('/artifact-templates/standard_cv/preview')) {
+        return Promise.resolve(jsonResponse(PREVIEW));
+      }
+      if (method === 'POST' && url.endsWith('/profiles/profile-1/resolve')) {
+        return new Promise<Response>((resolve) => { resolveFinished = resolve; });
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unexpected fetch: ${method} ${url}` }, 500));
+    });
+
+    renderPage();
+    await screen.findByTestId('health-score');
+
+    const resolveButtons = screen.getAllByTestId('resolve-button');
+    fireEvent.click(resolveButtons[0]);
+    await screen.findByTestId('resolution-panel');
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. Reduced deployment time by 60%'), { target: { value: 'Reduced incidents by 40%' } });
+    fireEvent.click(screen.getByTestId('resolution-apply'));
+
+    expect(await screen.findByText('Applying resolution...')).toBeTruthy();
+    const resolveCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).endsWith('/profiles/profile-1/resolve'),
+    );
+    expect(resolveCalls.length).toBe(1);
+    expect(resolveCalls[0][1]?.body).toContain('NoMeasurableAchievementRule');
+    expect(resolveCalls[0][1]?.body).toContain('Reduced incidents by 40%');
+
+    resolveFinished!(jsonResponse({ profile: PROFILE_DETAILS }));
+    await waitFor(() => {
+      expect(screen.getByText('Done')).toBeTruthy();
+    });
+    expect(screen.queryByTestId('resolution-panel')).toBeNull();
+
+    const profileCalls = fetchMock.mock.calls.filter((call) =>
+      methodOf(call[1]) === 'GET' && /\/profiles\/profile-1$/.test(String(call[0])),
+    );
+    expect(profileCalls.length).toBeGreaterThanOrEqual(2);
+    const reportCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0]).endsWith('/profiles/profile-1/quality-report'),
+    );
+    expect(reportCalls.length).toBeGreaterThanOrEqual(2);
+    const queueCallsAfterResolve = fetchMock.mock.calls
+      .filter((call) => String(call[0]).includes('/profiles/profile-1/improvement-queue'))
+      .map((call) => String(call[0]));
+    expect(queueCallsAfterResolve.length).toBeGreaterThanOrEqual(2);
+    const previewCallsAfterResolve = fetchMock.mock.calls
+      .filter((call) => String(call[0]).endsWith('/artifact-templates/standard_cv/preview'))
+      .map((call) => String(call[0]));
+    expect(previewCallsAfterResolve.length).toBeGreaterThanOrEqual(2);
   });
 });

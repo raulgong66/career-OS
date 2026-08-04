@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArtifactService } from '../services/ArtifactService';
 import { ProfileService } from '../services/ProfileService';
 import ArtifactPreview, { type PreviewStatus } from '../components/ArtifactPreview';
 import HealthScore from '../components/HealthScore';
 import ImprovementQueue from '../components/ImprovementQueue';
+import ResolutionPanel from '../components/ResolutionPanel';
 import type {
   ArtifactTemplate,
   ProfileDetails,
   ProfileSummary,
   QualityReport,
   QueueFilters,
+  ResolutionPayload,
   UnifiedRecommendation,
 } from '../types';
 
@@ -58,6 +60,21 @@ export default function ArtifactWorkspacePage() {
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthError, setHealthError] = useState('');
 
+  const [technologies, setTechnologies] = useState<string[]>([]);
+  const technologiesLoaded = useRef(false);
+  const [selectedRecommendation, setSelectedRecommendation] = useState<UnifiedRecommendation | null>(null);
+  const [resolutionStatus, setResolutionStatus] = useState('');
+
+  const loadTechnologies = async () => {
+    if (technologiesLoaded.current) return;
+    technologiesLoaded.current = true;
+    try {
+      setTechnologies(await ProfileService.getInstance().getTechnologyKeywords());
+    } catch {
+      setTechnologies([]);
+    }
+  };
+
   const loadAnalysis = async (profileId: string, filters?: QueueFilters) => {
     const activeFilters = filters ?? queueFilters;
     setHealthLoading(true);
@@ -88,6 +105,7 @@ export default function ArtifactWorkspacePage() {
 
   const handleRefreshAnalysis = () => {
     if (!selectedProfileId) return;
+    setResolutionStatus('');
     void loadAnalysis(selectedProfileId);
   };
 
@@ -213,6 +231,8 @@ export default function ArtifactWorkspacePage() {
 
   const handleProfileChange = (profileId: string) => {
     setSelectedProfileId(profileId);
+    setSelectedRecommendation(null);
+    setResolutionStatus('');
     loadProfile(profileId);
     void loadAnalysis(profileId);
   };
@@ -227,13 +247,60 @@ export default function ArtifactWorkspacePage() {
     renderArtifactPreview(selectedProfileId, artifactId);
   };
 
-  const handleRefreshPreview = () => {
-    if (!selectedProfileId) return;
+  const refreshCurrentPreview = () => {
+    if (!selectedProfileId) return Promise.resolve();
     if (previewKind === 'template' && selectedTemplateId) {
-      renderTemplatePreview(selectedProfileId, selectedTemplateId);
-    } else if (previewKind === 'artifact' && selectedArtifactId) {
-      renderArtifactPreview(selectedProfileId, selectedArtifactId);
+      return renderTemplatePreview(selectedProfileId, selectedTemplateId);
     }
+    if (previewKind === 'artifact' && selectedArtifactId) {
+      return renderArtifactPreview(selectedProfileId, selectedArtifactId);
+    }
+    return Promise.resolve();
+  };
+
+  const handleRefreshPreview = () => {
+    void refreshCurrentPreview();
+  };
+
+  const handleResolveRecommendation = (rec: UnifiedRecommendation) => {
+    setResolutionStatus('');
+    setSelectedRecommendation(rec);
+    void loadTechnologies();
+  };
+
+  const handleApplyResolution = async (payload: ResolutionPayload) => {
+    if (!selectedProfileId) return;
+    setResolutionStatus('Applying resolution...');
+    const service = ProfileService.getInstance();
+    await service.resolveRecommendation(selectedProfileId, payload);
+    setSelectedRecommendation(null);
+    setResolutionStatus('✓ Profile updated');
+    try {
+      const details = await service.getProfile(selectedProfileId);
+      setProfileDetails(details);
+      setResolutionStatus('Recalculating health...');
+      const [report, queue] = await Promise.all([
+        service.getQualityReport(selectedProfileId),
+        service.getImprovementQueue(selectedProfileId, {
+          priority: queueFilters.priority || undefined,
+          resolutionType: queueFilters.resolutionType || undefined,
+        }),
+      ]);
+      setQualityReport(report);
+      setImprovementQueue(queue);
+      setResolutionStatus('✓ Health improved');
+      setResolutionStatus('Refreshing preview...');
+      await refreshCurrentPreview();
+      setResolutionStatus('Done');
+    } catch (err) {
+      setHealthError(err instanceof Error ? err.message : 'Failed to refresh after resolution');
+      setResolutionStatus('Done');
+    }
+  };
+
+  const handleCloseResolution = () => {
+    setSelectedRecommendation(null);
+    setResolutionStatus('');
   };
 
   const handleGenerateResume = (templateId: string) => {
@@ -324,8 +391,30 @@ export default function ArtifactWorkspacePage() {
               recommendations={improvementQueue}
               filters={queueFilters}
               onFilterChange={handleFilterChange}
+              onResolve={handleResolveRecommendation}
             />
           </div>
+
+          {resolutionStatus && (
+            <div
+              className="border border-emerald-200 bg-emerald-50 rounded-md px-3 py-2 text-sm text-emerald-800"
+              data-testid="resolution-status"
+            >
+              {resolutionStatus}
+            </div>
+          )}
+
+          {selectedRecommendation && profileDetails && (
+            <div className="mt-4">
+              <ResolutionPanel
+                rec={selectedRecommendation}
+                profile={profileDetails}
+                technologies={technologies}
+                onApply={handleApplyResolution}
+                onClose={handleCloseResolution}
+              />
+            </div>
+          )}
         </div>
       );
     }
@@ -506,7 +595,7 @@ export default function ArtifactWorkspacePage() {
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-4xl font-bold text-gray-900">CareerOS Platform Alpha</h1>
-            <p className="text-lg text-gray-600 mt-2">Resume Generation Workspace</p>
+            <p className="text-lg text-gray-600 mt-2">Resume Workspace</p>
           </div>
           <button
             onClick={() => navigate('/')}
@@ -630,7 +719,7 @@ export default function ArtifactWorkspacePage() {
 
       <footer className="bg-white border-t border-gray-200 px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <span className="text-sm text-gray-600">Platform Alpha · Resume Generation Workspace</span>
+          <span className="text-sm text-gray-600">Platform Alpha · Resume Workspace</span>
           <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800">
             Demo Ready
           </span>
