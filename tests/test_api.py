@@ -1608,6 +1608,35 @@ def test_resolve_measurable_achievement_source_ref_is_idempotent(resolve_profile
     assert len(achievement_refs) == len(canonical["achievements"])
 
 
+def test_resolve_clears_improvement_queue_item(resolve_profile: str) -> None:
+    """M1.24.4: resolving a recommendation removes it from the improvement-queue endpoint."""
+    queue = client.get(f"/profiles/{resolve_profile}/improvement-queue")
+    assert queue.status_code == 200
+    target = next(
+        (item for item in queue.json() if item["rule_id"] == "recommendation_add_technologies"),
+        None,
+    )
+    assert target is not None
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "ExperienceNoTechnologiesRule",
+            "elementId": target["element_id"],
+            "technologies": ["Python", "Terraform"],
+        },
+    )
+    assert response.status_code == 200
+
+    queue_after = client.get(f"/profiles/{resolve_profile}/improvement-queue")
+    assert queue_after.status_code == 200
+    assert not any(
+        item["rule_id"] == "recommendation_add_technologies"
+        and item["element_id"] == target["element_id"]
+        for item in queue_after.json()
+    )
+
+
 def test_resolved_achievement_renders_in_tailored_cv(resolve_profile: str) -> None:
     """M1.9 acceptance: a resolved measurable achievement appears in the Tailored CV."""
     canonical = _read_canonical(resolve_profile)

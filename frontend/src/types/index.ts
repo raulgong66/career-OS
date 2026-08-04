@@ -260,6 +260,15 @@ export interface QueueFilters {
   resolutionType: '' | ResolutionType;
 }
 
+export interface ResolutionPayload {
+  triggeredRule: string;
+  elementId: string;
+  skillIds: string[];
+  experienceIds: string[];
+  technologies: string[];
+  achievementStatement: string;
+}
+
 export type InterviewSessionState =
   | 'draft'
   | 'ready'
