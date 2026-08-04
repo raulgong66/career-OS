@@ -3,7 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { ArtifactService } from '../services/ArtifactService';
 import { ProfileService } from '../services/ProfileService';
 import ArtifactPreview, { type PreviewStatus } from '../components/ArtifactPreview';
-import type { ArtifactTemplate, ProfileDetails, ProfileSummary } from '../types';
+import HealthScore from '../components/HealthScore';
+import ImprovementQueue from '../components/ImprovementQueue';
+import type {
+  ArtifactTemplate,
+  ProfileDetails,
+  ProfileSummary,
+  QualityReport,
+  QueueFilters,
+  UnifiedRecommendation,
+} from '../types';
 
 type PreviewKind = 'template' | 'artifact';
 type ExportStatus = '' | 'markdown' | 'docx';
@@ -39,6 +48,48 @@ export default function ArtifactWorkspacePage() {
   const [exporting, setExporting] = useState<ExportStatus>('');
   const [errorMessage, setErrorMessage] = useState('');
   const [profileError, setProfileError] = useState('');
+
+  const [qualityReport, setQualityReport] = useState<QualityReport | null>(null);
+  const [improvementQueue, setImprovementQueue] = useState<UnifiedRecommendation[]>([]);
+  const [queueFilters, setQueueFilters] = useState<QueueFilters>({
+    priority: '',
+    resolutionType: '',
+  });
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthError, setHealthError] = useState('');
+
+  const loadAnalysis = async (profileId: string, filters?: QueueFilters) => {
+    const activeFilters = filters ?? queueFilters;
+    setHealthLoading(true);
+    setHealthError('');
+    try {
+      const service = ProfileService.getInstance();
+      const [report, queue] = await Promise.all([
+        service.getQualityReport(profileId),
+        service.getImprovementQueue(profileId, {
+          priority: activeFilters.priority || undefined,
+          resolutionType: activeFilters.resolutionType || undefined,
+        }),
+      ]);
+      setQualityReport(report);
+      setImprovementQueue(queue);
+    } catch (error) {
+      setHealthError(error instanceof Error ? error.message : 'Failed to load profile analysis');
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
+  const handleFilterChange = (filters: QueueFilters) => {
+    setQueueFilters(filters);
+    if (!selectedProfileId) return;
+    void loadAnalysis(selectedProfileId, filters);
+  };
+
+  const handleRefreshAnalysis = () => {
+    if (!selectedProfileId) return;
+    void loadAnalysis(selectedProfileId);
+  };
 
   const renderTemplatePreview = (profileId: string, templateId: string) => {
     setSelectedTemplateId(templateId);
@@ -131,6 +182,7 @@ export default function ArtifactWorkspacePage() {
         if (profileList.length > 0) {
           initialProfileId = profileList[0].id;
           setSelectedProfileId(initialProfileId);
+          void loadAnalysis(initialProfileId);
           const initialTemplate =
             templateList.find((t) => t.artifactType === 'CV')?.id ?? templateList[0]?.id;
           if (initialTemplate) {
@@ -156,11 +208,13 @@ export default function ArtifactWorkspacePage() {
         setLoadingProfiles(false);
         setLoadingTemplates(false);
       });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleProfileChange = (profileId: string) => {
     setSelectedProfileId(profileId);
     loadProfile(profileId);
+    void loadAnalysis(profileId);
   };
 
   const handleSelectTemplate = (templateId: string) => {
@@ -230,6 +284,56 @@ export default function ArtifactWorkspacePage() {
     } finally {
       setExporting('');
     }
+  };
+
+  const activeProfile = profiles.find((p) => p.id === selectedProfileId) ?? null;
+  const activeProfileName = profileDetails
+    ? `${profileDetails.person.firstName} ${profileDetails.person.lastName}`.trim()
+    : (activeProfile?.name ?? 'No profile selected');
+  const activeProfileHeadline =
+    profileDetails?.person.headline ?? activeProfile?.headline ?? '';
+
+  const renderHealthContent = () => {
+    if (healthLoading && !qualityReport) {
+      return (
+        <p className="text-sm text-gray-500" data-testid="health-loading">
+          Loading profile analysis...
+        </p>
+      );
+    }
+    if (healthError && !qualityReport) {
+      return (
+        <p className="text-sm text-red-600" data-testid="health-error">{healthError}</p>
+      );
+    }
+    if (qualityReport) {
+      return (
+        <div className="space-y-6">
+          <HealthScore score={qualityReport.health_score} dimensions={qualityReport.dimensions} />
+
+          {qualityReport.findings.length > 0 && (
+            <p className="text-sm text-gray-500">
+              {qualityReport.findings.length} improvement{qualityReport.findings.length !== 1 ? 's' : ''}{' '}
+              suggested across {qualityReport.dimensions.length} health dimensions.
+            </p>
+          )}
+
+          <div>
+            <h4 className="text-sm font-semibold text-gray-900 mb-3">Improvement Queue</h4>
+            <ImprovementQueue
+              recommendations={improvementQueue}
+              filters={queueFilters}
+              onFilterChange={handleFilterChange}
+            />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <p className="text-sm text-gray-400 italic" data-testid="health-empty">
+        No profile selected. Import a profile to see its health score and improvement recommendations.
+      </p>
+    );
   };
 
   const renderTemplateGrid = () => (
@@ -422,6 +526,49 @@ export default function ArtifactWorkspacePage() {
             <div className="border border-amber-200 bg-amber-50 rounded-md p-4 text-sm text-amber-800">{profileError}</div>
           )}
 
+          <div className="bg-white border border-gray-200 rounded-lg px-4 py-3 shadow-sm flex flex-wrap items-center gap-4">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-blue-100 text-blue-800">
+              ACTIVE PROFILE
+            </span>
+            <div className="flex-1 min-w-48">
+              <p className="text-sm font-semibold text-gray-900" data-testid="active-profile-name">{activeProfileName}</p>
+              <p className="text-xs text-gray-500" data-testid="active-profile-headline">{activeProfileHeadline || 'No headline set'}</p>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1" htmlFor="active-profile-select">
+                Switch Profile
+              </label>
+              <select
+                id="active-profile-select"
+                value={selectedProfileId}
+                onChange={(e) => handleProfileChange(e.target.value)}
+                disabled={loadingProfiles}
+                className="p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {loadingProfiles && <option value="">Loading profiles...</option>}
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold text-gray-900">Profile Health</h2>
+              <button
+                onClick={handleRefreshAnalysis}
+                disabled={healthLoading}
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {healthLoading ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
+            {renderHealthContent()}
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left column: profile + templates + artifacts */}
             <div className="space-y-6">
@@ -431,22 +578,6 @@ export default function ArtifactWorkspacePage() {
                   <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
                     READY
                   </span>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Profile</label>
-                  <select
-                    value={selectedProfileId}
-                    onChange={(e) => handleProfileChange(e.target.value)}
-                    disabled={loadingProfiles}
-                    className="w-full p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {loadingProfiles && <option value="">Loading profiles...</option>}
-                    {profiles.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
                 {profileDetails && (
                   <div className="mt-4 border border-gray-200 rounded-md divide-y divide-gray-200">
