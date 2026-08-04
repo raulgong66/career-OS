@@ -60,6 +60,53 @@ const INTEREST_PREVIEW = {
   estimated_health_score: 78,
 };
 
+const QUALITY_REPORT = {
+  health_score: 78,
+  dimensions: [
+    { name: 'achievements', score: 90, weight: 0.4 },
+    { name: 'skills', score: 66, weight: 0.3 },
+  ],
+  findings: [
+    {
+      rule_id: 'quality:achievement-measurability',
+      dimension: 'achievements',
+      element_id: 'exp-1',
+      element_type: 'experience',
+      title: 'Strengthen quantified impact in work experience',
+      reason: '3 experiences lack metrics.',
+      suggested_action: 'Add numbers to outcomes.',
+      resolution_type: 'guided',
+      evidence_refs: [],
+      priority: 'high',
+      estimated_impact: 'high',
+      confidence: 'medium',
+      citations: [],
+    },
+  ],
+  citations: [],
+};
+
+const QUEUE = [
+  {
+    id: 'rec-1',
+    source: 'profile_quality',
+    rule_id: 'quality:achievement-measurability',
+    element_id: 'exp-1',
+    element_type: 'experience',
+    title: 'Strengthen quantified impact in work experience',
+    reason: '3 experiences lack metrics.',
+    suggested_action: 'Add numbers to outcomes.',
+    resolution_type: 'guided',
+    evidence_refs: ['exp-1.details'],
+    priority: 'high',
+    estimated_impact: 'high',
+    confidence: 'medium',
+    jd_match_score: null,
+    context_match_score: null,
+    weighted_total: null,
+  },
+];
+
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -99,6 +146,12 @@ describe('ArtifactWorkspacePage', () => {
       }
       if (method === 'GET' && /\/profiles\/profile-1$/.test(url)) {
         return Promise.resolve(jsonResponse(artifactsCreated ? PROFILE_WITH_ARTIFACT : PROFILE_DETAILS));
+      }
+      if (method === 'GET' && url.endsWith('/profiles/profile-1/quality-report')) {
+        return Promise.resolve(jsonResponse(QUALITY_REPORT));
+      }
+      if (method === 'GET' && url.includes('/profiles/profile-1/improvement-queue')) {
+        return Promise.resolve(jsonResponse(QUEUE));
       }
       if (method === 'POST' && url.endsWith('/artifact-templates/standard_cv/preview')) {
         return previewPending
@@ -195,6 +248,50 @@ describe('ArtifactWorkspacePage', () => {
     renderPage();
 
     expect(await screen.findByText('Rendering preview...')).toBeTruthy();
+  });
+
+  it('shows the active profile context and profile health on load', async () => {
+    renderPage();
+
+    expect(screen.getByText('ACTIVE PROFILE')).toBeTruthy();
+    expect((await screen.findByTestId('active-profile-name')).textContent).toBe('Jane Doe');
+    expect(screen.getByTestId('active-profile-headline').textContent).toBe('AI Engineer');
+
+    const score = await screen.findByTestId('health-score');
+    expect(score.textContent).toContain('78');
+    expect(screen.getByTestId('health-category').textContent).toContain('Solid');
+
+    expect(screen.getByText('Improvement Queue')).toBeTruthy();
+    expect(screen.getAllByText('Strengthen quantified impact in work experience').length).toBeGreaterThan(0);
+    expect(screen.getByText('1 improvement suggested across 2 health dimensions.')).toBeTruthy();
+  });
+
+  it('refresh re-requests the quality report and improvement queue', async () => {
+    renderPage();
+    await screen.findByTestId('health-score');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    await waitFor(() => {
+      const reportCalls = fetchMock.mock.calls.filter((call) =>
+        String(call[0]).endsWith('/profiles/profile-1/quality-report'),
+      );
+      expect(reportCalls.length).toBe(2);
+    });
+  });
+
+  it('filtering the improvement queue reloads recommendations with the filter', async () => {
+    renderPage();
+    await screen.findByTestId('health-score');
+
+    fireEvent.change(screen.getByLabelText('Priority'), { target: { value: 'high' } });
+
+    await waitFor(() => {
+      const queueCalls = fetchMock.mock.calls.filter((call) =>
+        String(call[0]).includes('/profiles/profile-1/improvement-queue'),
+      );
+      expect(queueCalls.some((call) => String(call[0]).includes('priority=high'))).toBe(true);
+    });
   });
 
   it('shows error state when preview fails', async () => {
