@@ -1,4 +1,4 @@
-import type { ArtifactTemplate, ProfileDetails } from '../types';
+import type { ArtifactTemplate, ProfileDetails, TemplatePreview } from '../types';
 
 const BASE = '';
 
@@ -53,6 +53,22 @@ export class ArtifactService {
     if (!response.ok) {
       const body = await response.json().catch(() => null);
       throw new Error(errorDetail(body, 'Failed to create artifact'));
+    }
+    return response.json();
+  }
+
+  async previewTemplate(templateId: string, profileId: string): Promise<TemplatePreview> {
+    const response = await fetch(
+      `${BASE}/artifact-templates/${encodeURIComponent(templateId)}/preview`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_id: profileId }),
+      },
+    );
+    if (!response.ok) {
+      const body = await response.json().catch(() => null);
+      throw new Error(errorDetail(body, 'Failed to render template preview'));
     }
     return response.json();
   }

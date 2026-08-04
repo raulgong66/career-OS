@@ -105,6 +105,12 @@ export interface ArtifactTemplate {
   artifactType: string;
 }
 
+export interface TemplatePreview {
+  markdown: string;
+  source_count: number;
+  estimated_health_score: number | null;
+}
+
 export interface Artifact {
   id: string;
   type: string;

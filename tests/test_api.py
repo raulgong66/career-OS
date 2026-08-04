@@ -1069,6 +1069,147 @@ def test_artifact_templates_endpoint() -> None:
     assert interest["displayName"] == "Interest Letter"
 
 
+PREVIEW_TEST_PROFILE = {
+    "profileVersion": "1.0.0",
+    "person": {
+        "id": "preview-person",
+        "names": [{"value": "Preview Person", "usage": "professional"}],
+        "positioning": {"headline": "AI Platform Engineer"},
+    },
+    "professionalSummaries": [
+        {"id": "sum-1", "label": "Summary", "text": "Deterministic preview engineer."},
+    ],
+    "skills": [
+        {"id": "skill-1", "name": "Python"},
+        {"id": "skill-2", "name": "Kubernetes"},
+    ],
+    "experiences": [
+        {
+            "id": "exp-1",
+            "title": "Platform Engineer",
+            "organizationRefs": [{"id": "org-1", "type": "organization"}],
+            "dateRange": {"start": "2021-01", "end": "2024-12"},
+            "scope": "Built deterministic preview pipelines.",
+        },
+    ],
+    "organizations": [{"id": "org-1", "name": "ACME"}],
+    "projects": [],
+    "education": [],
+    "certifications": [],
+    "achievements": [],
+    "artifacts": [],
+    "targetContexts": [],
+}
+
+
+@pytest.fixture
+def preview_profile() -> str:
+    """Create a clean test profile for template preview tests and return its ID."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    profile_id = "preview-test-profile"
+    profile_path = PROFILES_ROOT / f"{profile_id}.yaml"
+    profile_path.write_text(yaml.safe_dump(PREVIEW_TEST_PROFILE), encoding="utf-8")
+    yield profile_id
+    if profile_path.exists():
+        profile_path.unlink()
+
+
+def _read_raw_profile(profile_id: str) -> str:
+    from api.main import PROFILES_ROOT
+    return (PROFILES_ROOT / f"{profile_id}.yaml").read_text(encoding="utf-8")
+
+
+def test_artifact_template_preview_returns_markdown_and_source_count(preview_profile: str) -> None:
+    """POST /artifact-templates/{id}/preview renders markdown with source_count."""
+    response = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "# Preview Person" in body["markdown"]
+    assert "Python" in body["markdown"]
+    assert body["source_count"] == 4  # summary + 2 skills + experience
+    assert isinstance(body["estimated_health_score"], int)
+
+
+def test_artifact_template_preview_is_deterministic(preview_profile: str) -> None:
+    """Same profile + same template produces identical preview output."""
+    first = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    second = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert first.status_code == 200
+    assert first.json() == second.json()
+
+
+def test_artifact_template_preview_has_no_side_effects(preview_profile: str) -> None:
+    """Preview is render-only: no artifact, no profile mutation, no versions."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    before = _read_raw_profile(preview_profile)
+    response = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 200
+    assert _read_raw_profile(preview_profile) == before
+
+    data = yaml.safe_load(_read_raw_profile(preview_profile))
+    assert data.get("artifacts") == []
+    assert data.get("extensions", {}).get("_versions") is None
+
+
+def test_artifact_template_preview_rejects_unknown_template(preview_profile: str) -> None:
+    """Preview rejects unknown template identifiers with INVALID_TEMPLATE."""
+    response = client.post(
+        "/artifact-templates/not-a-template/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "INVALID_TEMPLATE"
+
+
+def test_artifact_template_preview_reports_missing_profile() -> None:
+    """Preview reports unknown profiles with NOT_FOUND."""
+    response = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": "does-not-exist"},
+    )
+    assert response.status_code == 404
+    assert response.json()["error"] == "NOT_FOUND"
+
+
+def test_artifact_template_preview_interest_letter(preview_profile: str) -> None:
+    """Interest letter template renders a markdown preview through the pipeline."""
+    response = client.post(
+        "/artifact-templates/standard_interest_letter/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "Preview Person" in body["markdown"]
+    assert "Python" in body["markdown"]
+    assert body["source_count"] == 4  # summary + experience + 2 skills
+
+
+def test_standard_cv_template_preview_returns_markdown() -> None:
+    """ArtifactTemplate.preview(profile) renders markdown directly from a dict."""
+    from careeros.artifact_templates import StandardCVTemplate
+
+    markdown = StandardCVTemplate().preview(PREVIEW_TEST_PROFILE)
+    assert isinstance(markdown, str)
+    assert "# Preview Person" in markdown
+    assert "Python" in markdown
+
+
 RESOLVE_TEST_PROFILE = {
     "profileVersion": "1.0.0",
     "person": {"id": "resolve-test-person", "names": [{"value": "Resolve Test", "usage": "professional"}]},
