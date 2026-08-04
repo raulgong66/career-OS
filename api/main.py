@@ -28,6 +28,7 @@ from .runtime_config import (
 )
 
 from careeros.csks.api import CSKS_ROUTER
+from .routes.profile_quality import PROFILE_QUALITY_ROUTER
 
 try:
     runtime_config = validate_runtime_config()
@@ -76,6 +77,7 @@ logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(messag
 
 app = FastAPI(title="CareerOS API", version=BACKEND_VERSION)
 app.include_router(CSKS_ROUTER)
+app.include_router(PROFILE_QUALITY_ROUTER)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
