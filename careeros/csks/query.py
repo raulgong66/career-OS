@@ -75,8 +75,8 @@ class CSKSQueryEngine:
         quoted = re.findall(r'"([^"]+)"', question)
         candidates = list(quoted)
 
-        # CamelCase identifiers (e.g. InterviewEngine, ProfileLoader)
-        candidates += re.findall(r'\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)*\b', question)
+        # CamelCase identifiers (e.g. InterviewEngine, ProfileLoader, CareerOS)
+        candidates += re.findall(r'\b[A-Z][a-z0-9]+(?:[A-Z]+[a-z0-9]*)*\b', question)
 
         # Acronym + number identifiers (e.g. ADR-008, ADR 008, ADR008)
         candidates += re.findall(r'\b[A-Z]{2,}[- ]?\d+\b', question)

@@ -43,11 +43,18 @@ def test_builder_indexes_expected_entities(built_graph: KnowledgeGraph) -> None:
     assert "component.careeros.profile_loader.ProfileLoader" in node_ids
     assert "rule.total_years_experience" in node_ids
     assert "generator.markdown" in node_ids
+    assert "domain.careeros" in node_ids
     assert "domain.profile_management" in node_ids
     assert "adr.001" in node_ids
     assert "schema.skill" in node_ids
     assert "api.get.profiles" in node_ids
     assert "cli.version" in node_ids
+
+
+def test_builder_indexes_root_domain(built_graph: KnowledgeGraph) -> None:
+    node = built_graph.nodes["domain.careeros"]
+    assert node.type == "domain"
+    assert node.label == "CareerOS"
 
 
 def test_builder_adds_domain_edges(built_graph: KnowledgeGraph) -> None:
@@ -58,6 +65,16 @@ def test_builder_adds_domain_edges(built_graph: KnowledgeGraph) -> None:
     }
     assert ("domain.profile_management", "domain.schema_foundation") in edges
     assert ("domain.knowledge_graph", "domain.profile_management") in edges
+
+
+def test_builder_adds_root_domain_edges(built_graph: KnowledgeGraph) -> None:
+    edges = {
+        (e.source_id, e.target_id)
+        for e in built_graph.edges
+        if e.properties.get("type") == "domain_dependency"
+    }
+    assert ("domain.careeros", "domain.profile_management") in edges
+    assert ("domain.careeros", "domain.schema_foundation") in edges
 
 
 def test_builder_adds_import_edges(built_graph: KnowledgeGraph) -> None:

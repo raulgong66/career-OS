@@ -139,6 +139,12 @@ def csks_sample_repo(tmp_path: Path) -> Path:
         "\n"
         "## Domains\n"
         "\n"
+        "### 0. CareerOS\n"
+        "\n"
+        "| Aspect | Description |\n"
+        "| --- | --- |\n"
+        "| **Purpose** | Root platform domain that owns the CareerOS modules. |\n"
+        "\n"
         "### 1. Profile Management\n"
         "Manages the canonical profile.\n"
         "\n"
@@ -150,6 +156,8 @@ def csks_sample_repo(tmp_path: Path) -> Path:
         "\n"
         "```mermaid\n"
         "graph LR\n"
+        '  CareerOS["CareerOS<br/>platform root"] --> Profile["Profile Management"]\n'
+        '  CareerOS["CareerOS<br/>platform root"] --> Schema["Schema Foundation"]\n'
         '  Profile["Profile Management"] --> Schema["Schema Foundation"]\n'
         '  KG["Knowledge Graph"] --> Profile["Profile Management"]\n'
         "```\n"

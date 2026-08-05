@@ -44,6 +44,23 @@ def test_entity_lookup_unknown(engine: CSKSQueryEngine) -> None:
     assert "Could not find entity" in result.answer
 
 
+def test_entity_lookup_careeros(engine: CSKSQueryEngine) -> None:
+    result = engine.query("What is CareerOS?")
+    assert result.query_type == "entity_lookup"
+    assert "domain.careeros" in result.matched_entities
+    assert "Domain: CareerOS (domain.careeros)" in result.answer
+    assert "Purpose:" in result.answer
+    assert "Source: docs/architecture/02-domain-map.md" in result.answer
+    assert "domain.profile_management" in result.answer
+
+
+def test_resolve_target_careeros_is_root_domain(engine: CSKSQueryEngine) -> None:
+    node = engine._resolve_target("What is CareerOS?")
+    assert node is not None
+    assert node.type == "domain"
+    assert node.id == "domain.careeros"
+
+
 def test_entity_lookup_adr_hyphen(engine: CSKSQueryEngine) -> None:
     result = engine.query("What is ADR-001?")
     assert result.query_type == "entity_lookup"

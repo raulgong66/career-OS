@@ -2,6 +2,14 @@
 
 ## Current Domains
 
+### 0. CareerOS
+
+| Aspect | Description |
+|---|---|
+| **Purpose** | CareerOS is the Professional Platform for the AI Era: a Python 3.11+ command-line toolkit and REST API for managing professional career data. It ingests source documents (DOCX), extracts structured profile data (optionally via LLM), validates against a JSON Schema-defined canonical profile, runs deterministic reasoning rules over the data, and generates career artifacts (CVs, cover letters) in Markdown and DOCX formats. It is organized as a layered system with a Core library (`careeros/`), Platform Beta modules (AI Tailoring, Interview Intelligence), and delivery apps (`careeros_cli/`, `api/`, `frontend/`). Core engines: `ReasoningEngine` (14 deterministic rules), `ProfileQualityEngine`, `ResolutionEngine`, `CVOptimizer`, and CSKS (repository knowledge search and query). |
+| **Responsibilities** | Own all domains below; two top-level application entry points (`careeros-cli`, `careeros-api`) share the common core library |
+| **Package** | `careeros/` |
+
 ### 1. Schema Foundation
 
 | Aspect | Description |
@@ -96,6 +104,8 @@ graph LR
     Gen["Artifact Generation"]
     Opt["CV Optimization"]
     Acq["Acquisition"]
+    CareerOS["CareerOS<br/>platform root"]
+    Delivery["Delivery Interfaces"]
 
     Profile --> Schema
     KG --> Profile
@@ -106,6 +116,13 @@ graph LR
     Opt --> Profile
     Opt --> Gen
     Acq --> Schema
+    CareerOS --> Schema
+    CareerOS --> Profile
+    CareerOS --> KG
+    CareerOS --> Reasoning
+    CareerOS --> Gen
+    CareerOS --> Opt
+    CareerOS --> Delivery
 ```
 
 ## Possible Future Domains

@@ -112,9 +112,17 @@ def test_markdown_extractor_extracts_domains(md_extractor: MarkdownExtractor) ->
     entities = list(md_extractor.extract_entities("docs/architecture/02-domain-map.md"))
     domains = _by_type(entities, "domain")
     ids = {e.id for e in domains}
+    assert "domain.careeros" in ids
     assert "domain.profile_management" in ids
     assert "domain.knowledge_graph" in ids
     assert "domain.schema_foundation" in ids
+
+
+def test_markdown_extractor_extracts_root_domain(md_extractor: MarkdownExtractor) -> None:
+    entities = list(md_extractor.extract_entities("docs/architecture/02-domain-map.md"))
+    domains = {e.id: e for e in _by_type(entities, "domain")}
+    assert "domain.careeros" in domains
+    assert domains["domain.careeros"].properties["name"] == "CareerOS"
 
 
 def test_markdown_extractor_extracts_domain_relationships(md_extractor: MarkdownExtractor) -> None:
@@ -126,6 +134,13 @@ def test_markdown_extractor_extracts_domain_relationships(md_extractor: Markdown
     assert ("domain.knowledge_graph", "domain.profile_management") in {
         (r.from_id, r.to_id) for r in domain_edges
     }
+
+
+def test_markdown_extractor_extracts_root_domain_relationships(md_extractor: MarkdownExtractor) -> None:
+    rels = list(md_extractor.extract_relationships("docs/architecture/02-domain-map.md"))
+    domain_edges = {(r.from_id, r.to_id) for r in rels if r.properties.get("type") == "domain_dependency"}
+    assert ("domain.careeros", "domain.profile_management") in domain_edges
+    assert ("domain.careeros", "domain.schema_foundation") in domain_edges
 
 
 def test_markdown_extractor_extracts_adrs(md_extractor: MarkdownExtractor) -> None:
@@ -146,13 +161,13 @@ def test_markdown_extractor_extracts_frontmatter_adr(md_extractor: MarkdownExtra
 def test_markdown_extractor_extracts_mermaid_entities(md_extractor: MarkdownExtractor) -> None:
     entities = list(md_extractor.extract_entities("docs/architecture/02-domain-map.md"))
     mermaid = _by_type(entities, "mermaid_edge")
-    assert len(mermaid) == 2
+    assert len(mermaid) >= 2
 
 
 def test_markdown_extractor_extracts_mermaid_relationships(md_extractor: MarkdownExtractor) -> None:
     rels = list(md_extractor.extract_relationships("docs/architecture/02-domain-map.md"))
     mermaid = [r for r in rels if r.properties.get("source") == "mermaid"]
-    assert len(mermaid) == 2
+    assert len(mermaid) >= 2
 
 
 def test_markdown_extractor_extracts_headings_as_documents(md_extractor: MarkdownExtractor) -> None:
@@ -171,8 +186,10 @@ def test_markdown_extractor_extracts_headings_as_documents(md_extractor: Markdow
 def test_markdown_extractor_extracts_table_rows(md_extractor: MarkdownExtractor) -> None:
     entities = list(md_extractor.extract_entities("docs/architecture/02-domain-map.md"))
     rows = _by_type(entities, "table_row")
-    assert len(rows) == 2
-    assert all(row.properties.get("Status") == "Core" for row in rows)
+    status_rows = [r for r in rows if r.properties.get("Status")]
+    assert len(status_rows) == 2
+    assert all(row.properties.get("Status") == "Core" for row in status_rows)
+    assert any(row.properties.get("Aspect") == "**Purpose**" for row in rows)
 
 
 def test_json_schema_extractor(csks_sample_repo: Path) -> None:

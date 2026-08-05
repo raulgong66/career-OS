@@ -89,6 +89,17 @@ def test_cli_query_end_to_end(csks_sample_repo: Path) -> None:
     assert "domain.profile_management" in result.output
 
 
+def test_cli_query_what_is_careeros(csks_sample_repo: Path) -> None:
+    runner = CliRunner()
+    result = runner.invoke(
+        CSKS_APP,
+        ["query", "What is CareerOS?", "--repo-root", str(csks_sample_repo)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Domain: CareerOS (domain.careeros)" in result.output
+    assert "domain.profile_management" in result.output
+
+
 def test_cli_default_repo_root_is_repo_root() -> None:
     from careeros.csks.cli import _default_repo_root
 
