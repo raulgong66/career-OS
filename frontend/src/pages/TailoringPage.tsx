@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TailoringService } from '../services/TailoringService';
 import { DocumentService } from '../services/DocumentService';
 import { ProfileService } from '../services/ProfileService';
@@ -317,6 +318,7 @@ function renderMissingChecklist(
 }
 
 export default function TailoringPage() {
+  const navigate = useNavigate();
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [selectedProfile, setSelectedProfile] = useState<ProfileDetails | null>(null);
@@ -1121,9 +1123,17 @@ export default function TailoringPage() {
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-2xl font-bold text-gray-900">CareerOS Platform Alpha</h1>
-        <p className="text-sm text-gray-600 mt-1">AI-Powered Document Tailoring</p>
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">CareerOS Platform Alpha</h1>
+          <p className="text-sm text-gray-600 mt-1">AI-Powered Document Tailoring</p>
+        </div>
+        <button
+          onClick={() => navigate('/')}
+          className="text-sm font-medium text-blue-600 hover:text-blue-800"
+        >
+          ← Back to Home
+        </button>
       </header>
 
       <div className="flex-1 overflow-hidden">
