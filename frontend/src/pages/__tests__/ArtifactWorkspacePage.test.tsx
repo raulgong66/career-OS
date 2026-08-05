@@ -340,7 +340,64 @@ describe('ArtifactWorkspacePage', () => {
 
     renderPage();
 
-    expect(await screen.findByText('Preview exploded')).toBeTruthy();
+    expect(await screen.findByText('Preview exploded (HTTP 500)')).toBeTruthy();
+    expect(screen.getByText('Try again')).toBeTruthy();
+  });
+
+  it('shows a friendly error (with status) when the backend returns a plain-text 500', async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'GET' && url.endsWith('/artifact-templates')) {
+        return Promise.resolve(jsonResponse(TEMPLATES));
+      }
+      if (method === 'GET' && url.endsWith('/profiles')) {
+        return Promise.resolve(jsonResponse(PROFILES));
+      }
+      if (method === 'GET' && /\/profiles\/profile-1$/.test(url)) {
+        return Promise.resolve(jsonResponse(PROFILE_DETAILS));
+      }
+      if (method === 'GET' && url.endsWith('/profiles/profile-1/quality-report')) {
+        return Promise.resolve(textResponse('Internal Server Error', 500));
+      }
+      if (method === 'GET' && url.includes('/profiles/profile-1/improvement-queue')) {
+        return Promise.resolve(jsonResponse([]));
+      }
+      if (method === 'POST' && url.endsWith('/artifact-templates/standard_cv/preview')) {
+        return Promise.resolve(jsonResponse(PREVIEW));
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unexpected fetch: ${method} ${url}` }, 500));
+    });
+
+    renderPage();
+
+    expect(await screen.findByTestId('health-error')).toBeTruthy();
+    expect(screen.getByTestId('health-error').textContent).toContain('Internal Server Error');
+    expect(screen.getByTestId('health-error').textContent).toContain('(HTTP 500)');
+  });
+
+  it('shows a graceful error when the backend returns non-JSON content on a success status', async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (method === 'GET' && url.endsWith('/artifact-templates')) {
+        return Promise.resolve(jsonResponse(TEMPLATES));
+      }
+      if (method === 'GET' && url.endsWith('/profiles')) {
+        return Promise.resolve(jsonResponse(PROFILES));
+      }
+      if (method === 'GET' && /\/profiles\/profile-1$/.test(url)) {
+        return Promise.resolve(jsonResponse(PROFILE_DETAILS));
+      }
+      if (method === 'POST' && url.endsWith('/artifact-templates/standard_cv/preview')) {
+        return Promise.resolve(textResponse('This is not JSON at all', 200));
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unexpected fetch: ${method} ${url}` }, 500));
+    });
+
+    renderPage();
+
+    expect(await screen.findByText('Invalid response from server (expected JSON).')).toBeTruthy();
     expect(screen.getByText('Try again')).toBeTruthy();
   });
 
@@ -484,6 +541,7 @@ describe('ArtifactWorkspacePage', () => {
     function immediateFetchMock(opts: {
       profile2Gate?: ReturnType<typeof deferredResponse>;
       firstPreviewGate?: ReturnType<typeof deferredResponse>;
+      profile2QualityError?: string;
     }) {
       let firstPreviewCall = true;
       return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -511,6 +569,9 @@ describe('ArtifactWorkspacePage', () => {
           return Promise.resolve(jsonResponse(QUEUE));
         }
         if (method === 'GET' && url.endsWith('/profiles/profile-2/quality-report')) {
+          if (opts.profile2QualityError) {
+            return Promise.resolve(jsonResponse({ detail: opts.profile2QualityError }, 500));
+          }
           return Promise.resolve(jsonResponse(QUALITY_REPORT_2));
         }
         if (method === 'GET' && url.includes('/profiles/profile-2/improvement-queue')) {
@@ -586,6 +647,61 @@ describe('ArtifactWorkspacePage', () => {
 
       expect(screen.getByText('Go')).toBeTruthy();
       expect(screen.queryByText('Python')).toBeNull();
+    });
+
+    it('updates profile health after switching to another imported profile', async () => {
+      vi.stubGlobal('fetch', immediateFetchMock({}));
+
+      renderPage();
+      await screen.findByTestId('health-score');
+      expect(screen.getByTestId('health-score').textContent).toContain('78');
+
+      fireEvent.change(screen.getByLabelText('Switch Profile'), { target: { value: 'profile-2' } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('active-profile-name').textContent).toBe('Bob Smith');
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('health-score').textContent).toContain('55');
+      });
+    });
+
+    it('keeps profile health in sync when switching back and forth between profiles', async () => {
+      vi.stubGlobal('fetch', immediateFetchMock({}));
+
+      renderPage();
+      await screen.findByTestId('active-profile-name');
+
+      fireEvent.change(screen.getByLabelText('Switch Profile'), { target: { value: 'profile-2' } });
+      await waitFor(() => {
+        expect(screen.getByTestId('active-profile-name').textContent).toBe('Bob Smith');
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('health-score').textContent).toContain('55');
+      });
+
+      fireEvent.change(screen.getByLabelText('Switch Profile'), { target: { value: 'profile-1' } });
+      await waitFor(() => {
+        expect(screen.getByTestId('active-profile-name').textContent).toBe('Jane Doe');
+      });
+      await waitFor(() => {
+        expect(screen.getByTestId('health-score').textContent).toContain('78');
+      });
+    });
+
+    it('shows a health error for the newly selected profile when its quality report fails', async () => {
+      vi.stubGlobal('fetch', immediateFetchMock({ profile2QualityError: 'Quality analysis failed' }));
+
+      renderPage();
+      await screen.findByTestId('health-score');
+
+      fireEvent.change(screen.getByLabelText('Switch Profile'), { target: { value: 'profile-2' } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('active-profile-name').textContent).toBe('Bob Smith');
+      });
+      expect(await screen.findByTestId('health-error')).toBeTruthy();
+      expect(screen.getByTestId('health-error').textContent).toContain('Quality analysis failed (HTTP 500)');
     });
   });
 });
