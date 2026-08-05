@@ -355,6 +355,51 @@ def test_unified_recommendations_optimization_merge(sample_profile: dict[str, An
     assert extra.resolution_type == "none"
 
 
+def test_duplicate_entity_ids_do_not_crash_health_analysis() -> None:
+    """Regression: repeated education ids raised a ``Duplicate node ID``
+    ValueError that surfaced as an HTTP 500 on the quality-report endpoint.
+    """
+    from careeros.profile_quality.cli import profile_health_data
+
+    profile = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-dup", "names": [{"value": "Jane Doe"}]},
+        "professionalSummaries": [],
+        "experiences": [
+            {
+                "id": "exp-1",
+                "title": "Engineer",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2020-01", "isCurrent": True},
+            }
+        ],
+        "organizations": [{"id": "org-1", "name": "Acme"}],
+        "projects": [],
+        "skills": [],
+        "achievements": [],
+        "evidence": [],
+        "education": [
+            {
+                "id": "edu-dup",
+                "program": "Bachelor's in commerce",
+                "institutionRef": {"id": "org-uni", "type": "organization"},
+                "dateRange": {"start": "1998-09", "end": "2002-06"},
+            },
+            {
+                "id": "edu-dup",
+                "program": "Bachelor's in commerce",
+                "institutionRef": {"id": "org-uni", "type": "organization"},
+                "dateRange": {"start": "1998-08", "end": "2016-06"},
+            },
+        ],
+        "certifications": [],
+    }
+    report = run_profile_quality(profile)
+    assert report.health_score is not None
+    data = profile_health_data(profile)
+    assert "health_score" in data
+
+
 def test_no_parallel_knowledge_graph(sample_profile: dict[str, Any]) -> None:
     """AC 1.11: the facade builds the knowledge graph exactly once per run."""
     calls: list[Any] = []

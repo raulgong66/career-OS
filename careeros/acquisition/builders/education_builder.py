@@ -51,7 +51,29 @@ class EducationBuilder(BaseBuilder):
         items: list,
         context: BuilderContext,
     ) -> list[dict[str, Any]]:
-        return [self._build_one(edu) for edu in items]
+        used_ids: set[str] = set()
+        entries: list[dict[str, Any]] = []
+        for edu in items:
+            entry = self._build_one(edu)
+            entry["id"] = self._unique_id(entry["id"], used_ids)
+            entries.append(entry)
+        return entries
+
+    @staticmethod
+    def _unique_id(base_id: str, used_ids: set[str]) -> str:
+        """Return ``base_id`` if unused, otherwise a suffixed unique variant.
+
+        The ID is derived from institution + degree only, so two education
+        entries with the same school and degree (for example different date
+        ranges) would otherwise collide.
+        """
+        candidate = base_id
+        suffix = 2
+        while candidate in used_ids:
+            candidate = f"{base_id}-{suffix}"
+            suffix += 1
+        used_ids.add(candidate)
+        return candidate
 
     def _normalize_one(self, edu: EducationData) -> EducationData:
         institution = edu.institution.strip()

@@ -190,6 +190,41 @@ def test_graph_duplicate_node_raises() -> None:
         assert "Duplicate" in str(e)
 
 
+def test_builder_dedupes_duplicate_node_ids() -> None:
+    """A profile listing the same entity id twice must build a valid graph.
+
+    Regression: repeated education entries (same school/degree, different
+    dates) produced duplicate node ids that crashed health analysis with a
+    ``Duplicate node ID`` ValueError.
+    """
+    profile = _minimal_profile()
+    profile["education"] = [
+        {
+            "id": "edu-dup",
+            "program": "B.S.",
+            "institutionRef": {"id": "org-uni", "type": "organization"},
+        },
+        {
+            "id": "edu-dup",
+            "program": "B.S.",
+            "institutionRef": {"id": "org-uni", "type": "organization"},
+        },
+    ]
+    profile["organizations"] = [{"id": "org-uni", "name": "University"}]
+    g = KnowledgeGraphBuilder().build(profile)
+    assert g.node_count == 3  # person + one education (deduplicated) + org
+    assert "edu-dup" in g.nodes
+    assert len(g.education()) == 1
+    assert g.nodes["edu-dup"].type == "education"
+
+
+def test_builder_dedupe_keeps_first_occurrence() -> None:
+    profile = _minimal_profile()
+    profile["experiences"] = [{"id": "person-raul", "title": "collision"}]
+    g = KnowledgeGraphBuilder().build(profile)
+    assert g.nodes["person-raul"].type == "person"
+
+
 # ---------------------------------------------------------------------------
 # Builder — minimal profile
 # ---------------------------------------------------------------------------

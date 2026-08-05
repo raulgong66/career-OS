@@ -570,6 +570,56 @@ def test_education_build_with_full_fields() -> None:
     assert entry["dateRange"]["isCurrent"] is False
 
 
+def test_education_build_generates_unique_ids_for_collisions() -> None:
+    """Same institution + degree with different dates must yield unique IDs.
+
+    Regression: a repeated degree previously produced the same id for both
+    entries, which crashed knowledge-graph health analysis with a duplicate
+    node ID error.
+    """
+    from careeros.acquisition.builders import BuilderContext
+
+    builder = EducationBuilder()
+    items = [
+        EducationData(
+            institution="Jiwaji University",
+            degree="Bachelor's in commerce",
+            start_date="1998-09",
+            end_date="2002-06",
+        ),
+        EducationData(
+            institution="Jiwaji University",
+            degree="Bachelor's in commerce",
+            start_date="1998-08",
+            end_date="2016-06",
+        ),
+    ]
+    result = builder.build_many(items, BuilderContext())
+    ids = [entry["id"] for entry in result]
+    assert len(ids) == len(set(ids)), f"Expected unique ids, got {ids}"
+    assert ids[0] == "edu-jiwaji-university-bachelor's-in-commerce"
+    assert ids[1] == "edu-jiwaji-university-bachelor's-in-commerce-2"
+
+
+def test_education_build_three_collisions_suffix_incrementally() -> None:
+    from careeros.acquisition.builders import BuilderContext
+
+    builder = EducationBuilder()
+    items = [
+        EducationData(institution="Jiwaji University", degree="Bachelor's in commerce"),
+        EducationData(institution="Jiwaji University", degree="Bachelor's in commerce"),
+        EducationData(institution="Jiwaji University", degree="Bachelor's in commerce"),
+    ]
+    result = builder.build_many(items, BuilderContext())
+    ids = [entry["id"] for entry in result]
+    assert len(ids) == len(set(ids))
+    assert ids == [
+        "edu-jiwaji-university-bachelor's-in-commerce",
+        "edu-jiwaji-university-bachelor's-in-commerce-2",
+        "edu-jiwaji-university-bachelor's-in-commerce-3",
+    ]
+
+
 def test_education_in_built_profile() -> None:
     person = PersonData(id="p1", first_name="A", last_name="B", full_name="A B")
     education = [EducationData(institution="MIT", degree="B.S.")]
