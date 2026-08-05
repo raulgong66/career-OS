@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ProfileDetails, ResolutionPayload, UnifiedRecommendation } from '../types';
 import {
   buildResolutionPayload,
@@ -21,6 +21,7 @@ export default function ResolutionPanel({
   onApply,
   onClose,
 }: ResolutionPanelProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const triggeredRule = RULE_ID_TO_TRIGGERED_RULE[rec.rule_id];
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
   const [selectedExperienceIds, setSelectedExperienceIds] = useState<Set<string>>(new Set());
@@ -29,6 +30,7 @@ export default function ResolutionPanel({
   const [achievementStatement, setAchievementStatement] = useState('');
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState('');
+  const [highlighted, setHighlighted] = useState(false);
 
   const toggleInSet = (set: Set<string>, setter: (next: Set<string>) => void) => (value: string) => {
     const next = new Set(set);
@@ -43,6 +45,21 @@ export default function ResolutionPanel({
   const toggleSkill = toggleInSet(selectedSkillIds, setSelectedSkillIds);
   const toggleExperience = toggleInSet(selectedExperienceIds, setSelectedExperienceIds);
   const toggleTechnology = toggleInSet(selectedTechnologies, setSelectedTechnologies);
+
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+    const fullyVisible = rect.top >= 0 && rect.bottom <= viewportHeight;
+    if (!fullyVisible) {
+      node.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    }
+    node.focus?.({ preventScroll: true });
+    setHighlighted(true);
+    const timer = setTimeout(() => setHighlighted(false), 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const filteredTechnologies = technologies.filter((keyword) =>
     keyword.toLowerCase().includes(techQuery.trim().toLowerCase()),
@@ -78,8 +95,14 @@ export default function ResolutionPanel({
 
   return (
     <div
-      className="border border-emerald-200 bg-emerald-50 rounded-lg p-4"
+      className={`border rounded-lg p-4 transition-shadow duration-500 ${
+        highlighted
+          ? 'border-emerald-400 bg-emerald-50 shadow-lg ring-2 ring-emerald-300'
+          : 'border-emerald-200 bg-emerald-50 shadow-none'
+      }`}
       data-testid="resolution-panel"
+      tabIndex={-1}
+      ref={rootRef}
     >
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-emerald-900">Resolve recommendation</p>
