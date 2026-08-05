@@ -399,6 +399,7 @@ export default function ArtifactWorkspacePage() {
           {selectedRecommendation && profileDetails && (
             <div className="mt-4">
               <ResolutionPanel
+                key={selectedRecommendation.id}
                 rec={selectedRecommendation}
                 profile={profileDetails}
                 technologies={technologies}
