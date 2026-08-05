@@ -108,7 +108,7 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#F5F9FF] flex flex-col">
       {/* Hero */}
-      <header className="relative overflow-hidden bg-gradient-to-b from-primary-900 via-primary-600 to-[#F5F9FF] px-6 pt-10 pb-24">
+      <header className="relative overflow-hidden bg-gradient-to-b from-primary-900 via-primary-600 to-[#F5F9FF] px-6 xl:px-10 2xl:px-16 pt-10 pb-24">
         <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.14),transparent_70%)] pointer-events-none" aria-hidden="true" />
         <div className="absolute top-1/3 right-1/4 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.10),transparent_70%)] pointer-events-none" aria-hidden="true" />
         <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-[radial-gradient(circle_at_center,rgba(147,197,253,0.18),transparent_70%)] pointer-events-none" aria-hidden="true" />
@@ -120,7 +120,7 @@ export default function Home() {
           <div className="absolute left-1/2 top-1/2 h-[7rem] w-[7rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(147,197,253,0.45),transparent_70%)]" />
         </div>
 
-        <div className="relative z-10 max-w-7xl mx-auto">
+        <div className="relative z-10 max-w-none">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-10 animate-[fade-in-up_0.6s_ease-out_both]">
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold text-white bg-white/15 backdrop-blur-sm border border-white/25">
               Platform Alpha
@@ -140,8 +140,8 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="flex-1 px-6">
-        <div className="max-w-7xl mx-auto -mt-16 space-y-24">
+      <main className="flex-1 px-6 xl:px-10 2xl:px-16">
+        <div className="max-w-none -mt-16 space-y-24">
           {/* Primary Modules */}
           <section>
             <h2 className="text-2xl font-bold text-gray-900 mb-8">Primary Modules</h2>
@@ -149,7 +149,7 @@ export default function Home() {
               {primaryModules.map((module) => (
                 <div
                   key={module.title}
-                  className="bg-white rounded-xl border border-blue-100 shadow-sm p-9 flex flex-col transition-all duration-300 ease-out hover:shadow-xl hover:shadow-blue-900/10 hover:border-blue-200 hover:-translate-y-1"
+                  className="w-full bg-white rounded-xl border border-blue-100 shadow-sm p-9 flex flex-col transition-all duration-300 ease-out hover:shadow-xl hover:shadow-blue-900/10 hover:border-blue-200 hover:-translate-y-1"
                 >
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-2xl font-bold text-gray-900">{module.title}</h3>
@@ -209,7 +209,7 @@ export default function Home() {
               {comingNextModules.map((module) => (
                 <div
                   key={module}
-                  className="bg-white/50 backdrop-blur-sm border border-dashed border-blue-200 rounded-xl p-6"
+                  className="w-full bg-white/50 backdrop-blur-sm border border-dashed border-blue-200 rounded-xl p-6"
                 >
                   <h3 className="text-lg font-semibold text-gray-700 mb-3">{module}</h3>
                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100/70 text-blue-600">
@@ -224,7 +224,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="bg-primary-900 text-blue-100">
-        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div className="max-w-none px-6 xl:px-10 2xl:px-16 py-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <p className="text-xs sm:text-sm text-blue-200 text-left">
             Built on deterministic principles • Powered by AI • Explainable • Evidence-based • User in control
           </p>
