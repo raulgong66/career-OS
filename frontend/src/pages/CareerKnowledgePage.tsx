@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CareerKnowledgeService } from '../services/CareerKnowledgeService';
+import type { KnowledgeAnswer } from '../types';
 
 const exampleQuestions = [
   'What is CareerOS?',
@@ -21,6 +23,29 @@ const knowledgeTopics = [
 export default function CareerKnowledgePage() {
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  const [result, setResult] = useState<KnowledgeAnswer | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleAsk = async () => {
+    const question = query.trim();
+    if (!question || loading) return;
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const service = CareerKnowledgeService.getInstance();
+      const answer = await service.ask(question);
+      setResult(answer);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to query Career Knowledge');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confidencePercent = result ? Math.round(result.confidence * 100) : 0;
 
   return (
     <div className="min-h-screen bg-blue-50 flex flex-col">
@@ -56,11 +81,16 @@ export default function CareerKnowledgePage() {
               />
               <button
                 type="button"
-                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md transition-colors duration-200"
+                onClick={handleAsk}
+                disabled={loading || !query.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-6 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Ask
               </button>
             </div>
+            {loading && (
+              <p className="mt-3 text-sm text-blue-600">Asking CareerOS...</p>
+            )}
 
             <div className="mt-6">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Try asking</p>
@@ -84,28 +114,74 @@ export default function CareerKnowledgePage() {
             <h3 className="text-lg font-semibold text-gray-900">Knowledge Explorer</h3>
             <div className="mt-4 flex flex-wrap gap-2">
               {knowledgeTopics.map((topic) => (
-                <span
+                <button
                   key={topic}
-                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-50 text-blue-700 border border-blue-100"
+                  type="button"
+                  onClick={() => setQuery(topic)}
+                  className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 transition-colors duration-200"
                 >
                   {topic}
-                </span>
+                </button>
               ))}
             </div>
           </section>
 
+          {error && (
+            <div
+              className="border border-red-200 bg-red-50 rounded-md p-4 text-sm text-red-700"
+              role="alert"
+            >
+              {error}
+            </div>
+          )}
+
           <section className="bg-white border border-blue-100 rounded-lg p-8 shadow-sm space-y-8">
             <div>
               <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Answer</h4>
-              <p className="mt-2 text-sm text-gray-400">Answer will appear here.</p>
+              {result ? (
+                <p className="mt-2 text-sm text-gray-800 whitespace-pre-wrap">{result.answer}</p>
+              ) : (
+                <p className="mt-2 text-sm text-gray-400">Answer will appear here.</p>
+              )}
             </div>
             <div>
               <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Sources</h4>
-              <p className="mt-2 text-sm text-gray-400">Sources will appear here.</p>
+              {result ? (
+                result.citations.length > 0 ? (
+                  <ul className="mt-2 space-y-2">
+                    {result.citations.map((citation, index) => (
+                      <li key={index} className="text-sm text-gray-700">
+                        <span className="font-mono text-blue-700">
+                          {citation.file}:{citation.line_start}
+                        </span>
+                        {citation.text && (
+                          <span className="ml-2 text-gray-500">{citation.text}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-400">No sources returned.</p>
+                )
+              ) : (
+                <p className="mt-2 text-sm text-gray-400">Sources will appear here.</p>
+              )}
             </div>
             <div>
               <h4 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Confidence</h4>
-              <p className="mt-2 text-sm text-gray-400">—</p>
+              {result ? (
+                <div className="mt-2">
+                  <p className="text-sm font-semibold text-gray-800">{confidencePercent}%</p>
+                  <div className="mt-2 h-2 w-48 rounded-full bg-blue-100">
+                    <div
+                      className="h-2 rounded-full bg-blue-600"
+                      style={{ width: `${confidencePercent}%` }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-gray-400">—</p>
+              )}
             </div>
           </section>
         </div>
