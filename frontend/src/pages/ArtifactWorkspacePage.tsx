@@ -64,6 +64,9 @@ export default function ArtifactWorkspacePage() {
   const technologiesLoaded = useRef(false);
   const [selectedRecommendation, setSelectedRecommendation] = useState<UnifiedRecommendation | null>(null);
   const [resolutionStatus, setResolutionStatus] = useState('');
+  const activeProfileRef = useRef('');
+
+  const isActiveProfile = (profileId: string) => activeProfileRef.current === profileId;
 
   const loadTechnologies = async () => {
     if (technologiesLoaded.current) return;
@@ -76,6 +79,7 @@ export default function ArtifactWorkspacePage() {
   };
 
   const loadAnalysis = async (profileId: string, filters?: QueueFilters) => {
+    if (!isActiveProfile(profileId)) return;
     const activeFilters = filters ?? queueFilters;
     setHealthLoading(true);
     setHealthError('');
@@ -88,12 +92,14 @@ export default function ArtifactWorkspacePage() {
           resolutionType: activeFilters.resolutionType || undefined,
         }),
       ]);
+      if (!isActiveProfile(profileId)) return;
       setQualityReport(report);
       setImprovementQueue(queue);
     } catch (error) {
+      if (!isActiveProfile(profileId)) return;
       setHealthError(error instanceof Error ? error.message : 'Failed to load profile analysis');
     } finally {
-      setHealthLoading(false);
+      if (isActiveProfile(profileId)) setHealthLoading(false);
     }
   };
 
@@ -121,11 +127,13 @@ export default function ArtifactWorkspacePage() {
     ArtifactService.getInstance()
       .previewTemplate(templateId, profileId)
       .then((result) => {
+        if (!isActiveProfile(profileId)) return;
         setPreviewContent(result.markdown);
         setPreviewSourceCount(result.source_count);
         setPreviewStatus('ready');
       })
       .catch((err) => {
+        if (!isActiveProfile(profileId)) return;
         setPreviewStatus('error');
         setPreviewError(err instanceof Error ? err.message : 'Failed to render template preview');
       });
@@ -143,16 +151,19 @@ export default function ArtifactWorkspacePage() {
     ArtifactService.getInstance()
       .generateMarkdown(profileId, artifactId)
       .then((content) => {
+        if (!isActiveProfile(profileId)) return;
         setPreviewContent(content);
         setPreviewStatus('ready');
       })
       .catch((err) => {
+        if (!isActiveProfile(profileId)) return;
         setPreviewStatus('error');
         setPreviewError(err instanceof Error ? err.message : 'Failed to generate preview');
       });
   };
 
   const loadProfile = (profileId: string) => {
+    if (!isActiveProfile(profileId)) return Promise.resolve();
     setProfileDetails(null);
     setSelectedArtifactId('');
     setPreviewContent('');
@@ -161,6 +172,7 @@ export default function ArtifactWorkspacePage() {
     return ArtifactService.getInstance()
       .getProfile(profileId)
       .then((details) => {
+        if (!isActiveProfile(profileId)) return;
         setProfileDetails(details);
         const initialTemplate =
           templates.find((t) => t.artifactType === 'CV')?.id ?? templates[0]?.id;
@@ -169,6 +181,7 @@ export default function ArtifactWorkspacePage() {
         }
       })
       .catch(() => {
+        if (!isActiveProfile(profileId)) return;
         setProfileError('Failed to load profile details. Please try again.');
       });
   };
@@ -176,7 +189,9 @@ export default function ArtifactWorkspacePage() {
   const loadProfileDetails = (profileId: string) => {
     ArtifactService.getInstance()
       .getProfile(profileId)
-      .then((details) => setProfileDetails(details))
+      .then((details) => {
+        if (isActiveProfile(profileId)) setProfileDetails(details);
+      })
       .catch(() => {});
   };
 
@@ -200,6 +215,7 @@ export default function ArtifactWorkspacePage() {
         if (profileList.length > 0) {
           initialProfileId = profileList[0].id;
           setSelectedProfileId(initialProfileId);
+          activeProfileRef.current = initialProfileId;
           const initialTemplate =
             templateList.find((t) => t.artifactType === 'CV')?.id ?? templateList[0]?.id;
           // Load profile details FIRST, then analysis, to avoid race condition
@@ -222,9 +238,14 @@ export default function ArtifactWorkspacePage() {
   }, []);
 
   const handleProfileChange = async (profileId: string) => {
+    activeProfileRef.current = profileId;
     setSelectedProfileId(profileId);
     setSelectedRecommendation(null);
     setResolutionStatus('');
+    setQualityReport(null);
+    setImprovementQueue([]);
+    setHealthError('');
+    setHealthLoading(true);
     await loadProfile(profileId);
     await loadAnalysis(profileId);
   };
@@ -297,51 +318,60 @@ export default function ArtifactWorkspacePage() {
 
   const handleGenerateResume = (templateId: string) => {
     if (!selectedProfileId) return;
+    const profileId = selectedProfileId;
     setGenerating(true);
     setErrorMessage('');
     ArtifactService.getInstance()
-      .createArtifact(selectedProfileId, templateId)
+      .createArtifact(profileId, templateId)
       .then((result) => {
+        if (!isActiveProfile(profileId)) return;
         setSelectedArtifactId(result.artifactId);
         setSelectedTemplateId('');
         setPreviewKind('artifact');
         setPreviewContent('');
         setPreviewStatus('loading');
-        return ArtifactService.getInstance().generateMarkdown(selectedProfileId, result.artifactId);
+        return ArtifactService.getInstance().generateMarkdown(profileId, result.artifactId);
       })
       .then((content) => {
+        if (!isActiveProfile(profileId) || typeof content !== 'string') return;
         setPreviewContent(content);
         setPreviewStatus('ready');
       })
       .catch((err) => {
+        if (!isActiveProfile(profileId)) return;
         setPreviewStatus('error');
         setPreviewError(err instanceof Error ? err.message : 'Failed to generate resume');
       })
       .finally(() => {
         setGenerating(false);
-        loadProfileDetails(selectedProfileId);
+        loadProfileDetails(profileId);
       });
   };
 
   const handleExport = async (format: 'markdown' | 'docx') => {
     if (!selectedProfileId || !selectedArtifactId) return;
+    const profileId = selectedProfileId;
+    const artifactId = selectedArtifactId;
     setExporting(format);
     setErrorMessage('');
     try {
-      const artifact = profileDetails?.artifacts.find((a) => a.id === selectedArtifactId);
-      const baseName = slugify(artifact?.name ?? artifact?.type ?? selectedArtifactId);
+      const artifact = profileDetails?.artifacts.find((a) => a.id === artifactId);
+      const baseName = slugify(artifact?.name ?? artifact?.type ?? artifactId);
       const service = ArtifactService.getInstance();
       if (format === 'markdown') {
-        const content = await service.generateMarkdown(selectedProfileId, selectedArtifactId);
+        const content = await service.generateMarkdown(profileId, artifactId);
+        if (!isActiveProfile(profileId)) return;
         service.downloadBlob(new Blob([content], { type: 'text/markdown' }), `${baseName}.md`);
       } else {
-        const blob = await service.generateDocx(selectedProfileId, selectedArtifactId);
+        const blob = await service.generateDocx(profileId, artifactId);
+        if (!isActiveProfile(profileId)) return;
         service.downloadBlob(blob, `${baseName}.docx`);
       }
     } catch (err) {
+      if (!isActiveProfile(profileId)) return;
       setErrorMessage(err instanceof Error ? err.message : 'Failed to export artifact');
     } finally {
-      setExporting('');
+      if (isActiveProfile(profileId)) setExporting('');
     }
   };
 

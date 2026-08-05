@@ -358,6 +358,7 @@ describe('ArtifactWorkspacePage', () => {
   });
 
   it('apply resolution calls resolve endpoint and triggers auto-refresh chain', async () => {
+
     let resolveFinished: (value: Response | PromiseLike<Response>) => void;
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -430,5 +431,161 @@ describe('ArtifactWorkspacePage', () => {
       .filter((call) => String(call[0]).endsWith('/artifact-templates/standard_cv/preview'))
       .map((call) => String(call[0]));
     expect(previewCallsAfterResolve.length).toBeGreaterThanOrEqual(2);
+  });
+
+  describe('profile switching', () => {
+    const PROFILES_TWO = [
+      { id: 'profile-1', name: 'Jane Doe', headline: 'AI Engineer', artifactCount: 0, artifactIds: [], importedAt: '2026-01-01' },
+      { id: 'profile-2', name: 'Bob Smith', headline: 'Backend Engineer', artifactCount: 0, artifactIds: [], importedAt: '2026-01-02' },
+    ];
+
+    const DETAILS_2 = {
+      id: 'profile-2',
+      person: {
+        firstName: 'Bob',
+        lastName: 'Smith',
+        headline: 'Backend Engineer',
+        city: null,
+        country: null,
+        languages: [],
+      },
+      summary: 'Bob summary',
+      importedAt: '2026-01-02',
+      professionalSummaries: [],
+      experiences: [],
+      skills: [],
+      education: [],
+      certifications: [],
+      projects: [],
+      artifacts: [
+        { id: 'artifact-2', type: 'CV', name: 'Bob Tailored CV', sourceCount: 5, status: 'current' },
+      ],
+    };
+
+    const PREVIEW_2 = {
+      markdown: '# Bob Preview\n\n## Core Competencies\n\n- Go',
+      source_count: 5,
+      estimated_health_score: 60,
+    };
+
+    const QUALITY_REPORT_2 = {
+      health_score: 55,
+      dimensions: [{ name: 'achievements', score: 55, weight: 1.0 }],
+      findings: [],
+      citations: [],
+    };
+
+    function deferredResponse(): { promise: Promise<Response>; resolve: (r: Response) => void } {
+      let resolveFn!: (r: Response) => void;
+      const promise = new Promise<Response>((resolve) => { resolveFn = resolve; });
+      return { promise, resolve: resolveFn };
+    }
+
+    function immediateFetchMock(opts: {
+      profile2Gate?: ReturnType<typeof deferredResponse>;
+      firstPreviewGate?: ReturnType<typeof deferredResponse>;
+    }) {
+      let firstPreviewCall = true;
+      return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? 'GET';
+
+        if (method === 'GET' && url.endsWith('/artifact-templates')) {
+          return Promise.resolve(jsonResponse(TEMPLATES));
+        }
+        if (method === 'GET' && url.endsWith('/profiles')) {
+          return Promise.resolve(jsonResponse(PROFILES_TWO));
+        }
+        if (method === 'GET' && /\/profiles\/profile-1$/.test(url)) {
+          return Promise.resolve(jsonResponse(PROFILE_DETAILS));
+        }
+        if (method === 'GET' && /\/profiles\/profile-2$/.test(url)) {
+          return opts.profile2Gate
+            ? opts.profile2Gate.promise
+            : Promise.resolve(jsonResponse(DETAILS_2));
+        }
+        if (method === 'GET' && url.endsWith('/profiles/profile-1/quality-report')) {
+          return Promise.resolve(jsonResponse(QUALITY_REPORT));
+        }
+        if (method === 'GET' && url.includes('/profiles/profile-1/improvement-queue')) {
+          return Promise.resolve(jsonResponse(QUEUE));
+        }
+        if (method === 'GET' && url.endsWith('/profiles/profile-2/quality-report')) {
+          return Promise.resolve(jsonResponse(QUALITY_REPORT_2));
+        }
+        if (method === 'GET' && url.includes('/profiles/profile-2/improvement-queue')) {
+          return Promise.resolve(jsonResponse([]));
+        }
+        if (method === 'POST' && url.endsWith('/artifact-templates/standard_cv/preview')) {
+          let bodyProfileId = '';
+          try {
+            bodyProfileId =
+              (JSON.parse(String(init?.body ?? '{}')) as { profile_id?: string }).profile_id ?? '';
+          } catch {
+            bodyProfileId = '';
+          }
+          if (opts.firstPreviewGate && firstPreviewCall) {
+            firstPreviewCall = false;
+            return opts.firstPreviewGate.promise;
+          }
+          firstPreviewCall = false;
+          return Promise.resolve(jsonResponse(bodyProfileId === 'profile-2' ? PREVIEW_2 : PREVIEW));
+        }
+        if (method === 'POST' && url.endsWith('/artifact-templates/standard_interest_letter/preview')) {
+          return Promise.resolve(jsonResponse(INTEREST_PREVIEW));
+        }
+        return Promise.resolve(jsonResponse({ detail: `Unexpected fetch: ${method} ${url}` }, 500));
+      });
+    }
+
+    it('ignores a stale profile details response for a previously active profile', async () => {
+      const profile2Gate = deferredResponse();
+      vi.stubGlobal('fetch', immediateFetchMock({ profile2Gate }));
+
+      renderPage();
+      await screen.findByTestId('active-profile-name');
+
+      fireEvent.change(screen.getByLabelText('Switch Profile'), { target: { value: 'profile-2' } });
+
+      fireEvent.change(screen.getByLabelText('Switch Profile'), { target: { value: 'profile-1' } });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('active-profile-name').textContent).toBe('Jane Doe');
+      });
+
+      profile2Gate.resolve(jsonResponse(DETAILS_2));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(screen.getByTestId('active-profile-name').textContent).toBe('Jane Doe');
+      expect(screen.getByTestId('active-profile-headline').textContent).toBe('AI Engineer');
+      expect(screen.queryByText('Bob Tailored CV')).toBeNull();
+    });
+
+    it('ignores a stale template preview response after switching profiles', async () => {
+      const firstPreviewGate = deferredResponse();
+      const fetchMock = immediateFetchMock({ firstPreviewGate });
+      vi.stubGlobal('fetch', fetchMock);
+
+      renderPage();
+      await screen.findByTestId('active-profile-name');
+
+      const previewCalls = () =>
+        fetchMock.mock.calls.filter((call) =>
+          String(call[0]).endsWith('/artifact-templates/standard_cv/preview'),
+        );
+
+      expect(previewCalls().length).toBe(1);
+
+      fireEvent.change(screen.getByLabelText('Switch Profile'), { target: { value: 'profile-2' } });
+
+      await screen.findByText('Go');
+      expect(screen.getByText('Bob Preview')).toBeTruthy();
+
+      firstPreviewGate.resolve(jsonResponse(PREVIEW));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(screen.getByText('Go')).toBeTruthy();
+      expect(screen.queryByText('Python')).toBeNull();
+    });
   });
 });
