@@ -108,20 +108,20 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-[#F5F9FF] flex flex-col">
       {/* Hero */}
-      <header className="relative overflow-hidden bg-gradient-to-b from-primary-900 via-primary-600 to-[#F5F9FF] px-6 pt-12 pb-32">
+      <header className="relative overflow-hidden bg-gradient-to-b from-primary-900 via-primary-600 to-[#F5F9FF] px-6 pt-10 pb-24">
         <div className="absolute -top-32 -left-32 h-96 w-96 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.14),transparent_70%)] pointer-events-none" aria-hidden="true" />
         <div className="absolute top-1/3 right-1/4 h-80 w-80 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.10),transparent_70%)] pointer-events-none" aria-hidden="true" />
         <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-[radial-gradient(circle_at_center,rgba(147,197,253,0.18),transparent_70%)] pointer-events-none" aria-hidden="true" />
-        <div className="absolute right-0 -top-16 h-[30rem] w-[30rem] translate-x-1/4 pointer-events-none opacity-70" aria-hidden="true">
-          <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,rgba(96,165,250,0.35),transparent_60%)]" />
-          <div className="absolute inset-8 rounded-full border border-white/25" />
-          <div className="absolute inset-20 rounded-full border border-white/20" />
-          <div className="absolute inset-32 rounded-full border border-white/15" />
-          <div className="absolute inset-44 rounded-full border border-white/10" />
+        <div className="absolute right-0 -top-16 h-[34rem] w-[34rem] translate-x-1/3 pointer-events-none opacity-15" aria-hidden="true">
+          <div className="absolute left-1/2 top-1/2 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/40" />
+          <div className="absolute left-1/2 top-1/2 h-[27rem] w-[27rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/30" />
+          <div className="absolute left-1/2 top-1/2 h-[20rem] w-[20rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/25" />
+          <div className="absolute left-1/2 top-1/2 h-[13rem] w-[13rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/20" />
+          <div className="absolute left-1/2 top-1/2 h-[7rem] w-[7rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle_at_center,rgba(147,197,253,0.45),transparent_70%)]" />
         </div>
 
-        <div className="relative z-10 max-w-6xl mx-auto">
-          <div className="flex items-center justify-between flex-wrap gap-3 mb-12">
+        <div className="relative z-10 max-w-7xl mx-auto">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-10 animate-[fade-in-up_0.6s_ease-out_both]">
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold text-white bg-white/15 backdrop-blur-sm border border-white/25">
               Platform Alpha
             </span>
@@ -141,7 +141,7 @@ export default function Home() {
       </header>
 
       <main className="flex-1 px-6">
-        <div className="max-w-6xl mx-auto -mt-20 space-y-24">
+        <div className="max-w-7xl mx-auto -mt-16 space-y-24">
           {/* Primary Modules */}
           <section>
             <h2 className="text-2xl font-bold text-gray-900 mb-8">Primary Modules</h2>
@@ -149,18 +149,18 @@ export default function Home() {
               {primaryModules.map((module) => (
                 <div
                   key={module.title}
-                  className="bg-white rounded-xl border border-blue-100 shadow-sm p-8 transition-all duration-300 hover:shadow-xl hover:border-blue-200 hover:-translate-y-1"
+                  className="bg-white rounded-xl border border-blue-100 shadow-sm p-9 flex flex-col transition-all duration-300 ease-out hover:shadow-xl hover:shadow-blue-900/10 hover:border-blue-200 hover:-translate-y-1"
                 >
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-bold text-gray-900">{module.title}</h3>
+                    <h3 className="text-2xl font-bold text-gray-900">{module.title}</h3>
                     <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700">
                       READY
                     </span>
                   </div>
-                  <p className="text-sm text-gray-500 leading-relaxed mb-6">{module.description}</p>
+                  <p className="text-sm text-gray-500 leading-relaxed mb-6 flex-1">{module.description}</p>
                   <button
                     onClick={() => navigate(module.to)}
-                    className="w-full bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 transition-all duration-200"
+                    className="w-full bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 text-white font-semibold py-3 px-4 rounded-lg shadow-md shadow-blue-600/20 hover:shadow-lg hover:shadow-blue-600/30 transition-all duration-300 ease-out hover:-translate-y-0.5 active:translate-y-0 active:shadow-md"
                   >
                     Open Demo
                   </button>
@@ -170,10 +170,10 @@ export default function Home() {
           </section>
 
           {/* Profile Import */}
-          <section className="bg-white rounded-xl border border-blue-100 shadow-sm p-8">
+          <section className="bg-white rounded-xl border border-blue-100 shadow-sm p-9">
             <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">Profile Management</h2>
+                <h2 className="text-2xl font-bold text-gray-900">Profile Management</h2>
                 <p className="text-sm text-gray-500 mt-2">
                   Import a CV document (.docx, .doc, .txt) to create a canonical profile
                 </p>
@@ -205,7 +205,7 @@ export default function Home() {
           {/* Coming Next */}
           <section className="rounded-3xl bg-blue-100/50 border border-blue-200/70 p-10">
             <h2 className="text-xl font-semibold text-blue-900 mb-8">Coming Next</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               {comingNextModules.map((module) => (
                 <div
                   key={module}
@@ -224,18 +224,13 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="bg-primary-900 text-blue-100">
-        <div className="max-w-6xl mx-auto px-6 py-14 flex flex-col md:flex-row items-start justify-between gap-12">
-          <div className="space-y-2 text-sm text-blue-200">
-            <p>Built on deterministic principles.</p>
-            <p>Powered by AI.</p>
-            <p>Explainable.</p>
-            <p>Evidence-based.</p>
-            <p>User in control.</p>
-          </div>
-          <div className="text-left md:text-right space-y-1">
-            <p className="font-semibold text-white">CareerOS Platform Alpha</p>
-            <p className="text-sm text-blue-300">© CareerOS</p>
-          </div>
+        <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <p className="text-xs sm:text-sm text-blue-200 text-left">
+            Built on deterministic principles • Powered by AI • Explainable • Evidence-based • User in control
+          </p>
+          <p className="text-xs sm:text-sm font-semibold text-white text-left md:text-right">
+            CareerOS Platform Alpha • © CareerOS
+          </p>
         </div>
       </footer>
     </div>
