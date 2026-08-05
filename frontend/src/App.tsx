@@ -3,6 +3,7 @@ import Home from './pages/Home';
 import TailoringPage from './pages/TailoringPage';
 import InterviewPracticePage from './pages/InterviewPracticePage';
 import ArtifactWorkspacePage from './pages/ArtifactWorkspacePage';
+import CareerKnowledgePage from './pages/CareerKnowledgePage';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
         <Route path="/tailoring" element={<TailoringPage />} />
         <Route path="/interviews/practice" element={<InterviewPracticePage />} />
         <Route path="/artifacts" element={<ArtifactWorkspacePage />} />
+        <Route path="/knowledge" element={<CareerKnowledgePage />} />
       </Routes>
     </BrowserRouter>
   );
