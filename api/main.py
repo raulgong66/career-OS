@@ -39,7 +39,7 @@ print_configuration_banner(runtime_config)
 
 from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv, run_profile_quality
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
-from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
+from careeros.acquisition import AcquisitionPipeline, DocumentReadError, LLMExtractionError, PipelineError
 from careeros.profile_repository import ProfileRepository, ProfileState
 from careeros.interview import InterviewEngine
 from careeros.interview.exceptions import InvalidProfileError
@@ -670,7 +670,7 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
     try:
         pipeline = AcquisitionPipeline()
         profile_path = pipeline.run(str(temp_path))
-    except (DocumentReadError, PipelineError) as exc:
+    except (DocumentReadError, PipelineError, LLMExtractionError) as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=422, detail=ApiErrorResponse(
             error="IMPORT_FAILED",

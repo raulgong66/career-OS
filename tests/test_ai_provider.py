@@ -232,6 +232,20 @@ def test_openai_provider_generate_via_mock_transport() -> None:
     assert body["temperature"] == 0.5
 
 
+def test_openai_provider_json_mode_and_max_tokens() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    provider = OpenAIProvider(api_key="sk-test", transport=httpx.MockTransport(handler))
+    provider.generate("give json", json_mode=True, max_tokens=4321)
+
+    assert captured["json"]["max_tokens"] == 4321
+    assert captured["json"]["response_format"] == {"type": "json_object"}
+
+
 def test_openai_provider_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(LLMConfigurationError, match="OpenAI API key is required"):
@@ -286,6 +300,37 @@ def test_ollama_provider_generate_via_mock_transport() -> None:
     assert text == "hi from ollama"
     assert str(captured["url"]).endswith("/api/generate")
     assert captured["json"]["model"] == "qwen2.5:3b"
+    options = captured["json"]["options"]
+    assert options["temperature"] == 0.1
+    assert options["num_ctx"] == 16384
+    assert options["num_predict"] == 8192
+    assert "format" not in captured["json"]
+
+
+def test_ollama_provider_json_mode_adds_format() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"response": "{}"})
+
+    provider = OllamaProvider(transport=httpx.MockTransport(handler))
+    provider.generate("give json", json_mode=True, max_tokens=1234)
+
+    assert captured["json"]["format"] == "json"
+    assert captured["json"]["options"]["num_predict"] == 1234
+
+
+def test_ollama_provider_num_ctx_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OLLAMA_NUM_CTX", "8192")
+    monkeypatch.setenv("OLLAMA_NUM_PREDICT", "4096")
+    provider = OllamaProvider()
+    assert provider.num_ctx == 8192
+    assert provider.num_predict == 4096
+
+    explicit = OllamaProvider(num_ctx=32768, num_predict=2048)
+    assert explicit.num_ctx == 32768
+    assert explicit.num_predict == 2048
 
 
 def test_ollama_provider_empty_response_raises() -> None:

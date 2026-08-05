@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+import re
 from typing import Any
 
 from careeros.exceptions import CareerOSException, LLMConfigurationError
@@ -11,9 +14,77 @@ from careeros.ai.openai_provider import OpenAIProvider
 
 from .person_data import EducationData, ExperienceData, ExtractionResult, PersonData, SkillData
 
+logger = logging.getLogger(__name__)
+
 
 class LLMExtractionError(CareerOSException):
     pass
+
+
+class TruncatedResponseError(LLMExtractionError):
+    """Raised when the LLM response JSON is cut off before it completes.
+
+    Signifies output-limit/context-window exhaustion rather than malformed
+    content. ``LLMExtractor`` uses it to trigger a split-and-retry pass.
+    """
+
+
+_TOP_LEVEL_ALIASES: dict[str, str] = {
+    "PersonalDetails": "person",
+    "PersonDetails": "person",
+    "WorkExperience": "experiences",
+    "Experiences": "experiences",
+    "Skills": "skills",
+    "Education": "education",
+}
+
+_PERSON_FIELD_ALIASES: dict[str, str] = {
+    "FullName": "fullName",
+    "Name": "fullName",
+    "Email": "email",
+    "Phone": "phone",
+    "City": "location",
+    "LinkedIn": "linkedin",
+    "Github": "github",
+}
+
+_EXPERIENCE_FIELD_ALIASES: dict[str, str] = {
+    "Company": "organization",
+    "Employer": "organization",
+    "Role": "title",
+    "Position": "title",
+    "JobTitle": "title",
+    "EmploymentType": "employmentType",
+    "Responsibilities": "responsibilities",
+    "Achievements": "achievements",
+    "Technologies": "technologies",
+    "Location": "location",
+    "Summary": "summary",
+}
+
+_SKILL_FIELD_ALIASES: dict[str, str] = {
+    "Skill": "name",
+    "Technology": "name",
+    "Category": "category",
+    "Proficiency": "proficiency",
+}
+
+_EDUCATION_FIELD_ALIASES: dict[str, str] = {
+    "School": "institution",
+    "University": "institution",
+    "Degree": "degree",
+    "Field": "fieldOfStudy",
+}
+
+_MONTH_NUMBERS: dict[str, int] = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+_DURATION_SPLIT_RE = re.compile(r"\s*[-–—]\s*")
+_MONTH_YEAR_RE = re.compile(r"^(?P<mon>[A-Za-z]+)\s*(?P<yr>\d{4})")
+_YEAR_RE = re.compile(r"^(?P<yr>\d{4})$")
+_CURRENT_WORDS = {"present", "current", "now", "ongoing", "till date", "to date"}
 
 
 class LLMExtractor:
@@ -25,9 +96,23 @@ class LLMExtractor:
 
     extraction_temperature = 0.1
     extraction_timeout = 60.0
+    extraction_max_tokens = 6000
+    chunk_size = 6000
+    chunk_overlap = 300
+    max_split_depth = 2
 
-    def __init__(self, provider: AIProvider | None = None) -> None:
+    def __init__(
+        self,
+        provider: AIProvider | None = None,
+        *,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+    ) -> None:
         self.provider = provider
+        if chunk_size is not None:
+            self.chunk_size = chunk_size
+        if chunk_overlap is not None:
+            self.chunk_overlap = chunk_overlap
 
     def _resolve_provider(self) -> AIProvider:
         if self.provider is None:
@@ -40,6 +125,8 @@ class LLMExtractor:
                 prompt,
                 temperature=self.extraction_temperature,
                 timeout=self.extraction_timeout,
+                max_tokens=self.extraction_max_tokens,
+                json_mode=True,
             )
         except AIError as exc:
             raise LLMExtractionError(f"LLM call failed: {exc}") from exc
@@ -47,10 +134,142 @@ class LLMExtractor:
     def extract(
         self, text: str, schema: dict[str, Any] | None = None
     ) -> ExtractionResult:
+        chunks = self.chunk_text(text)
+        if len(chunks) == 1:
+            return self._extract_chunk(chunks[0], schema)
+        logger.debug("Extracting %d chunks from a %d-char document", len(chunks), len(text))
+        results = [self._extract_chunk(chunk, schema) for chunk in chunks]
+        merged = self.merge_results(results)
+        merged.warnings.append(
+            f"Document was split into {len(chunks)} chunks for extraction."
+        )
+        return merged
+
+    def _extract_chunk(
+        self, text: str, schema: dict[str, Any] | None, depth: int = 0
+    ) -> ExtractionResult:
+        try:
+            return self._extract_once(text, schema)
+        except TruncatedResponseError as exc:
+            if depth >= self.max_split_depth:
+                raise
+            halves = self._split_text(text)
+            if len(halves) < 2:
+                raise
+            logger.debug(
+                "Chunk (%d chars) hit the output limit; splitting into %d parts",
+                len(text),
+                len(halves),
+            )
+            parts = [self._extract_chunk(part, schema, depth=depth + 1) for part in halves]
+            merged = self.merge_results(parts)
+            merged.warnings.append(
+                "A chunk exceeded the model output limit and was split for retry."
+            )
+            return merged
+
+    def _extract_once(self, text: str, schema: dict[str, Any] | None) -> ExtractionResult:
         prompt = self.build_prompt(text, schema)
         response = self._complete(prompt)
         data = self.parse_response(response)
         return self.to_result(data)
+
+    def chunk_text(self, text: str) -> list[str]:
+        """Split a document into extraction-sized chunks with overlap.
+
+        Documents that fit within ``chunk_size`` chars are returned whole so
+        small CVs keep the exact single-shot behaviour. Chunks prefer line
+        boundaries; a single line longer than ``chunk_size`` is hard-split so
+        no chunk ever exceeds the budget. Overlap prevents an entry that
+        straddles a boundary from being lost; downstream builders deduplicate
+        the resulting overlap.
+        """
+        if len(text) <= self.chunk_size:
+            return [text]
+        chunks: list[str] = []
+        current = ""
+        for line in text.splitlines(keepends=True):
+            if current and len(current) + len(line) > self.chunk_size:
+                chunks.append(current)
+                current = self._overlap_tail(current)
+            while line and len(current) + len(line) > self.chunk_size:
+                take = self.chunk_size - len(current)
+                if take <= 0:
+                    take = self.chunk_size
+                piece = current + line[:take]
+                chunks.append(piece)
+                current = self._overlap_tail(piece)
+                line = line[take:]
+            current += line
+        if current:
+            chunks.append(current)
+        return chunks
+
+    def _overlap_tail(self, text: str) -> str:
+        if self.chunk_overlap <= 0 or len(text) <= self.chunk_overlap:
+            return ""
+        return text[-self.chunk_overlap :]
+
+    def _split_text(self, text: str) -> list[str]:
+        """Split a chunk into two overlapping halves at a line boundary."""
+        if len(text) < 2:
+            return [text]
+        lines = text.splitlines(keepends=True)
+        target = len(text) / 2
+        first = ""
+        for line in lines:
+            if first and len(first) + len(line) > target:
+                break
+            first += line
+        rest = text[len(first) :]
+        if not first or not rest:
+            mid = len(text) // 2
+            return [text[:mid], text[mid:]]
+        return [first, self._overlap_tail(first) + rest]
+
+    def merge_results(self, results: list[ExtractionResult]) -> ExtractionResult:
+        """Deterministically merge per-chunk extraction results.
+
+        Person fields take the first non-empty value in chunk order. Experience,
+        skill, and education entities are concatenated and deduplicated later by
+        the canonical builders, so nothing extracted from any chunk is dropped.
+        """
+        results = [r for r in results if r is not None]
+        if not results:
+            return ExtractionResult(
+                person=PersonData(id="person-unknown", first_name="", last_name="", full_name="")
+            )
+        return ExtractionResult(
+            person=self._merge_person([r.person for r in results]),
+            experiences=[exp for r in results for exp in r.experiences],
+            skills=[skill for r in results for skill in r.skills],
+            education=[edu for r in results for edu in r.education],
+            warnings=[w for r in results for w in r.warnings],
+        )
+
+    @staticmethod
+    def _merge_person(people: list[PersonData]) -> PersonData:
+        def first_value(getter) -> Any:
+            for person in people:
+                value = getter(person)
+                if value:
+                    return value
+            return None
+
+        return PersonData(
+            id=first_value(
+                lambda p: p.id if p.id and p.id != "person-unknown" else None
+            )
+            or "person-unknown",
+            first_name=first_value(lambda p: p.first_name) or "",
+            last_name=first_value(lambda p: p.last_name) or "",
+            full_name=first_value(lambda p: p.full_name) or "",
+            email=first_value(lambda p: p.email),
+            phone=first_value(lambda p: p.phone),
+            location=first_value(lambda p: p.location),
+            linkedin=first_value(lambda p: p.linkedin),
+            github=first_value(lambda p: p.github),
+        )
 
     def build_prompt(self, text: str, schema: dict[str, Any] | None = None) -> str:
         prompt = (
@@ -116,6 +335,26 @@ class LLMExtractor:
             "(omit if not found)\n"
             '- sourceRef: a short label indicating where this data came from '
             "(omit if not found)\n\n"
+            "Example of the exact JSON structure to return:\n"
+            '{"person": {"id": "person-smith", "firstName": "Jane", '
+            '"lastName": "Smith", "fullName": "Jane Smith", '
+            '"email": "jane@example.com", "phone": "+1 555 0100", '
+            '"location": "London, UK"}, "experiences": ['
+            '{"id": "exp-acme", "organization": "ACME Inc.", '
+            '"title": "Senior Engineer", "employmentType": "Full-time", '
+            '"location": "London, UK", "startDate": "2020-01", "endDate": null, '
+            '"isCurrent": true, "summary": "Led platform team.", '
+            '"responsibilities": ["Lead delivery"], '
+            '"achievements": ["Cut cost 20%"], '
+            '"technologies": ["AWS", "Python"]}], '
+            '"skills": [{"id": "skill-python", "name": "Python", '
+            '"category": "Programming Language", "proficiency": "Expert"}], '
+            '"education": [{"id": "edu-kth", "institution": "KTH Royal '
+            'Institute of Technology", "degree": "M.S.", '
+            '"fieldOfStudy": "Computer Science", "startDate": "2016-08", '
+            '"endDate": "2018-06", "isCurrent": false}]}\n\n'
+            "Use EXACTLY these key names. Do not invent different section or "
+            "field names.\n\n"
             "Document text:\n"
             "---\n"
             f"{text}\n"
@@ -125,30 +364,96 @@ class LLMExtractor:
         return prompt
 
     def parse_response(self, response_text: str) -> dict[str, Any]:
-        import re
-        cleaned = response_text.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[-1]
-            cleaned = cleaned.rsplit("```", 1)[0]
-        cleaned = cleaned.strip()
-        try:
-            data = json.loads(cleaned)
-        except json.JSONDecodeError:
+        logger.debug(
+            "Raw LLM response (%d chars):\n%s", len(response_text), response_text
+        )
+        cleaned = self._strip_code_fences(response_text)
+        candidate, truncated = self._find_json_object(cleaned)
+        if candidate is None:
             try:
-                cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
                 data = json.loads(cleaned)
             except json.JSONDecodeError as exc:
                 raise LLMExtractionError(
-                    f"Failed to parse LLM response as JSON: {exc}\nResponse was:\n{response_text}"
+                    "Failed to parse LLM response as JSON: no JSON object found "
+                    f"in a response of {len(cleaned)} chars: {exc}"
+                ) from exc
+            if not isinstance(data, dict):
+                raise LLMExtractionError("LLM response is not a JSON object")
+            return data
+
+        try:
+            data = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            try:
+                data = json.loads(re.sub(r",\s*([}\]])", r"\1", candidate))
+            except json.JSONDecodeError:
+                if truncated:
+                    raise TruncatedResponseError(
+                        "Failed to parse LLM response as JSON: response is "
+                        "truncated mid-JSON (JSON object never closes; "
+                        f"{len(candidate)} chars extracted, "
+                        f"tail: ...{candidate[-120:]!r})."
+                    ) from exc
+                raise LLMExtractionError(
+                    f"Failed to parse LLM response as JSON: {exc}\n"
+                    f"Extracted JSON ({len(candidate)} chars):\n{candidate}"
                 ) from exc
         if not isinstance(data, dict):
             raise LLMExtractionError("LLM response is not a JSON object")
         return data
 
+    @staticmethod
+    def _strip_code_fences(text: str) -> str:
+        cleaned = text.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("\n", 1)[-1]
+            cleaned = cleaned.rsplit("```", 1)[0]
+        return cleaned.strip()
+
+    @staticmethod
+    def _find_json_object(text: str) -> tuple[str | None, bool]:
+        """Locate the JSON object in ``text``.
+
+        Returns ``(candidate, truncated)`` where ``candidate`` is the JSON
+        object substring starting at the first ``{`` (``None`` when no ``{``
+        exists), and ``truncated`` is True when the object never closes —
+        the signature of a response cut off by an output/context limit.
+        Surrounding prose and Markdown fences are ignored.
+        """
+        start = text.find("{")
+        if start == -1:
+            return None, False
+        depth = 0
+        in_string = False
+        escaped = False
+        i = start
+        while i < len(text):
+            char = text[i]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+            else:
+                if char == '"':
+                    in_string = True
+                elif char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return text[start : i + 1], False
+            i += 1
+        return text[start:], True
+
     def to_person_data(self, data: dict[str, Any]) -> PersonData:
         person = data.get("person", data)
+        if not isinstance(person, dict):
+            person = {}
         return PersonData(
-            id=person.get("id", "person-unknown"),
+            id=person.get("id") or "person-unknown",
             first_name=person.get("firstName") or "",
             last_name=person.get("lastName") or "",
             full_name=person.get("fullName") or "",
@@ -169,7 +474,7 @@ class LLMExtractor:
                 continue
             experiences.append(
                 ExperienceData(
-                    id=entry.get("id", f"exp-{i}"),
+                    id=entry.get("id") or f"exp-{i}",
                     organization=entry.get("organization") or "",
                     title=entry.get("title") or "",
                     employment_type=entry.get("employmentType"),
@@ -230,7 +535,105 @@ class LLMExtractor:
             )
         return education
 
+    @staticmethod
+    def _rename_keys(entry: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
+        renamed: dict[str, Any] = {}
+        for key, value in entry.items():
+            renamed[aliases.get(key, key)] = value
+        return renamed
+
+    @staticmethod
+    def _split_duration(
+        duration: str,
+    ) -> tuple[str | None, str | None, bool]:
+        """Split a natural-language duration into (start, end, is_current).
+
+        Handles forms like ``"Sep 2022 - Present"``, ``"Feb 2015 - Feb 2019"``,
+        and ``"2019 - 2021"``. Returns ``None`` values for unparseable parts.
+        """
+        parts = _DURATION_SPLIT_RE.split(duration.strip())
+        start_raw = parts[0].strip()
+        end_raw = parts[1].strip() if len(parts) > 1 else ""
+        is_current = end_raw.lower().strip() in _CURRENT_WORDS
+
+        def to_iso(raw: str) -> str | None:
+            raw = raw.strip()
+            month = _MONTH_YEAR_RE.match(raw)
+            if month:
+                month_num = _MONTH_NUMBERS.get(month.group("mon").lower()[:3])
+                if month_num:
+                    return f"{month.group('yr')}-{month_num:02d}"
+                return month.group("yr")
+            if _YEAR_RE.match(raw):
+                return raw
+            return None
+
+        start = to_iso(start_raw) if start_raw else None
+        end = None
+        if end_raw and not is_current:
+            end = to_iso(end_raw)
+        return start, end, is_current
+
+    def _normalize_experience(self, entry: dict[str, Any]) -> dict[str, Any]:
+        entry = self._rename_keys(entry, _EXPERIENCE_FIELD_ALIASES)
+        duration = entry.pop("Duration", None)
+        if isinstance(duration, str) and "startDate" not in entry:
+            start, end, is_current = self._split_duration(duration)
+            if start:
+                entry["startDate"] = start
+            if end or is_current:
+                entry["endDate"] = end
+            if is_current or end:
+                entry["isCurrent"] = is_current
+        return entry
+
+    def normalize_response(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Map alternate model schema keys onto the canonical extraction schema.
+
+        Small local models occasionally ignore the requested key names and emit
+        their own (e.g. ``PersonalDetails`` / ``WorkExperience``). This remaps
+        those known variants so extraction still yields a valid profile.
+        Canonical keys always win when both are present.
+        """
+        normalized: dict[str, Any] = {}
+        for key, value in data.items():
+            target = _TOP_LEVEL_ALIASES.get(key, key)
+            if target != key and target in normalized:
+                continue
+            normalized[target] = value
+
+        person = normalized.get("person")
+        if isinstance(person, dict):
+            normalized["person"] = self._rename_keys(person, _PERSON_FIELD_ALIASES)
+
+        experiences = normalized.get("experiences")
+        if isinstance(experiences, list):
+            normalized["experiences"] = [
+                self._normalize_experience(entry)
+                for entry in experiences
+                if isinstance(entry, dict)
+            ]
+
+        skills = normalized.get("skills")
+        if isinstance(skills, list):
+            normalized["skills"] = [
+                self._rename_keys(entry, _SKILL_FIELD_ALIASES)
+                for entry in skills
+                if isinstance(entry, dict)
+            ]
+
+        education = normalized.get("education")
+        if isinstance(education, list):
+            normalized["education"] = [
+                self._rename_keys(entry, _EDUCATION_FIELD_ALIASES)
+                for entry in education
+                if isinstance(entry, dict)
+            ]
+
+        return normalized
+
     def to_result(self, data: dict[str, Any]) -> ExtractionResult:
+        data = self.normalize_response(data)
         return ExtractionResult(
             person=self.to_person_data(data),
             experiences=self.to_experience_data(data),
@@ -259,7 +662,9 @@ class OpenAILLMExtractor(LLMExtractor):
 class OllamaLLMExtractor(LLMExtractor):
     """Backward-compatible Ollama extractor backed by the local provider adapter."""
 
-    extraction_timeout = 300.0
+    extraction_timeout = float(
+        os.environ.get("OLLAMA_EXTRACTION_TIMEOUT", "900.0")
+    )
 
     def __init__(
         self,
@@ -267,9 +672,13 @@ class OllamaLLMExtractor(LLMExtractor):
         model: str | None = None,
         provider: OllamaProvider | None = None,
         transport: Any | None = None,
+        num_ctx: int | None = None,
+        num_predict: int | None = None,
     ) -> None:
         if provider is None:
-            provider = OllamaProvider(host=host, model=model, transport=transport)
+            provider = OllamaProvider(
+                host=host, model=model, transport=transport, num_ctx=num_ctx, num_predict=num_predict
+            )
         super().__init__(provider=provider)
         self.host = provider.host
         self.model = provider.model
