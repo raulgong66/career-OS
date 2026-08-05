@@ -158,7 +158,7 @@ export default function ArtifactWorkspacePage() {
     setPreviewContent('');
     setPreviewStatus('idle');
     setProfileError('');
-    ArtifactService.getInstance()
+    return ArtifactService.getInstance()
       .getProfile(profileId)
       .then((details) => {
         setProfileDetails(details);
@@ -196,27 +196,19 @@ export default function ArtifactWorkspacePage() {
           return list;
         }),
     ])
-      .then(([templateList, profileList]) => {
+      .then(async ([templateList, profileList]) => {
         if (profileList.length > 0) {
           initialProfileId = profileList[0].id;
           setSelectedProfileId(initialProfileId);
-          void loadAnalysis(initialProfileId);
           const initialTemplate =
             templateList.find((t) => t.artifactType === 'CV')?.id ?? templateList[0]?.id;
+          // Load profile details FIRST, then analysis, to avoid race condition
+          const details = await service.getProfile(initialProfileId);
+          setProfileDetails(details);
           if (initialTemplate) {
-            return service.getProfile(initialProfileId).then((details) => ({
-              details,
-              initialTemplate,
-            }));
+            renderTemplatePreview(initialProfileId, initialTemplate);
           }
-          return null;
-        }
-        return null;
-      })
-      .then((loaded) => {
-        if (loaded) {
-          setProfileDetails(loaded.details);
-          renderTemplatePreview(initialProfileId, loaded.initialTemplate);
+          await loadAnalysis(initialProfileId);
         }
       })
       .catch(() => {
@@ -229,12 +221,12 @@ export default function ArtifactWorkspacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleProfileChange = (profileId: string) => {
+  const handleProfileChange = async (profileId: string) => {
     setSelectedProfileId(profileId);
     setSelectedRecommendation(null);
     setResolutionStatus('');
-    loadProfile(profileId);
-    void loadAnalysis(profileId);
+    await loadProfile(profileId);
+    await loadAnalysis(profileId);
   };
 
   const handleSelectTemplate = (templateId: string) => {
@@ -391,7 +383,7 @@ export default function ArtifactWorkspacePage() {
               recommendations={improvementQueue}
               filters={queueFilters}
               onFilterChange={handleFilterChange}
-              onResolve={handleResolveRecommendation}
+              onResolve={profileDetails ? handleResolveRecommendation : undefined}
             />
           </div>
 
