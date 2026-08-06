@@ -382,3 +382,92 @@ def test_analyze_profile_command_missing_file(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Failed to load" in result.stdout
+
+
+def _write_profile(path: Path, *, person_id: str, name: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "profileVersion": "1.0.0",
+                "person": {
+                    "id": person_id,
+                    "names": [{"value": name, "usage": "professional"}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_profiles_list_lists_profiles_sorted(tmp_path: Path) -> None:
+    """careeros profiles list shows display name and id, sorted by name."""
+    _write_profile(tmp_path / "person-zz-profile.yaml", person_id="person-zz", name="Zoe Example")
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+    _write_profile(tmp_path / "person-mm-profile.yaml", person_id="person-mm", name="Mia Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Available profiles" in result.stdout
+    assert "Name" in result.stdout
+    assert "Profile ID" in result.stdout
+    assert result.stdout.index("Anna Example") < result.stdout.index("Mia Example")
+    assert result.stdout.index("Mia Example") < result.stdout.index("Zoe Example")
+    assert "person-aa" in result.stdout
+    assert "person-mm" in result.stdout
+    assert "person-zz" in result.stdout
+
+
+def test_profiles_list_displays_id_without_profile_suffix(tmp_path: Path) -> None:
+    """careeros profiles list shows ids addressable by csks query --profile."""
+    _write_profile(
+        tmp_path / "person-hechavarria-profile.yaml",
+        person_id="person-hechavarria",
+        name="Rene Hechavarria",
+    )
+
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Rene Hechavarria" in result.stdout
+    assert "person-hechavarria" in result.stdout
+    assert "person-hechavarria-profile" not in result.stdout
+
+
+def test_profiles_list_includes_staging_profiles(tmp_path: Path) -> None:
+    """careeros profiles list searches the same locations as the app, incl. staging."""
+    _write_profile(
+        tmp_path / "staging" / "person-staged-profile.yaml",
+        person_id="person-staged",
+        name="Staged Person",
+    )
+    _write_profile(
+        tmp_path / "person-canon-profile.yaml",
+        person_id="person-canon",
+        name="Canon Person",
+    )
+
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "person-staged" in result.stdout
+    assert "person-canon" in result.stdout
+
+
+def test_profiles_list_empty_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles list exits non-zero with a friendly message when empty."""
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "No profiles found" in result.stdout
+
+
+def test_profiles_list_help() -> None:
+    """careeros profiles list exposes help text."""
+    result = runner.invoke(app, ["profiles", "list", "--help"])
+
+    assert result.exit_code == 0
+    assert "List available profiles" in result.stdout
+    assert "--profiles-root" in result.stdout

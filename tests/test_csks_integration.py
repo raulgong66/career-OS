@@ -179,6 +179,106 @@ def test_cli_entity_not_found_exits_nonzero(csks_sample_repo: Path) -> None:
     assert "not found" in result.output
 
 
+def _write_profile(path: Path, *, person_id: str, name: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    repeated = "Familiar with the Agile way of working and DevOps concepts."
+    path.write_text(
+        (
+            f"profileVersion: 1.0.0\n"
+            f"person:\n"
+            f"  id: {person_id}\n"
+            f"  names:\n"
+            f"  - value: {name}\n"
+            f"    usage: professional\n"
+            f"professionalSummaries:\n"
+            f"- id: sum-1\n"
+            f"  text: {repeated}\n"
+            f"experiences:\n"
+            f"- id: exp-1\n"
+            f"  title: Engineer\n"
+            f"  scope: {repeated}\n"
+            f"achievements: []\n"
+            f"projects: []\n"
+            f"skills: []\n"
+            f"certifications: []\n"
+            f"education: []\n"
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_cli_query_profile_id_resolution(tmp_path: Path) -> None:
+    """csks query --profile resolves a profile id through the repository."""
+    profile = _write_profile(
+        tmp_path / "profiles" / "staging" / "person-hechavarria-profile.yaml",
+        person_id="person-hechavarria",
+        name="Rene Hechavarria",
+    )
+    assert profile.is_file()
+
+    runner = CliRunner()
+    result = runner.invoke(
+        CSKS_APP,
+        [
+            "query",
+            "Show duplicate narrative",
+            "--profile",
+            "person-hechavarria",
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "person-hechavarria" in result.output
+    assert "duplicate narrative group" in result.output
+
+
+def test_cli_query_profile_path_backward_compatible(tmp_path: Path) -> None:
+    """csks query --profile keeps explicit filesystem paths working."""
+    profile = _write_profile(
+        tmp_path / "profiles" / "raul-gongora-profile.yaml",
+        person_id="person-raul-gongora",
+        name="Raul Gongora",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        CSKS_APP,
+        [
+            "query",
+            "Show duplicate narrative",
+            "--profile",
+            str(profile),
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "person-raul-gongora" in result.output
+
+
+def test_cli_query_profile_unknown_id_exits_nonzero(tmp_path: Path) -> None:
+    """csks query --profile with an unresolvable id exits with a friendly error."""
+    runner = CliRunner()
+    result = runner.invoke(
+        CSKS_APP,
+        [
+            "query",
+            "Show duplicate narrative",
+            "--profile",
+            "person-does-not-exist",
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Profile not found" in result.output
+
+
 def test_api_router_end_to_end(indexer: CSKSIndexer, csks_sample_repo: Path) -> None:
     fastapi = pytest.importorskip("fastapi")
     from fastapi import FastAPI
