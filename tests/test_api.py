@@ -1274,14 +1274,82 @@ def test_technologies_endpoint() -> None:
 
 
 def test_resolve_recommendation_unsupported_rule(resolve_profile: str) -> None:
-    """Resolution rejects rule types outside the M1.7 scope."""
+    """Resolution rejects rule types outside the M1.7/M1.24 scope."""
     response = client.post(
         f"/profiles/{resolve_profile}/resolve",
-        json={"triggeredRule": "GenericSummaryRule", "elementId": "exp-no-tech"},
+        json={"triggeredRule": "UnknownRule", "elementId": "exp-no-tech"},
     )
     assert response.status_code == 400
     body = response.json()
     assert body["error"] == "UNSUPPORTED_RULE"
+
+
+def test_resolve_professional_summary_creates_when_missing(resolve_profile: str) -> None:
+    """Resolving a missing professional summary writes a canonical summary and clears the recommendation."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "GenericSummaryRule", "elementId": "", "summaryText": "Senior engineer with 8 years of experience focused on cloud reliability."},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["profile"]["summary"] == "Senior engineer with 8 years of experience focused on cloud reliability."
+
+    canonical = _read_canonical(resolve_profile)
+    summaries = canonical["professionalSummaries"]
+    assert len(summaries) == 1
+    assert summaries[0]["text"] == "Senior engineer with 8 years of experience focused on cloud reliability."
+    assert summaries[0]["id"] == "professional-summary"
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    recs = analysis.json()["recommendations"]
+    assert not any(
+        r["triggered_rule"] == "GenericSummaryRule" for r in recs
+    )
+
+
+def test_resolve_professional_summary_updates_existing_and_marks_artifact_stale(resolve_profile: str) -> None:
+    """Resolving an existing summary rewrites its text and marks exporting artifacts stale."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    path = PROFILES_ROOT / f"{resolve_profile}.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["professionalSummaries"] = [
+        {"id": "summary-main", "label": "Professional profile", "text": "Old summary text."}
+    ]
+    data["artifacts"] = [
+        {
+            "id": "art-cv",
+            "title": "Test CV",
+            "artifactType": "CV",
+            "sourceRefs": [{"id": "summary-main", "type": "professional_summary"}],
+            "status": "current",
+        }
+    ]
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "GenericSummaryRule", "elementId": "", "summaryText": "Results-driven engineer with 8 years of cloud and DevOps experience."},
+    )
+    assert response.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    assert canonical["professionalSummaries"][0]["id"] == "summary-main"
+    assert canonical["professionalSummaries"][0]["label"] == "Professional profile"
+    assert canonical["professionalSummaries"][0]["text"] == "Results-driven engineer with 8 years of cloud and DevOps experience."
+    assert canonical["artifacts"][0]["status"] == "stale"
+
+
+def test_resolve_professional_summary_requires_text(resolve_profile: str) -> None:
+    """Resolution rejects an empty professional summary text."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "GenericSummaryRule", "elementId": "", "summaryText": "   "},
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"] == "EMPTY_SUMMARY"
 
 
 def test_resolve_recommendation_profile_not_found() -> None:

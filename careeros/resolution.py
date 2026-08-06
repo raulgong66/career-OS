@@ -35,6 +35,7 @@ RESOLVABLE_RULES: set[str] = {
     "ExperienceNoTechnologiesRule",
     "SkillWithoutExperienceRule",
     "NoMeasurableAchievementRule",
+    "GenericSummaryRule",
 }
 
 _ARTIFACT_STATUS_CURRENT = "current"
@@ -48,6 +49,7 @@ _RESOLUTION_ELEMENT_TYPES: dict[str, str] = {
     "ExperienceNoTechnologiesRule": "experience",
     "SkillWithoutExperienceRule": "skill",
     "NoMeasurableAchievementRule": "experience",
+    "GenericSummaryRule": "professional_summary",
 }
 
 
@@ -69,6 +71,10 @@ class InvalidAchievementError(ResolutionError):
 
 class AchievementNotMeasurableError(ResolutionError):
     """The supplied achievement statement does not look measurable."""
+
+
+class EmptySummaryError(ResolutionError):
+    """A professional summary text is required to resolve the rule."""
 
 
 def _mark_affected_artifacts_stale(data: dict[str, Any], element_id: str, element_type: str) -> None:
@@ -113,6 +119,7 @@ def apply_resolution(
     experience_ids: Sequence[str] | None = None,
     technologies: Sequence[str] | None = None,
     achievement_statement: str = "",
+    summary_text: str = "",
 ) -> None:
     """Apply a guided resolution to a canonical profile dict in place.
 
@@ -128,12 +135,14 @@ def apply_resolution(
         experience_ids: Selected experience references (project / skill evidence).
         technologies: Technology tags to attach to an experience.
         achievement_statement: Measurable achievement statement (NoMeasurableAchievementRule).
+        summary_text: Professional summary text (GenericSummaryRule).
 
     Raises:
         UnsupportedRuleError: If ``triggered_rule`` is not resolvable.
         ResolutionTargetNotFoundError: If the target element does not exist.
         InvalidAchievementError: If the achievement statement is empty.
         AchievementNotMeasurableError: If the achievement statement is not measurable.
+        EmptySummaryError: If the professional summary text is empty.
     """
     if triggered_rule not in RESOLVABLE_RULES:
         raise UnsupportedRuleError(f"Resolution is not supported for rule: {triggered_rule}")
@@ -237,6 +246,24 @@ def apply_resolution(
                 for r in source_refs
             ):
                 source_refs.append(achievement_source_ref)
+    elif triggered_rule == "GenericSummaryRule":
+        statement = (summary_text or "").strip()
+        if not statement:
+            raise EmptySummaryError("A professional summary is required.")
+        summaries = data.setdefault("professionalSummaries", [])
+        if summaries:
+            summaries[0]["text"] = statement
+            element_id = str(summaries[0].get("id", "") or "")
+            if not element_id:
+                element_id = "professional-summary"
+                summaries[0]["id"] = element_id
+        else:
+            element_id = "professional-summary"
+            summaries.append({
+                "id": element_id,
+                "label": "Professional Summary",
+                "text": statement,
+            })
 
     if data != before:
         _mark_affected_artifacts_stale(
