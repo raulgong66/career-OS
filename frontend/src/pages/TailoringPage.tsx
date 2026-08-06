@@ -518,8 +518,8 @@ export default function TailoringPage() {
     }
   };
 
-  const handleRegenerate = async () => {
-    if (!selectedProfile || !currentArtifactId) return;
+  const regeneratePreview = async (): Promise<boolean> => {
+    if (!selectedProfile || !currentArtifactId) return false;
     setRegenerating(true);
     setRegenerateError('');
     try {
@@ -533,14 +533,18 @@ export default function TailoringPage() {
       if (response.profile) {
         setSelectedProfile(response.profile);
       }
+      return true;
     } catch (err) {
       setRegenerateError(
         err instanceof Error ? err.message : 'Failed to regenerate document'
       );
+      return false;
     } finally {
       setRegenerating(false);
     }
   };
+
+  const handleRegenerate = () => regeneratePreview();
 
   const saveSummary = async () => {
     if (!selectedProfile) return;
@@ -559,6 +563,9 @@ export default function TailoringPage() {
       setSelectedProfile(updated);
       setSummaryDraft(updated.professionalSummaries?.[0]?.text ?? '');
       setSummarySaved(true);
+      if (currentArtifactId) {
+        await regeneratePreview();
+      }
       const analysis = await ProfileService.getInstance().analyzeProfile(selectedProfileId);
       setProfileRecommendations(analysis.recommendations ?? []);
       setReviewedIds(new Set());
@@ -1261,12 +1268,6 @@ export default function TailoringPage() {
                               : '—'}
                           </p>
                         </div>
-                        {selectedProfile.summary && (
-                          <div className="px-3 py-2">
-                            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Summary</label>
-                            <p className="mt-0.5 text-sm text-gray-700 leading-relaxed">{selectedProfile.summary}</p>
-                          </div>
-                        )}
                       </div>
 
                       {/* ── Entity Sections ── */}
