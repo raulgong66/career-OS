@@ -34,6 +34,7 @@ from careeros.profile_quality.cli import (
     print_improvement_queue as print_profile_quality_queue,
     print_profile_health,
 )
+from careeros.profile_repository import ProfileRepository, profile_display_id, profile_display_name
 
 app = typer.Typer(
     name="careeros",
@@ -43,6 +44,14 @@ app = typer.Typer(
 )
 app.add_typer(CSKS_APP)
 console = Console()
+
+PROFILES_APP = typer.Typer(
+    name="profiles",
+    help="Inspect and manage CareerOS profiles.",
+    add_completion=False,
+    rich_markup_mode="rich",
+)
+app.add_typer(PROFILES_APP)
 
 
 @app.callback(invoke_without_command=True)
@@ -519,6 +528,36 @@ def improvement_queue(
     except Exception as exc:
         console.print(f"[bold red]Improvement queue error: {exc}[/bold red]")
         raise typer.Exit(code=1)
+
+
+@PROFILES_APP.command("list")
+def profiles_list(
+    profiles_root: Path = typer.Option(
+        None,
+        "--profiles-root",
+        help="Profiles directory. Defaults to the repository profiles folder.",
+    ),
+) -> None:
+    """List available profiles with their display name and id."""
+    root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
+    records = ProfileRepository(root).list()
+    if not records:
+        console.print(f"[bold red]No profiles found in[/bold red] {root}")
+        raise typer.Exit(code=1)
+
+    ordered = sorted(records, key=lambda record: profile_display_name(record.data).lower())
+    rows = [
+        (profile_display_name(record.data), profile_display_id(record.profile_id))
+        for record in ordered
+    ]
+    name_col = max(len(name) for name, _ in rows) + 2
+    id_col = max(len("Profile ID"), *(len(profile_id) for _, profile_id in rows))
+    console.print("Available profiles")
+    console.print()
+    console.print("Name".ljust(name_col) + "Profile ID")
+    console.print("-" * (name_col + id_col))
+    for name, profile_id in rows:
+        console.print(name.ljust(name_col) + profile_id)
 
 
 def _print_summary(summary: Any) -> None:

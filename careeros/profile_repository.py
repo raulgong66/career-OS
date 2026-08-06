@@ -104,3 +104,31 @@ class ProfileRepository:
 
     def get_state_dir(self, state: ProfileState) -> Path:
         return self._state_dir(state)
+
+
+def profile_display_name(data: dict[str, Any] | None) -> str:
+    """Best-effort human-readable display name for a profile payload.
+
+    Prefers the ``professional`` name, then any named entry, then legacy
+    first/last/full name fields, falling back to the profile id.
+    """
+    person = (data or {}).get("person") or {}
+    for name in person.get("names", []):
+        if name.get("usage") == "professional" and name.get("value"):
+            return str(name["value"])
+    for name in person.get("names", []):
+        if name.get("value"):
+            return str(name["value"])
+    first = person.get("firstName") or ""
+    last = person.get("lastName") or ""
+    full = person.get("fullName") or ""
+    return full or f"{first} {last}".strip() or str(person.get("id", "Unnamed Profile"))
+
+
+def profile_display_id(profile_id: str) -> str:
+    """User-facing profile id: the repository file stem without a ``-profile`` suffix.
+
+    ``person-hechavarria-profile.yaml`` is addressed as ``person-hechavarria``.
+    """
+    suffix = "-profile"
+    return profile_id[: -len(suffix)] if profile_id.endswith(suffix) else profile_id

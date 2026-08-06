@@ -8,13 +8,15 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from .indexer import CSKSIndexer
-from .query import AnswerFormatter
+from .query import AnswerFormatter, CSKSQueryEngine
+from careeros.profile_repository import ProfileRepository, profile_display_id
 
 console = Console()
 
@@ -22,6 +24,51 @@ console = Console()
 def _default_repo_root() -> Path:
     """Resolve the repository root relative to this package."""
     return Path(__file__).resolve().parents[2]
+
+
+def _load_payload(file_path: Path) -> dict[str, Any]:
+    """Load a canonical profile JSON or YAML payload from disk."""
+    path = file_path.expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(path)
+    text = path.read_text(encoding="utf-8")
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        import yaml
+        return yaml.safe_load(text)
+    return json.loads(text)
+
+
+def _resolve_profile(profile_arg: str, repo_root: Path) -> dict[str, Any]:
+    """Load a canonical profile from a filesystem path or a profile id.
+
+    Existing paths keep the historical behavior; anything else is resolved
+    through the :class:`ProfileRepository` by repository id, ``-profile``
+    suffixed id, or the profile's ``person.id``.
+    """
+    path = Path(profile_arg).expanduser()
+    if path.is_file():
+        return _load_payload(path)
+
+    repository = ProfileRepository(repo_root / "profiles")
+    for candidate_id in (profile_arg, f"{profile_arg}-profile"):
+        if repository.exists(candidate_id):
+            return repository.get(candidate_id).data
+    for record in repository.list():
+        person = (record.data or {}).get("person") or {}
+        if person.get("id") == profile_arg:
+            return record.data
+
+    available = repository.list()
+    if available:
+        ids = ", ".join(sorted(profile_display_id(record.profile_id) for record in available))
+        raise FileNotFoundError(
+            f"Profile not found: {profile_arg}. Provide a file path or an available "
+            f"profile id ({ids})."
+        )
+    raise FileNotFoundError(
+        f"Profile not found: {profile_arg}. Provide a file path or an available "
+        "profile id (see 'careeros profiles list')."
+    )
 
 
 def build_csks_app() -> typer.Typer:
@@ -50,12 +97,20 @@ def build_csks_app() -> typer.Typer:
     def query(
         question: str = typer.Argument(..., help="Natural-language question to ask the knowledge graph."),
         repo_root: Path = typer.Option(None, "--repo-root", help="Repository root. Defaults to the package root."),
+        profile: str = typer.Option(None, "--profile", help="Path to a canonical profile YAML/JSON, or a profile id (see 'careeros profiles list')."),
         json_output: bool = typer.Option(False, "--json", help="Emit the result as JSON."),
     ) -> None:
         """Answer a question against the repository knowledge graph."""
         root = repo_root or _default_repo_root()
         indexer = CSKSIndexer(root)
-        engine = indexer.get_query_engine()
+        profile_data = None
+        if profile is not None:
+            try:
+                profile_data = _resolve_profile(profile, root)
+            except Exception as exc:
+                console.print(f"[bold red]Failed to load profile: {exc}[/bold red]")
+                raise typer.Exit(code=1)
+        engine = CSKSQueryEngine(indexer.get_graph(), repo_root=root, profile=profile_data)
         result = engine.query(question)
         if json_output:
             console.print_json(json.dumps(AnswerFormatter.format_json(result)))
