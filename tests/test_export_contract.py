@@ -117,3 +117,51 @@ def test_export_contract_validates_profile_with_existing_schema(builder, profile
         builder.build(profile, "artifact-1")
 
     assert exc_info.value.errors
+
+
+def test_export_contract_appends_professional_summaries_for_cv_when_source_ref_missing(builder, profile):
+    """Stale CV artifacts without a professional_summary sourceRef still export the canonical summary."""
+    profile["professionalSummaries"] = [
+        {"id": "summary-1", "text": "Edited professional summary text."}
+    ]
+
+    contract = builder.build(profile, "artifact-1")
+
+    summary_sources = [s for s in contract.sources if s.type == "professional_summary"]
+    assert len(summary_sources) == 1
+    assert summary_sources[0].id == "summary-1"
+    assert summary_sources[0].data["text"] == "Edited professional summary text."
+
+
+def test_export_contract_appends_all_professional_summaries_for_cv(builder, profile):
+    """All canonical professional summaries are exported for CV contracts."""
+    profile["professionalSummaries"] = [
+        {"id": "summary-1", "text": "First edited summary."},
+        {"id": "summary-2", "text": "Second edited summary."},
+    ]
+
+    contract = builder.build(profile, "artifact-1")
+
+    summary_ids = [s.id for s in contract.sources if s.type == "professional_summary"]
+    assert summary_ids == ["summary-1", "summary-2"]
+
+
+def test_export_contract_does_not_duplicate_existing_professional_summary_source(builder, profile):
+    """Explicit professional_summary sourceRefs are preserved without duplicates."""
+    profile["professionalSummaries"] = [{"id": "summary-1", "text": "Edited summary."}]
+    profile["artifacts"][0]["sourceRefs"].append({"id": "summary-1", "type": "professional_summary"})
+
+    contract = builder.build(profile, "artifact-1")
+
+    summary_sources = [s for s in contract.sources if s.type == "professional_summary"]
+    assert len(summary_sources) == 1
+
+
+def test_export_contract_does_not_append_summaries_for_non_cv_artifacts(builder, profile):
+    """Professional summaries are only auto-included for CV/RESUME contracts."""
+    profile["professionalSummaries"] = [{"id": "summary-1", "text": "Edited summary."}]
+    profile["artifacts"][0]["artifactType"] = "PORTFOLIO"
+
+    contract = builder.build(profile, "artifact-1")
+
+    assert not any(s.type == "professional_summary" for s in contract.sources)

@@ -113,29 +113,17 @@ class ExportContractBuilder:
         if artifact is None:
             raise EntityNotFoundError(f"Artifact not found: {artifact_id}")
 
+        artifact_type = self._infer_type(artifact)
         target_contexts = self._resolve_target_contexts(profile, artifact.get("targetContextRefs", []))
         sources = self._resolve_sources(profile, artifact.get("sourceRefs", []))
 
-        def _infer_type(a: dict) -> str:
-            explicit = a.get("artifactType")
-            if explicit:
-                return str(explicit)
-            a_id = str(a.get("id", "")).lower()
-            a_title = str(a.get("title", "")).lower()
-            if "interest" in a_id or "interest" in a_title:
-                return "INTEREST_LETTER"
-            if "cover" in a_id or "cover" in a_title:
-                return "COVER_LETTER"
-            if "interview" in a_id or "interview" in a_title:
-                return "INTERVIEW_PREPARATION_GUIDE"
-            if "cv" in a_id or "cv" in a_title or "resume" in a_id or "resume" in a_title:
-                return "CV"
-            return ""
+        if artifact_type in ("CV", "RESUME"):
+            sources = self._ensure_professional_summaries(profile, sources)
 
         return ExportContract(
             profile_version=str(profile.get("profileVersion", "")),
             artifact_id=artifact_id,
-            artifact_type=_infer_type(artifact),
+            artifact_type=artifact_type,
             person=profile.get("person", {}),
             artifact=artifact,
             target_contexts=target_contexts,
@@ -179,6 +167,41 @@ class ExportContractBuilder:
             return person if person.get("id") == source_id else None
 
         return self._find_by_id(collection or [], source_id)
+
+    @staticmethod
+    def _infer_type(artifact: dict[str, Any]) -> str:
+        """Infer the artifact type from explicit metadata, then from id/title."""
+        explicit = artifact.get("artifactType")
+        if explicit:
+            return str(explicit)
+        a_id = str(artifact.get("id", "")).lower()
+        a_title = str(artifact.get("title", "")).lower()
+        if "interest" in a_id or "interest" in a_title:
+            return "INTEREST_LETTER"
+        if "cover" in a_id or "cover" in a_title:
+            return "COVER_LETTER"
+        if "interview" in a_id or "interview" in a_title:
+            return "INTERVIEW_PREPARATION_GUIDE"
+        if "cv" in a_id or "cv" in a_title or "resume" in a_id or "resume" in a_title:
+            return "CV"
+        return ""
+
+    def _ensure_professional_summaries(
+        self, profile: dict[str, Any], sources: list[ExportSource]
+    ) -> list[ExportSource]:
+        """Append the profile's professional summaries to a CV/RESUME contract.
+
+        The canonical profile is the single source of truth for summaries, so
+        they are always exported even when the artifact's sourceRefs omit them
+        (stale artifacts predate the summary source).
+        """
+        existing_ids = {source.id for source in sources}
+        for summary in profile.get("professionalSummaries", []):
+            summary_id = summary.get("id")
+            if summary_id and summary_id not in existing_ids:
+                sources.append(ExportSource(type="professional_summary", id=str(summary_id), data=summary))
+                existing_ids.add(summary_id)
+        return sources
 
     @staticmethod
     def _find_by_id(items: list[dict[str, Any]], item_id: Any) -> dict[str, Any] | None:
