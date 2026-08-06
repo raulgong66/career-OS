@@ -65,6 +65,7 @@ from .dto import to_import_response, to_profile_details, to_profile_summary
 from careeros.reasoning.rules.recommendation_rules import TECHNOLOGY_KEYWORDS
 from careeros.resolution import (
     AchievementNotMeasurableError,
+    EmptySummaryError,
     InvalidAchievementError,
     RESOLVABLE_RULES,
     ResolutionTargetNotFoundError,
@@ -243,6 +244,7 @@ class ResolveRecommendationRequest(BaseModel):
     experienceIds: list[str] = Field(default_factory=list, description="Selected experience references (project / skill evidence).")
     technologies: list[str] = Field(default_factory=list, description="Technology tags to attach to an experience.")
     achievementStatement: str = Field(default="", description="Measurable achievement statement to persist (NoMeasurableAchievementRule).")
+    summaryText: str = Field(default="", description="Professional summary text to persist (GenericSummaryRule).")
 
 
 class RegenerateArtifactRequest(BaseModel):
@@ -356,12 +358,14 @@ def resolve_profile_recommendation(profile_id: str, request: ResolveRecommendati
             experience_ids=request.experienceIds,
             technologies=request.technologies,
             achievement_statement=request.achievementStatement or "",
+            summary_text=request.summaryText or "",
         )
-    except (UnsupportedRuleError, InvalidAchievementError, AchievementNotMeasurableError) as exc:
+    except (UnsupportedRuleError, InvalidAchievementError, AchievementNotMeasurableError, EmptySummaryError) as exc:
         error = {
             UnsupportedRuleError: "UNSUPPORTED_RULE",
             InvalidAchievementError: "INVALID_ACHIEVEMENT",
             AchievementNotMeasurableError: "ACHIEVEMENT_NOT_MEASURABLE",
+            EmptySummaryError: "EMPTY_SUMMARY",
         }[type(exc)]
         raise HTTPException(status_code=400, detail=ApiErrorResponse(
             error=error,

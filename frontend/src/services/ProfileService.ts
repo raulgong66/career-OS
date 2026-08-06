@@ -121,6 +121,7 @@ export class ProfileService {
       experienceIds: string[];
       technologies: string[];
       achievementStatement: string;
+      summaryText?: string;
     },
   ): Promise<ProfileDetails> {
     const data = await fetchJson<{ profile: ProfileDetails }>(
