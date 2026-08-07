@@ -1,7 +1,7 @@
 """Profile Quality Engine (Core) — M1.24.1.
 
 Deterministic, profile-centric evaluation facade that composes the existing
-Reasoning Engine, Resolution Engine, and the eight pure dimension calculators
+Reasoning Engine, Resolution Engine, and the nine pure dimension calculators
 into a ``ProfileQualityReport`` with a citable 0-100 Resume Health score.
 """
 

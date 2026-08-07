@@ -7,7 +7,7 @@ traversal. It composes existing Core capabilities:
 - ``careeros.reasoning`` — the engine reuses the default rule registry through
   ``ReasoningEngine`` (AC 1.5). Exactly one knowledge graph is built per run,
   inside the Reasoning Engine (AC 1.11); this facade never builds a second one.
-- ``careeros.profile_quality.dimensions`` — the eight pure dimension
+- ``careeros.profile_quality.dimensions`` — the nine pure dimension
   calculators aggregate deterministic ratios over the profile dict.
 - ``careeros.resolution`` — resolution types are derived from the Resolution
   Engine's ``RESOLVABLE_RULES`` set (ADR-009 source mapping).

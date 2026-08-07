@@ -236,3 +236,108 @@ def test_answer_formatter_empty_result(engine: CSKSQueryEngine) -> None:
     assert payload["citations"] == []
     text = AnswerFormatter.format_cli(result)
     assert "Entities found: 0" in text
+
+
+DUPLICATE_PROFILE: dict = {
+    "profileVersion": "1.0.0",
+    "person": {"id": "person-narr"},
+    "professionalSummaries": [
+        {"id": "sum-1", "text": "Familiar with the Agile way of working and DevOps concepts."}
+    ],
+    "experiences": [
+        {
+            "id": "exp-1",
+            "title": "Engineer",
+            "organizationRefs": [{"id": "org-1", "type": "organization"}],
+            "dateRange": {"start": "2020-01", "isCurrent": True},
+            "scope": "Familiar with the Agile way of working and DevOps concepts.",
+        }
+    ],
+    "organizations": [{"id": "org-1", "name": "Acme"}],
+    "projects": [],
+    "skills": [],
+    "achievements": [],
+    "certifications": [],
+    "education": [],
+}
+
+CLEAN_PROFILE: dict = {
+    "profileVersion": "1.0.0",
+    "person": {"id": "person-clean"},
+    "professionalSummaries": [
+        {"id": "sum-1", "text": "Senior engineer scaling AWS platforms and cutting costs."}
+    ],
+    "experiences": [
+        {
+            "id": "exp-1",
+            "title": "Engineer",
+            "organizationRefs": [{"id": "org-1", "type": "organization"}],
+            "dateRange": {"start": "2020-01", "isCurrent": True},
+            "scope": "Introduced observability tooling that reduced MTTR by 30%.",
+        }
+    ],
+    "organizations": [{"id": "org-1", "name": "Acme"}],
+    "projects": [],
+    "skills": [],
+    "achievements": [],
+    "certifications": [],
+    "education": [],
+}
+
+
+@pytest.fixture
+def narrative_engine(graph: KnowledgeGraph) -> CSKSQueryEngine:
+    return CSKSQueryEngine(graph, profile=DUPLICATE_PROFILE)
+
+
+def test_profile_quality_check_duplicate_narrative(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Show duplicate narrative")
+    assert result.query_type == "profile_quality_check"
+    assert result.entities_found == 2
+    assert {"sum-1", "exp-1"} == set(result.matched_entities)
+    assert "duplicate narrative group" in result.answer
+    assert "sum-1" in result.answer
+    assert "exp-1" in result.answer
+    assert len(result.citations) == 2
+
+
+def test_profile_quality_check_health_score(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Why isn't this profile 100% healthy?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer
+    assert "narrative_deduplication" in result.answer
+    assert result.entities_found >= 1
+
+
+def test_profile_quality_check_no_duplicates(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph, profile=CLEAN_PROFILE)
+    result = engine.query("Are there any duplicate narratives in this profile?")
+    assert result.query_type == "profile_quality_check"
+    assert "No duplicate narrative found" in result.answer
+    assert result.entities_found == 0
+
+
+def test_profile_quality_check_without_profile(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph)
+    result = engine.query("Show duplicate narrative")
+    assert result.query_type == "profile_quality_check"
+    assert "No profile is attached" in result.answer
+    assert result.entities_found == 0
+
+
+def test_profile_quality_check_grammar_does_not_steal_entity_queries(engine: CSKSQueryEngine) -> None:
+    result = engine.query("What is ProfileLoader?")
+    assert result.query_type == "entity_lookup"
+    assert "component.careeros.profile_loader.ProfileLoader" in result.matched_entities
+
+
+def test_profile_quality_check_why_question_grammar(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Why is my profile not 100% healthy?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer
+
+
+def test_profile_quality_check_why_isn_t_grammar(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Why isn't my profile healthy?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer

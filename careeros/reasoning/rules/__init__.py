@@ -9,6 +9,7 @@ from .experience_rules import (
 )
 from .recommendation_rules import (
     CertificationUnreferencedRule,
+    DuplicateNarrativeRule,
     DuplicateSkillsRule,
     ExperienceNoTechnologiesRule,
     GenericSummaryRule,
@@ -67,6 +68,7 @@ __all__ = [
     "ExperienceNoTechnologiesRule",
     "GenericSummaryRule",
     "DuplicateSkillsRule",
+    "DuplicateNarrativeRule",
     "MissingBusinessOutcomeRule",
     "CertificationUnreferencedRule",
     "ProjectWithoutSkillsRule",

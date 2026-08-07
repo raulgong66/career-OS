@@ -187,6 +187,23 @@ RULES: tuple[IntentRule, ...] = (
         ),
         None,
     ),
+    # --- profile quality check (narrative/health questions about a profile) ---
+    IntentRule(
+        "profile_quality_check",
+        (
+            r"\bwhy (is|are|isn't|isnt|is not|arent|are not) (the |this |my )?(profile|cv|resume)\b",
+            r"\b(why|what makes) (is|are)?(n't| not)? (the |this |my )?(profile|cv|resume) (not |still )?(100%|perfect|healthy|good)\b",
+            r"\b(show|list|find|explain|tell me about|what are|what is) (the )?duplicate (narrative|narratives)\b",
+            r"\bduplicate (narrative|narratives)\b",
+            r"\bnarrative (quality )?(issue|issues)\b",
+            r"\bnarrative quality\b",
+            r"\b(profile|cv|resume) (health|quality|issues?)\b",
+        ),
+        None,
+        lambda q, i: bool(re.search(
+            r"\b(profile|cv|resume|narrative)\b", q, re.IGNORECASE
+        )),
+    ),
     # --- entity lookup ---
     IntentRule(
         "entity_lookup",
