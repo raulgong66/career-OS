@@ -375,14 +375,14 @@ def test_optimization_summary_included_in_interest_letter_response() -> None:
     assert summary_header is not None
     import json
     summary = json.loads(summary_header)
-    assert summary["total_profile_elements"] == 23
-    assert summary["included_profile_elements"] == 13
-    assert summary["profile_coverage"] == 56.5
+    assert summary["total_profile_elements"] == 26
+    assert summary["included_profile_elements"] == 16
+    assert summary["profile_coverage"] == 61.5
     assert summary["additional_evidence"] == 0
     assert summary["skills_evaluated"] == 6
     assert summary["experiences_evaluated"] == 6
 
-    # The interest letter references only 13 of 23 profile elements, but the
+    # The interest letter references only 16 of 26 profile elements, but the
     # profile has no evidence model, so zero ADD recommendations is correct.
     assert status_header == "no_matches"
 
@@ -476,14 +476,14 @@ def test_optimization_summary_deterministic() -> None:
 
     s = result.summary
     assert s is not None
-    assert s.total_profile_elements == 23
-    assert s.included_profile_elements == 23
+    assert s.total_profile_elements == 26
+    assert s.included_profile_elements == 26
     assert s.profile_coverage == 100.0
     assert s.additional_evidence == 0
     assert s.skills_evaluated == 6
     assert s.experiences_evaluated == 6
     assert s.projects_evaluated == 1
-    assert s.achievements_evaluated == 3
+    assert s.achievements_evaluated == 6
     assert s.certifications_evaluated == 6
     assert s.education_evaluated == 1
     assert s.requirements_detected is not None

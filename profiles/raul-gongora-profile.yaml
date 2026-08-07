@@ -85,6 +85,9 @@ experiences:
   scope: Led migration from VMware VxRail datacenters to AWS, reducing infrastructure
     overhead by over 50%; designed Zero Trust cloud security; built CI/CD automation
     with Docker and Kubernetes; deployed ELK stack in Kubernetes.
+  achievementRefs:
+  - id: achievement-exp-cabonline
+    type: achievement
 - id: exp-personal-project
   title: System Developer & AI Architect
   organizationRefs:
@@ -96,6 +99,9 @@ experiences:
   scope: Architected, coded, and deployed accent-mvp; built Python Django REST APIs
     and React frontend; used LangChain for autonomous AI agents; containerized services
     with Docker and Kubernetes on AWS.
+  achievementRefs:
+  - id: achievement-exp-personal-project
+    type: achievement
 - id: exp-dulcecare
   title: Founder & CEO
   organizationRefs:
@@ -106,6 +112,9 @@ experiences:
     end: January 2022
   scope: Founded and operated a healthcare-sector business with responsibility for
     corporate finance, strategic planning, and IT infrastructure setup.
+  achievementRefs:
+  - id: achievement-exp-dulcecare
+    type: achievement
 - id: exp-tele2
   title: System Administrator / IT Engineer
   organizationRefs:
@@ -175,6 +184,26 @@ achievements:
 - id: achievement-zero-trust
   statement: Designed and built a Zero Trust cloud security framework for regulated
     environments.
+- id: achievement-exp-personal-project
+  statement: 'CareerOS: Modular career intelligence platform combining deterministic
+    reasoning engines, canonical knowledge management, and Agentic AI to deliver 100%
+    traceable and explainable career recommendations and professional document generation.'
+  contextRefs:
+  - id: exp-personal-project
+    type: experience
+  skillRefs:
+  - id: skill-agentic-ai
+    type: skill
+- id: achievement-exp-cabonline
+  statement: Reduce the infrastructure cost closing 2 datacenters
+  contextRefs:
+  - id: exp-cabonline
+    type: experience
+- id: achievement-exp-dulcecare
+  statement: 50% revenue increase
+  contextRefs:
+  - id: exp-dulcecare
+    type: experience
 education:
 - id: edu-msc-mathematics
   institutionRef:
@@ -281,10 +310,20 @@ artifacts:
     type: certification
   - id: cert-unix-linux-system-admin
     type: certification
+  - &id001
+    id: achievement-exp-personal-project
+    type: achievement
+  - &id002
+    id: achievement-exp-cabonline
+    type: achievement
+  - &id003
+    id: achievement-exp-dulcecare
+    type: achievement
   derivedFromProfileVersion: 1.0.0
   links:
   - value: 01_CV/English/source/Raul_Gongora_CV_Eng.doc
     linkType: source
+  status: current
 - id: cover-letter-devsecops-ai
   title: DevSecOps and AI Solutions Cover Letter
   artifactType: COVER_LETTER
@@ -310,7 +349,10 @@ artifacts:
     type: skill
   - id: skill-cybersecurity
     type: skill
+  - *id001
+  - *id002
   derivedFromProfileVersion: 1.0.0
+  status: stale
 - id: artf-standard_interest_letter-person-raul-gongora
   title: Interest Letter
   artifactType: INTEREST_LETTER
@@ -343,8 +385,12 @@ artifacts:
     type: skill
   - id: edu-msc-mathematics
     type: education
+  - *id001
+  - *id002
+  - *id003
   targetContextRefs: []
   derivedFromProfileVersion: 1.0.0
+  status: stale
 targetContexts:
 - id: target-devsecops-ai
   label: DevSecOps and AI solutions architecture
