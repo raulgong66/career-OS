@@ -284,6 +284,24 @@ CLEAN_PROFILE: dict = {
     "education": [],
 }
 
+STALE_PROFILE: dict = dict(CLEAN_PROFILE, **{
+    "person": {"id": "person-stale"},
+    "artifacts": [
+        {
+            "id": "art-cv",
+            "title": "English CV",
+            "artifactType": "CV",
+            "status": "stale",
+        },
+        {
+            "id": "art-cover",
+            "title": "Cover Letter",
+            "artifactType": "COVER_LETTER",
+            "status": "current",
+        },
+    ],
+})
+
 
 @pytest.fixture
 def narrative_engine(graph: KnowledgeGraph) -> CSKSQueryEngine:
@@ -341,3 +359,87 @@ def test_profile_quality_check_why_isn_t_grammar(narrative_engine: CSKSQueryEngi
     result = narrative_engine.query("Why isn't my profile healthy?")
     assert result.query_type == "profile_quality_check"
     assert "health score" in result.answer
+
+
+def test_profile_quality_check_how_healthy_grammar(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("How healthy is my resume?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer
+
+
+@pytest.fixture
+def stale_engine(graph: KnowledgeGraph) -> CSKSQueryEngine:
+    return CSKSQueryEngine(graph, profile=STALE_PROFILE)
+
+
+def test_profile_quality_check_duplicate_narratives_plural(narrative_engine: CSKSQueryEngine) -> None:
+    for question in ("Show duplicate narratives", "What are the duplicate narratives?"):
+        result = narrative_engine.query(question)
+        assert result.query_type == "profile_quality_check"
+        assert "duplicate narrative group" in result.answer
+        assert result.entities_found == 2
+
+
+def test_improvement_queue_list_improvements(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("List improvements for my profile")
+    assert result.query_type == "improvement_queue"
+    assert "improvement queue" in result.answer
+    assert result.entities_found >= 1
+
+
+def test_improvement_queue_bare_question(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph, profile=CLEAN_PROFILE)
+    result = engine.query("List improvements")
+    assert result.query_type == "improvement_queue"
+    assert "improvement queue" in result.answer
+
+
+def test_improvement_queue_without_profile(graph: KnowledgeGraph) -> None:
+    result = CSKSQueryEngine(graph).query("List improvements")
+    assert result.query_type == "improvement_queue"
+    assert "No profile is attached" in result.answer
+
+
+def test_stale_artifacts_lists_stale(stale_engine: CSKSQueryEngine) -> None:
+    result = stale_engine.query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "English CV" in result.answer
+    assert "art-cv" in result.answer
+    assert "art-cover" not in result.answer
+    assert result.entities_found == 1
+
+
+def test_stale_artifacts_which_are_stale(stale_engine: CSKSQueryEngine) -> None:
+    result = stale_engine.query("Which artifacts are stale?")
+    assert result.query_type == "stale_artifacts"
+    assert "English CV" in result.answer
+
+
+def test_stale_artifacts_all_current(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph, profile=CLEAN_PROFILE)
+    result = engine.query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "no stale artifacts" in result.answer
+    assert result.entities_found == 0
+
+
+def test_stale_artifacts_without_profile(graph: KnowledgeGraph) -> None:
+    result = CSKSQueryEngine(graph).query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "No profile is attached" in result.answer
+
+
+def test_stale_artifacts_multiple_preserve_canonical_order(graph: KnowledgeGraph) -> None:
+    profile = dict(STALE_PROFILE)
+    profile["artifacts"] = [
+        {"id": "art-cv", "title": "English CV", "artifactType": "CV", "status": "stale"},
+        {"id": "art-cover", "title": "Cover Letter", "artifactType": "COVER_LETTER", "status": "stale"},
+        {"id": "art-guide", "title": "Interview Guide", "artifactType": "INTERVIEW_PREPARATION_GUIDE", "status": "current"},
+    ]
+    engine = CSKSQueryEngine(graph, profile=profile)
+    result = engine.query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "2 stale artifact(s)" in result.answer
+    assert result.answer.index("English CV") < result.answer.index("Cover Letter")
+    assert "Interview Guide" not in result.answer
+    assert result.entities_found == 2

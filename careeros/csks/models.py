@@ -78,6 +78,8 @@ QueryType = Literal[
     "reverse_dependency",
     "search",
     "profile_quality_check",
+    "improvement_queue",
+    "stale_artifacts",
 ]
 
 

@@ -1,8 +1,9 @@
 # CSKS Example Queries
 
 **Milestone**: M1.23 — CSKS Developer Experience & Semantic Query Layer
+(M1.24/M1.25 profile quality & resume generation queries added at the end)
 
-Over 50 representative queries. Run them with:
+Over 80 representative queries. Run them with:
 
 ```bash
 careeros csks query "<question>"
@@ -124,9 +125,32 @@ careeros csks search rule
 73. `M1.21 status`
 74. `M1.20 status`
 
+## Profile quality & resume generation
+
+Resume-generation queries are answered from the canonical profile attached to
+the query engine (via `CSKSQueryEngine(graph, profile=...)`). Health and
+improvement answers are deterministic output of the Profile Quality Engine;
+stale-artifact answers read the artifact lifecycle state written by the
+Resolution Engine.
+
+75. `What is my resume health?`
+76. `What is my profile health?`
+77. `How healthy is my resume?`
+78. `Why isn't my profile 100% healthy?`
+79. `List improvements`
+80. `List improvements for my profile`
+81. `What recommendations for my resume?`
+82. `What should I fix in my profile?`
+83. `Show duplicate narrative`
+84. `Show duplicate narratives`
+85. `What are the duplicate narratives?`
+86. `Show stale artifacts`
+87. `Which artifacts are stale?`
+88. `What artifacts need regeneration?`
+
 ## Unknown / suggestions
 
-75. `potato potato`
+`potato potato`
 
 ## JSON output
 
