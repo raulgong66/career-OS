@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -34,7 +35,7 @@ from careeros.profile_quality.cli import (
     print_improvement_queue as print_profile_quality_queue,
     print_profile_health,
 )
-from careeros.profile_repository import ProfileRepository, profile_display_id, profile_display_name
+from careeros.profile_repository import ProfileRepository, ProfileState, profile_display_id, profile_display_name
 
 app = typer.Typer(
     name="careeros",
@@ -558,6 +559,152 @@ def profiles_list(
     console.print("-" * (name_col + id_col))
     for name, profile_id in rows:
         console.print(name.ljust(name_col) + profile_id)
+
+
+@PROFILES_APP.command("show")
+def profiles_show(
+    profile_id: str = typer.Argument(..., help="Profile ID to inspect."),
+    profiles_root: Path = typer.Option(
+        None,
+        "--profiles-root",
+        help="Profiles directory. Defaults to the repository profiles folder.",
+    ),
+) -> None:
+    """Display profile metadata and key metrics."""
+    root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
+    repository = ProfileRepository(root)
+    try:
+        record = repository.resolve(profile_id)
+    except Exception as exc:
+        console.print(f"[bold red]Profile not found:[/bold red] {exc}")
+        raise typer.Exit(code=1)
+
+    data = record.data
+    person = data.get("person", {})
+    name = profile_display_name(data)
+    display_id = profile_display_id(record.profile_id)
+    status = "Archived" if record.state == ProfileState.ARCHIVED else "Active"
+    try:
+        mtime = datetime.fromtimestamp(record.path.stat().st_mtime, tz=timezone.utc)
+        last_modified = mtime.strftime("%Y-%m-%d %H:%M UTC")
+    except OSError:
+        last_modified = "Unknown"
+
+    experiences = len(data.get("experiences", []))
+    skills = len(data.get("skills", []))
+    achievements = len(data.get("achievements", []))
+    artifacts = len(data.get("artifacts", []))
+
+    health_str = "N/A"
+    try:
+        from careeros.profile_quality import run_profile_quality
+        health_str = f"{run_profile_quality(data).health_score}/100"
+    except Exception:
+        pass
+
+    summaries = data.get("professionalSummaries", [])
+    summary_text = summaries[0].get("text", "") if summaries else ""
+    if len(summary_text) > 250:
+        summary_text = summary_text[:247] + "..."
+
+    console.print(f"Profile: {name}")
+    console.print(f"  Profile ID:   {display_id}")
+    console.print(f"  Status:       {status}")
+    console.print(f"  Last Modified: {last_modified}")
+    console.print(f"  Experiences:  {experiences}")
+    console.print(f"  Skills:       {skills}")
+    console.print(f"  Achievements: {achievements}")
+    console.print(f"  Artifacts:    {artifacts}")
+    console.print(f"  Health:       {health_str}")
+    if summary_text:
+        console.print()
+        console.print("  Professional Summary:")
+        console.print(f"  {summary_text}")
+
+
+@PROFILES_APP.command("archive")
+def profiles_archive(
+    profile_id: str = typer.Argument(..., help="Profile ID to archive."),
+    profiles_root: Path = typer.Option(
+        None,
+        "--profiles-root",
+        help="Profiles directory. Defaults to the repository profiles folder.",
+    ),
+) -> None:
+    """Move a profile to the archived state."""
+    root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
+    repository = ProfileRepository(root)
+    try:
+        resolved = repository.resolve(profile_id)
+        record = repository.archive(resolved.profile_id)
+    except ValueError as exc:
+        console.print(f"[bold red]Archive error:[/bold red] {exc}")
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        console.print(f"[bold red]Profile not found:[/bold red] {exc}")
+        raise typer.Exit(code=1)
+
+    display_id = profile_display_id(record.profile_id)
+    console.print(f"[bold green]Archived[/bold green] {display_id}")
+
+
+@PROFILES_APP.command("restore")
+def profiles_restore(
+    profile_id: str = typer.Argument(..., help="Profile ID to restore from archive."),
+    profiles_root: Path = typer.Option(
+        None,
+        "--profiles-root",
+        help="Profiles directory. Defaults to the repository profiles folder.",
+    ),
+) -> None:
+    """Restore a profile from the archived state back to staging."""
+    root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
+    repository = ProfileRepository(root)
+    try:
+        resolved = repository.resolve(profile_id)
+        if resolved.state != ProfileState.ARCHIVED:
+            raise ValueError(
+                f"Profile '{profile_display_id(resolved.profile_id)}' is not archived."
+            )
+        record = repository.restore(resolved.profile_id)
+    except Exception as exc:
+        console.print(f"[bold red]Restore error:[/bold red] {exc}")
+        raise typer.Exit(code=1)
+
+    display_id = profile_display_id(record.profile_id)
+    console.print(f"[bold green]Restored[/bold green] {display_id}")
+
+
+@PROFILES_APP.command("delete")
+def profiles_delete(
+    profile_id: str = typer.Argument(..., help="Profile ID to permanently delete."),
+    force: bool = typer.Option(False, "--force", help="Skip interactive confirmation."),
+    profiles_root: Path = typer.Option(
+        None,
+        "--profiles-root",
+        help="Profiles directory. Defaults to the repository profiles folder.",
+    ),
+) -> None:
+    """Permanently delete a profile after interactive confirmation."""
+    root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
+    repository = ProfileRepository(root)
+    try:
+        record = repository.resolve(profile_id)
+    except Exception as exc:
+        console.print(f"[bold red]Profile not found:[/bold red] {exc}")
+        raise typer.Exit(code=1)
+
+    display_id = profile_display_id(record.profile_id)
+
+    if not force:
+        prompt = f"This permanently deletes the profile.\n\nType DELETE to continue: "
+        answer = typer.prompt(prompt)
+        if answer != "DELETE":
+            console.print("[bold red]Aborted.[/bold red]")
+            raise typer.Exit(code=1)
+
+    repository.delete(record.profile_id)
+    console.print(f"[bold green]Deleted[/bold green] {display_id}")
 
 
 def _print_summary(summary: Any) -> None:
