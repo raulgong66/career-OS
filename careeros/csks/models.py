@@ -76,7 +76,10 @@ QueryType = Literal[
     "impact_analysis",
     "unknown",
     "reverse_dependency",
-    "search"
+    "search",
+    "profile_quality_check",
+    "improvement_queue",
+    "stale_artifacts",
 ]
 
 

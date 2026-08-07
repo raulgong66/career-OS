@@ -28,6 +28,7 @@ RULE_ID_TO_DIMENSION: dict[str, str] = {
     "recommendation_add_business_outcome": "business_outcome_language",
     "recommendation_show_certification_value": "certification_utilization",
     "recommendation_add_skills_to_project": "project_skill_linkage",
+    "recommendation_remove_duplicate_narrative": "narrative_deduplication",
 }
 
 # Resolution Engine's RESOLVABLE_RULES holds rule class names; map them to

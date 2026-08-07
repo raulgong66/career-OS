@@ -136,6 +136,125 @@ def test_weak_profile_produces_visible_recommendations(weak_profile: dict[str, A
     assert "recommendation_remove_duplicate_skills" in finding_types
 
 
+def _narrative_profile(
+    *,
+    summary: str | None = None,
+    exp_scopes: tuple[str, ...] = (),
+    achievement_descs: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    return {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-narr"},
+        "professionalSummaries": (
+            [{"id": "sum-1", "text": summary}] if summary is not None else []
+        ),
+        "experiences": [
+            {
+                "id": f"exp-{i}",
+                "title": f"Experience {i}",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2020-01", "isCurrent": True},
+                "scope": scope,
+            }
+            for i, scope in enumerate(exp_scopes, start=1)
+        ],
+        "organizations": [{"id": "org-1", "name": "Test Company"}],
+        "achievements": [
+            {
+                "id": f"ach-{i}",
+                "title": f"Achievement {i}",
+                "description": desc,
+            }
+            for i, desc in enumerate(achievement_descs, start=1)
+        ],
+        "projects": [],
+        "skills": [],
+        "evidence": [],
+        "education": [],
+        "certifications": [],
+    }
+
+
+def test_no_duplicate_narrative_produces_no_finding() -> None:
+    report = _run(_narrative_profile(
+        summary="Led cloud infrastructure across three continents.",
+        exp_scopes=(
+            "Managed Kubernetes clusters and CI/CD pipelines for the platform.",
+            "Introduced observability tooling that reduced MTTR by 30%.",
+        ),
+        achievement_descs=("Automated deployment pipelines end to end.",),
+    ))
+    finding_types = {f.finding_type for f in report.findings}
+    assert "recommendation_remove_duplicate_narrative" not in finding_types
+
+
+def test_verbatim_duplicate_across_summary_and_experience_is_flagged() -> None:
+    repeated = "Familiar with the Agile way of working and DevOps concepts."
+    report = _run(_narrative_profile(
+        summary=repeated,
+        exp_scopes=(repeated, "Built the monitoring platform from scratch."),
+    ))
+    findings = [
+        f for f in report.findings
+        if f.finding_type == "recommendation_remove_duplicate_narrative"
+    ]
+    assert len(findings) == 1
+    occurrences = findings[0].value["occurrences"]
+    assert {o["entity_id"] for o in occurrences} == {"sum-1", "exp-1"}
+    assert findings[0].value["occurrence_count"] == 2
+    narrative_recs = [
+        r for r in report.recommendations
+        if r.triggered_rule == "DuplicateNarrativeRule"
+    ]
+    assert len(narrative_recs) == 1
+    rec = narrative_recs[0]
+    assert rec.priority in ("high", "medium", "low")
+    assert rec.suggested_action.strip()
+
+
+def test_duplicate_detection_is_normalized_for_case_and_whitespace() -> None:
+    repeated = "Familiar with the Agile way of working and DevOps concepts."
+    report = _run(_narrative_profile(
+        summary=repeated,
+        exp_scopes=(f"  familiar with the AGILE way of working and devops concepts.  ",),
+    ))
+    findings = [
+        f for f in report.findings
+        if f.finding_type == "recommendation_remove_duplicate_narrative"
+    ]
+    assert len(findings) == 1
+    assert findings[0].value["occurrence_count"] == 2
+
+
+def test_triple_duplicate_across_all_sections_is_flagged_once_with_three_occurrences() -> None:
+    repeated = "Drove cost reduction across the entire platform estate."
+    report = _run(_narrative_profile(
+        summary=repeated,
+        exp_scopes=(repeated,),
+        achievement_descs=(repeated,),
+    ))
+    findings = [
+        f for f in report.findings
+        if f.finding_type == "recommendation_remove_duplicate_narrative"
+    ]
+    assert len(findings) == 1
+    assert findings[0].value["occurrence_count"] == 3
+    assert {o["entity_id"] for o in findings[0].value["occurrences"]} == {"sum-1", "exp-1", "ach-1"}
+
+
+def test_duplicate_within_same_section_is_flagged() -> None:
+    repeated = "Led the migration of the payments platform."
+    report = _run(_narrative_profile(
+        exp_scopes=(repeated, repeated),
+    ))
+    findings = [
+        f for f in report.findings
+        if f.finding_type == "recommendation_remove_duplicate_narrative"
+    ]
+    assert len(findings) == 1
+    assert {o["entity_id"] for o in findings[0].value["occurrences"]} == {"exp-1", "exp-2"}
+
+
 def test_curated_profile_produces_no_recommendations(curated_profile: dict[str, Any]) -> None:
     report = _run(curated_profile)
     assert report.recommendations == ()

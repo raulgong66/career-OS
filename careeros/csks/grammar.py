@@ -187,6 +187,46 @@ RULES: tuple[IntentRule, ...] = (
         ),
         None,
     ),
+    # --- profile quality check (narrative/health questions about a profile) ---
+    IntentRule(
+        "profile_quality_check",
+        (
+            r"\bwhy (is|are|isn't|isnt|is not|arent|are not) (the |this |my )?(profile|cv|resume)\b",
+            r"\b(why|what makes) (is|are)?(n't| not)? (the |this |my )?(profile|cv|resume) (not |still )?(100%|perfect|healthy|good)\b",
+            r"\bhow (healthy|complete|strong) is (?:my |the |this )?(?:resume|profile|cv)\b",
+            r"\b(show|list|find|explain|tell me about|what are|what is) (the )?duplicate (narrative|narratives)\b",
+            r"\bduplicate (narrative|narratives)\b",
+            r"\bnarrative (quality )?(issue|issues)\b",
+            r"\bnarrative quality\b",
+            r"\b(profile|cv|resume) (health|quality|issues?)\b",
+        ),
+        None,
+        lambda q, i: bool(re.search(
+            r"\b(profile|cv|resume|narratives?)\b", q, re.IGNORECASE
+        )),
+    ),
+    # --- improvement queue ('list improvements', spec M1.24 SS10.1) ---
+    IntentRule(
+        "improvement_queue",
+        (
+            r"\b(list|show|get|give me) (?:the )?(?:profile )?improvements?\b",
+            r"\bimprovement (?:queue|list)\b",
+            r"\bwhat (?:recommendations|suggestions) (?:for|on) my (?:resume|profile)\b",
+            r"\bwhat (?:improvements|should i fix)\b",
+            r"\bwhat (?:are|is) (?:my )?(?:resume|profile|cv) (?:issues|problems)\b",
+        ),
+        None,
+    ),
+    # --- stale artifacts ('show stale artifacts', spec M1.24 SS10.1) ---
+    IntentRule(
+        "stale_artifacts",
+        (
+            r"\b(stale|outdated|old) artifacts?\b",
+            r"\bwhich artifacts? (?:are )?(?:stale|outdated)\b",
+            r"\bartifacts? (?:that )?need (?:regeneration|regenerating|to be regenerated)\b",
+        ),
+        None,
+    ),
     # --- entity lookup ---
     IntentRule(
         "entity_lookup",

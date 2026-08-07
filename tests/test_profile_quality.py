@@ -152,7 +152,7 @@ def test_report_shape(sample_profile: dict[str, Any]) -> None:
 
     dimension_names = [dimension.name for dimension in report.dimension_scores]
     assert dimension_names == list(HEALTH_DIMENSIONS)
-    assert len(report.dimension_scores) == 8
+    assert len(report.dimension_scores) == 9
 
     for dimension in report.dimension_scores:
         assert dimension.weight == DIMENSION_WEIGHTS[dimension.name]
@@ -204,7 +204,7 @@ def test_rule_to_dimension_mapping_is_verified() -> None:
 
     assert set(RULE_ID_TO_DIMENSION) <= live_rule_ids
     assert set(RULE_ID_TO_DIMENSION.values()) <= set(HEALTH_DIMENSIONS)
-    assert len(RULE_ID_TO_DIMENSION) == 8
+    assert len(RULE_ID_TO_DIMENSION) == 9
 
 
 def test_registry_is_reused(sample_profile: dict[str, Any]) -> None:
@@ -291,6 +291,172 @@ def test_empty_profile_only_missing_summary() -> None:
     assert finding.rule_id == "recommendation_improve_summary"
     assert finding.title == "Add a professional summary"
     assert report.profile_id == "person-empty"
+
+
+def test_narrative_deduplication_flags_verbatim_duplicates() -> None:
+    """M1.25: a verbatim repeated narrative degrades the dimension and fires."""
+    repeated = "Familiar with the Agile way of working and DevOps concepts."
+    profile: dict[str, Any] = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-narr"},
+        "professionalSummaries": [{"id": "sum-1", "text": repeated}],
+        "experiences": [
+            {
+                "id": "exp-1",
+                "title": "Engineer",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2020-01", "isCurrent": True},
+                "scope": repeated,
+            }
+        ],
+        "organizations": [{"id": "org-1", "name": "Acme"}],
+        "projects": [],
+        "skills": [],
+        "achievements": [],
+        "certifications": [],
+        "education": [],
+    }
+    report = run_profile_quality(profile)
+    narrative = next(
+        d for d in report.dimension_scores if d.name == "narrative_deduplication"
+    )
+    assert narrative.score < 1.0
+    assert len(narrative.citations) == 2
+    narrative_findings = [
+        f for f in report.findings
+        if f.rule_id == "recommendation_remove_duplicate_narrative"
+    ]
+    assert len(narrative_findings) == 1
+    assert narrative_findings[0].dimension == "narrative_deduplication"
+    assert {c.entity_id for c in narrative_findings[0].citations} == {"sum-1", "exp-1"}
+
+
+def test_narrative_deduplication_normalizes_case_and_whitespace() -> None:
+    """M1.25: duplicates are matched after lowercasing and whitespace collapse."""
+    profile: dict[str, Any] = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-narr"},
+        "professionalSummaries": [
+            {
+                "id": "sum-1",
+                "text": "Familiar with the Agile way of working and DevOps concepts.",
+            }
+        ],
+        "experiences": [
+            {
+                "id": "exp-1",
+                "title": "Engineer",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2020-01", "isCurrent": True},
+                "scope": (
+                    "   familiar with the AGILE way of working and devops concepts.  "
+                ),
+            }
+        ],
+        "organizations": [{"id": "org-1", "name": "Acme"}],
+        "projects": [],
+        "skills": [],
+        "achievements": [],
+        "certifications": [],
+        "education": [],
+    }
+    report = run_profile_quality(profile)
+    narrative = next(
+        d for d in report.dimension_scores if d.name == "narrative_deduplication"
+    )
+    assert narrative.score < 1.0
+    assert len(narrative.citations) == 2
+
+
+def test_narrative_deduplication_is_perfect_without_duplicates() -> None:
+    """M1.25: distinct narratives keep the dimension at 1.0 with no finding."""
+    profile: dict[str, Any] = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-narr"},
+        "professionalSummaries": [
+            {
+                "id": "sum-1",
+                "text": "Senior engineer scaling AWS platforms and cutting costs.",
+            }
+        ],
+        "experiences": [
+            {
+                "id": "exp-1",
+                "title": "Engineer",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2020-01", "isCurrent": True},
+                "scope": "Introduced observability tooling that reduced MTTR by 30%.",
+            }
+        ],
+        "organizations": [{"id": "org-1", "name": "Acme"}],
+        "projects": [],
+        "skills": [],
+        "achievements": [],
+        "certifications": [],
+        "education": [],
+    }
+    report = run_profile_quality(profile)
+    narrative = next(
+        d for d in report.dimension_scores if d.name == "narrative_deduplication"
+    )
+    assert narrative.score == 1.0
+    assert narrative.citations == ()
+    assert not any(
+        f.rule_id == "recommendation_remove_duplicate_narrative"
+        for f in report.findings
+    )
+
+
+def test_narrative_deduplication_score_reflects_duplicate_ratio() -> None:
+    """M1.25: 2 duplicated segments out of 4 yield a 0.75 score citing both."""
+    repeated = "Drove cost reduction across the entire platform estate."
+    profile: dict[str, Any] = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-narr"},
+        "professionalSummaries": [],
+        "experiences": [
+            {
+                "id": "exp-1",
+                "title": "Engineer",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2020-01", "isCurrent": True},
+                "scope": repeated,
+            },
+            {
+                "id": "exp-2",
+                "title": "Lead",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2022-01", "isCurrent": True},
+                "scope": repeated,
+            },
+            {
+                "id": "exp-3",
+                "title": "Consultant",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2018-01", "isCurrent": False},
+                "scope": "Architected a multi-region failover strategy for billing.",
+            },
+            {
+                "id": "exp-4",
+                "title": "Advisor",
+                "organizationRefs": [{"id": "org-1", "type": "organization"}],
+                "dateRange": {"start": "2016-01", "isCurrent": False},
+                "scope": "Mentored four engineers on reliability practices.",
+            },
+        ],
+        "organizations": [{"id": "org-1", "name": "Acme"}],
+        "projects": [],
+        "skills": [],
+        "achievements": [],
+        "certifications": [],
+        "education": [],
+    }
+    report = run_profile_quality(profile)
+    narrative = next(
+        d for d in report.dimension_scores if d.name == "narrative_deduplication"
+    )
+    assert narrative.score == pytest.approx(0.75)
+    assert {c.entity_id for c in narrative.citations} == {"exp-1", "exp-2"}
 
 
 def test_unified_recommendations(sample_profile: dict[str, Any]) -> None:
@@ -424,7 +590,7 @@ def test_cli_profile_health(sample_profile: dict[str, Any]) -> None:
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert isinstance(data["health_score"], int)
-    assert len(data["dimensions"]) == 8
+    assert len(data["dimensions"]) == 9
     assert data["citations"]
 
 

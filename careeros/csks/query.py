@@ -46,9 +46,15 @@ class CSKSQueryEngine:
         "for", "with", "about", "into", "over", "all", "any", "that",
     })
 
-    def __init__(self, graph: "KnowledgeGraph", repo_root: "Path | None" = None) -> None:
+    def __init__(
+        self,
+        graph: "KnowledgeGraph",
+        repo_root: "Path | None" = None,
+        profile: dict[str, Any] | None = None,
+    ) -> None:
         self.graph = graph
         self.repo_root = repo_root
+        self.profile = profile
         self._node_cache: dict[str, "GraphNode"] = {}
         self._edge_index: dict[str, list] = defaultdict(list)
         self._reverse_edge_index: dict[str, list] = defaultdict(list)
@@ -227,6 +233,12 @@ class CSKSQueryEngine:
             result = self._handle_status_check(question)
         elif query_type == "impact_analysis":
             result = self._handle_impact_analysis(question)
+        elif query_type == "profile_quality_check":
+            result = self._handle_profile_quality_check(question, intent)
+        elif query_type == "improvement_queue":
+            result = self._handle_improvement_queue()
+        elif query_type == "stale_artifacts":
+            result = self._handle_stale_artifacts()
         elif query_type == "search":
             result = self._handle_search(question, intent)
         else:
@@ -776,6 +788,246 @@ class CSKSQueryEngine:
             "answer": "\n".join(answer_lines),
             "citations": citations,
             "entities": [n.id for n in dependents],
+        }
+
+    def _handle_profile_quality_check(
+        self, question: str, intent: "ClassifiedIntent | None" = None
+    ) -> dict:
+        """Answer profile health / narrative-quality questions deterministically.
+
+        Runs the Profile Quality Engine over the profile attached to the query
+        engine (``profile`` constructor argument). Narrative questions report
+        the duplicated narrative, every entity carrying it, and the occurrence
+        count; generic health questions report the health score, the dimensions
+        below full health, and the findings with citations.
+        """
+        if self.profile is None:
+            return {
+                "answer": (
+                    "No profile is attached to the query engine. Provide a "
+                    "canonical profile (CSKSQueryEngine(graph, profile=...)) to "
+                    "answer profile-quality questions."
+                ),
+                "citations": [],
+                "entities": [],
+            }
+
+        from careeros.profile_quality import run_profile_quality
+
+        report = run_profile_quality(self.profile)
+        q = question.lower()
+
+        if "narrative" in q or "duplicate" in q:
+            findings = [
+                f for f in report.findings
+                if f.rule_id == "recommendation_remove_duplicate_narrative"
+            ]
+            if not findings:
+                return {
+                    "answer": (
+                        f"No duplicate narrative found. Profile "
+                        f"'{report.profile_id}' health score is "
+                        f"{report.health_score}/100."
+                    ),
+                    "citations": [],
+                    "entities": [],
+                }
+
+            answer_lines = [
+                f"Profile '{report.profile_id}' contains {len(findings)} duplicate "
+                "narrative group(s):"
+            ]
+            citations: list[dict] = []
+            entities: list[str] = []
+            for finding in findings:
+                occurrences = finding.citations
+                snippet = occurrences[0].snippet if occurrences else ""
+                locations = ", ".join(
+                    f"{citation.entity_id} ({citation.entity_type})"
+                    for citation in occurrences
+                )
+                answer_lines.append(
+                    f"  - '{snippet}' appears {len(occurrences)} times"
+                )
+                answer_lines.append(f"    Locations: {locations}")
+                answer_lines.append(f"    Action: {finding.suggested_action}")
+                for citation in occurrences:
+                    entities.append(citation.entity_id)
+                    citations.append({
+                        "file": report.profile_id,
+                        "line_start": 0,
+                        "line_end": 0,
+                        "text": citation.snippet,
+                        "entity_id": citation.entity_id,
+                    })
+            return {
+                "answer": "\n".join(answer_lines),
+                "citations": citations,
+                "entities": entities,
+            }
+
+        answer_lines = [
+            f"Profile '{report.profile_id}' health score: {report.health_score}/100."
+        ]
+        below = [d for d in report.dimension_scores if d.score < 1.0]
+        if not below:
+            answer_lines.append(
+                "All dimensions are healthy — the profile is fully optimized."
+            )
+            return {"answer": "\n".join(answer_lines), "citations": [], "entities": []}
+
+        answer_lines.append(f"{len(below)} dimension(s) below full health:")
+        for dimension in below:
+            answer_lines.append(f"  - {dimension.name} ({dimension.score:.0%})")
+        answer_lines.append("Findings:")
+        citations: list[dict] = []
+        entities: list[str] = []
+        for finding in report.findings:
+            answer_lines.append(f"  - [{finding.rule_id}] {finding.title}")
+            entities.append(finding.element_id)
+            citations.append({
+                "file": report.profile_id,
+                "line_start": 0,
+                "line_end": 0,
+                "text": finding.title,
+                "entity_id": finding.element_id,
+            })
+        return {
+            "answer": "\n".join(answer_lines),
+            "citations": citations,
+            "entities": entities,
+        }
+
+    def _handle_improvement_queue(self) -> dict:
+        """Answer 'list improvements' deterministically.
+
+        Runs the Profile Quality Engine over the attached profile and renders
+        the prioritized improvement queue from the unified recommendation
+        model (ADR-009), matching ``careeros improvement-queue`` ordering.
+        """
+        if self.profile is None:
+            return {
+                "answer": (
+                    "No profile is attached to the query engine. Provide a "
+                    "canonical profile (CSKSQueryEngine(graph, profile=...)) to "
+                    "answer improvement questions."
+                ),
+                "citations": [],
+                "entities": [],
+            }
+
+        from careeros.profile_quality import (
+            filter_and_sort_recommendations,
+            run_profile_quality,
+            to_unified_recommendations,
+        )
+
+        report = run_profile_quality(self.profile)
+        recommendations = filter_and_sort_recommendations(
+            to_unified_recommendations(report)
+        )
+
+        if not recommendations:
+            return {
+                "answer": (
+                    f"Profile '{report.profile_id}' has no pending "
+                    "improvements - the profile is fully optimized."
+                ),
+                "citations": [],
+                "entities": [],
+            }
+
+        answer_lines = [
+            f"Profile '{report.profile_id}' improvement queue "
+            f"({len(recommendations)} item(s)):"
+        ]
+        citations: list[dict] = []
+        entities: list[str] = []
+        for recommendation in recommendations:
+            answer_lines.append(
+                f"  - [{recommendation.priority}] {recommendation.title} "
+                f"({recommendation.rule_id})"
+            )
+            answer_lines.append(f"    Action: {recommendation.suggested_action}")
+            answer_lines.append(
+                f"    Resolution: {recommendation.resolution_type} on "
+                f"{recommendation.element_id}"
+            )
+            entities.append(recommendation.element_id)
+            citations.append({
+                "file": report.profile_id,
+                "line_start": 0,
+                "line_end": 0,
+                "text": recommendation.title,
+                "entity_id": recommendation.element_id,
+            })
+
+        return {
+            "answer": "\n".join(answer_lines),
+            "citations": citations,
+            "entities": entities,
+        }
+
+    def _handle_stale_artifacts(self) -> dict:
+        """Answer 'show stale artifacts' deterministically.
+
+        Reuses the canonical artifact lifecycle state written by the
+        Resolution Engine (``careeros.resolution``: an artifact's ``status``
+        is set to ``stale`` when a resolution mutates an element it exports).
+        Nothing is regenerated here - regeneration is an explicit user action.
+        """
+        if self.profile is None:
+            return {
+                "answer": (
+                    "No profile is attached to the query engine. Provide a "
+                    "canonical profile (CSKSQueryEngine(graph, profile=...)) to "
+                    "answer stale-artifact questions."
+                ),
+                "citations": [],
+                "entities": [],
+            }
+
+        profile_id = str(self.profile.get("person", {}).get("id", "unknown"))
+        stale = [
+            artifact
+            for artifact in self.profile.get("artifacts", [])
+            if isinstance(artifact, dict) and artifact.get("status") == "stale"
+        ]
+
+        if not stale:
+            return {
+                "answer": (
+                    f"Profile '{profile_id}' has no stale artifacts - all "
+                    "generated artifacts are current."
+                ),
+                "citations": [],
+                "entities": [],
+            }
+
+        answer_lines = [
+            f"Profile '{profile_id}' has {len(stale)} stale artifact(s) - "
+            "regenerate them to reflect the updated canonical profile:"
+        ]
+        citations: list[dict] = []
+        entities: list[str] = []
+        for artifact in stale:
+            artifact_id = str(artifact.get("id", "") or "?")
+            title = str(artifact.get("title", "") or artifact_id)
+            artifact_type = str(artifact.get("artifactType", "") or "")
+            answer_lines.append(f"  - {title} ({artifact_id}) [{artifact_type}]")
+            entities.append(artifact_id)
+            citations.append({
+                "file": profile_id,
+                "line_start": 0,
+                "line_end": 0,
+                "text": f"{title} is stale",
+                "entity_id": artifact_id,
+            })
+
+        return {
+            "answer": "\n".join(answer_lines),
+            "citations": citations,
+            "entities": entities,
         }
 
     def _handle_unknown(self, question: str) -> dict:

@@ -236,3 +236,210 @@ def test_answer_formatter_empty_result(engine: CSKSQueryEngine) -> None:
     assert payload["citations"] == []
     text = AnswerFormatter.format_cli(result)
     assert "Entities found: 0" in text
+
+
+DUPLICATE_PROFILE: dict = {
+    "profileVersion": "1.0.0",
+    "person": {"id": "person-narr"},
+    "professionalSummaries": [
+        {"id": "sum-1", "text": "Familiar with the Agile way of working and DevOps concepts."}
+    ],
+    "experiences": [
+        {
+            "id": "exp-1",
+            "title": "Engineer",
+            "organizationRefs": [{"id": "org-1", "type": "organization"}],
+            "dateRange": {"start": "2020-01", "isCurrent": True},
+            "scope": "Familiar with the Agile way of working and DevOps concepts.",
+        }
+    ],
+    "organizations": [{"id": "org-1", "name": "Acme"}],
+    "projects": [],
+    "skills": [],
+    "achievements": [],
+    "certifications": [],
+    "education": [],
+}
+
+CLEAN_PROFILE: dict = {
+    "profileVersion": "1.0.0",
+    "person": {"id": "person-clean"},
+    "professionalSummaries": [
+        {"id": "sum-1", "text": "Senior engineer scaling AWS platforms and cutting costs."}
+    ],
+    "experiences": [
+        {
+            "id": "exp-1",
+            "title": "Engineer",
+            "organizationRefs": [{"id": "org-1", "type": "organization"}],
+            "dateRange": {"start": "2020-01", "isCurrent": True},
+            "scope": "Introduced observability tooling that reduced MTTR by 30%.",
+        }
+    ],
+    "organizations": [{"id": "org-1", "name": "Acme"}],
+    "projects": [],
+    "skills": [],
+    "achievements": [],
+    "certifications": [],
+    "education": [],
+}
+
+STALE_PROFILE: dict = dict(CLEAN_PROFILE, **{
+    "person": {"id": "person-stale"},
+    "artifacts": [
+        {
+            "id": "art-cv",
+            "title": "English CV",
+            "artifactType": "CV",
+            "status": "stale",
+        },
+        {
+            "id": "art-cover",
+            "title": "Cover Letter",
+            "artifactType": "COVER_LETTER",
+            "status": "current",
+        },
+    ],
+})
+
+
+@pytest.fixture
+def narrative_engine(graph: KnowledgeGraph) -> CSKSQueryEngine:
+    return CSKSQueryEngine(graph, profile=DUPLICATE_PROFILE)
+
+
+def test_profile_quality_check_duplicate_narrative(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Show duplicate narrative")
+    assert result.query_type == "profile_quality_check"
+    assert result.entities_found == 2
+    assert {"sum-1", "exp-1"} == set(result.matched_entities)
+    assert "duplicate narrative group" in result.answer
+    assert "sum-1" in result.answer
+    assert "exp-1" in result.answer
+    assert len(result.citations) == 2
+
+
+def test_profile_quality_check_health_score(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Why isn't this profile 100% healthy?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer
+    assert "narrative_deduplication" in result.answer
+    assert result.entities_found >= 1
+
+
+def test_profile_quality_check_no_duplicates(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph, profile=CLEAN_PROFILE)
+    result = engine.query("Are there any duplicate narratives in this profile?")
+    assert result.query_type == "profile_quality_check"
+    assert "No duplicate narrative found" in result.answer
+    assert result.entities_found == 0
+
+
+def test_profile_quality_check_without_profile(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph)
+    result = engine.query("Show duplicate narrative")
+    assert result.query_type == "profile_quality_check"
+    assert "No profile is attached" in result.answer
+    assert result.entities_found == 0
+
+
+def test_profile_quality_check_grammar_does_not_steal_entity_queries(engine: CSKSQueryEngine) -> None:
+    result = engine.query("What is ProfileLoader?")
+    assert result.query_type == "entity_lookup"
+    assert "component.careeros.profile_loader.ProfileLoader" in result.matched_entities
+
+
+def test_profile_quality_check_why_question_grammar(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Why is my profile not 100% healthy?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer
+
+
+def test_profile_quality_check_why_isn_t_grammar(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("Why isn't my profile healthy?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer
+
+
+def test_profile_quality_check_how_healthy_grammar(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("How healthy is my resume?")
+    assert result.query_type == "profile_quality_check"
+    assert "health score" in result.answer
+
+
+@pytest.fixture
+def stale_engine(graph: KnowledgeGraph) -> CSKSQueryEngine:
+    return CSKSQueryEngine(graph, profile=STALE_PROFILE)
+
+
+def test_profile_quality_check_duplicate_narratives_plural(narrative_engine: CSKSQueryEngine) -> None:
+    for question in ("Show duplicate narratives", "What are the duplicate narratives?"):
+        result = narrative_engine.query(question)
+        assert result.query_type == "profile_quality_check"
+        assert "duplicate narrative group" in result.answer
+        assert result.entities_found == 2
+
+
+def test_improvement_queue_list_improvements(narrative_engine: CSKSQueryEngine) -> None:
+    result = narrative_engine.query("List improvements for my profile")
+    assert result.query_type == "improvement_queue"
+    assert "improvement queue" in result.answer
+    assert result.entities_found >= 1
+
+
+def test_improvement_queue_bare_question(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph, profile=CLEAN_PROFILE)
+    result = engine.query("List improvements")
+    assert result.query_type == "improvement_queue"
+    assert "improvement queue" in result.answer
+
+
+def test_improvement_queue_without_profile(graph: KnowledgeGraph) -> None:
+    result = CSKSQueryEngine(graph).query("List improvements")
+    assert result.query_type == "improvement_queue"
+    assert "No profile is attached" in result.answer
+
+
+def test_stale_artifacts_lists_stale(stale_engine: CSKSQueryEngine) -> None:
+    result = stale_engine.query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "English CV" in result.answer
+    assert "art-cv" in result.answer
+    assert "art-cover" not in result.answer
+    assert result.entities_found == 1
+
+
+def test_stale_artifacts_which_are_stale(stale_engine: CSKSQueryEngine) -> None:
+    result = stale_engine.query("Which artifacts are stale?")
+    assert result.query_type == "stale_artifacts"
+    assert "English CV" in result.answer
+
+
+def test_stale_artifacts_all_current(graph: KnowledgeGraph) -> None:
+    engine = CSKSQueryEngine(graph, profile=CLEAN_PROFILE)
+    result = engine.query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "no stale artifacts" in result.answer
+    assert result.entities_found == 0
+
+
+def test_stale_artifacts_without_profile(graph: KnowledgeGraph) -> None:
+    result = CSKSQueryEngine(graph).query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "No profile is attached" in result.answer
+
+
+def test_stale_artifacts_multiple_preserve_canonical_order(graph: KnowledgeGraph) -> None:
+    profile = dict(STALE_PROFILE)
+    profile["artifacts"] = [
+        {"id": "art-cv", "title": "English CV", "artifactType": "CV", "status": "stale"},
+        {"id": "art-cover", "title": "Cover Letter", "artifactType": "COVER_LETTER", "status": "stale"},
+        {"id": "art-guide", "title": "Interview Guide", "artifactType": "INTERVIEW_PREPARATION_GUIDE", "status": "current"},
+    ]
+    engine = CSKSQueryEngine(graph, profile=profile)
+    result = engine.query("Show stale artifacts")
+    assert result.query_type == "stale_artifacts"
+    assert "2 stale artifact(s)" in result.answer
+    assert result.answer.index("English CV") < result.answer.index("Cover Letter")
+    assert "Interview Guide" not in result.answer
+    assert result.entities_found == 2

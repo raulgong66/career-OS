@@ -1,4 +1,4 @@
-"""Eight pure profile health dimension calculators (M1.24 Spec SS3.4).
+"""Nine pure profile health dimension calculators (M1.24 Spec SS3.4).
 
 Every function is a **pure function on a canonical profile dict**: it reads the
 profile, computes a score in ``[0.0, 1.0]``, and returns the dimension findings
@@ -7,10 +7,11 @@ no external state, no knowledge graph, no rule execution (AC 1.11).
 
 These calculators aggregate concepts that already exist in
 ``careeros.reasoning.rules.recommendation_rules`` (reusing predicates such as
-``_is_measurable``, ``TECHNOLOGY_KEYWORDS``, ``_normalize_skill_name``, and
-``word_boundary_match``). They introduce **no new business rules** (M1.24.0
-clarification): each score is a ratio over profile elements and every finding
-references the corresponding rule id.
+``_is_measurable``, ``TECHNOLOGY_KEYWORDS``, ``_normalize_skill_name``,
+``find_duplicate_narrative_groups``, and ``word_boundary_match``). They
+introduce **no new business rules** (M1.24.0 clarification): each score is a
+ratio over profile elements and every finding references the corresponding
+rule id.
 """
 
 from __future__ import annotations
@@ -18,10 +19,13 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from careeros.reasoning.rules.recommendation_rules import (
+    NARRATIVE_RULE_ID,
     _is_measurable,
     _normalize_skill_name,
     GENERIC_SUMMARY_WORDS,
     TECHNOLOGY_KEYWORDS,
+    collect_narrative_segments,
+    find_duplicate_narrative_groups,
 )
 from careeros.reasoning.utils import word_boundary_match
 
@@ -38,7 +42,8 @@ DIMENSION_WEIGHTS: dict[str, float] = {
     "skill_evidence_coverage": 0.20,
     "technology_presence": 0.15,
     "summary_quality": 0.10,
-    "skill_deduplication": 0.10,
+    "skill_deduplication": 0.05,
+    "narrative_deduplication": 0.05,
     "business_outcome_language": 0.10,
     "certification_utilization": 0.10,
     "project_skill_linkage": 0.05,
@@ -52,6 +57,7 @@ DIMENSION_LABELS: dict[str, str] = {
     "technology_presence": "Technology Presence",
     "summary_quality": "Summary Quality",
     "skill_deduplication": "Skill Deduplication",
+    "narrative_deduplication": "Narrative Deduplication",
     "business_outcome_language": "Business Outcome Language",
     "certification_utilization": "Certification Utilization",
     "project_skill_linkage": "Project Skill Linkage",
@@ -74,6 +80,10 @@ DIMENSION_DESCRIPTIONS: dict[str, str] = {
     "skill_deduplication": (
         "1 - (duplicate_count / total_skills) after name normalization"
     ),
+    "narrative_deduplication": (
+        "1 - (duplicate_narrative_segments / total_narrative_segments) after "
+        "whitespace/case normalization"
+    ),
     "business_outcome_language": (
         "% of achievements with business outcome words"
     ),
@@ -89,7 +99,7 @@ _PROFILE_ELEMENT = "profile"
 
 
 def health_dimensions() -> tuple[HealthDimension, ...]:
-    """Return descriptor objects for the eight health dimensions."""
+    """Return descriptor objects for the nine health dimensions."""
     return tuple(
         HealthDimension(
             name=name,
@@ -509,6 +519,73 @@ def calculate_skill_deduplication(
 
 
 # ---------------------------------------------------------------------------
+# 5b. Narrative Deduplication (Knowledge Quality, M1.25)
+# ---------------------------------------------------------------------------
+
+MAX_NARRATIVE_GROUPS_PER_DIMENSION = 5
+
+
+def calculate_narrative_deduplication(
+    profile: dict[str, Any],
+) -> tuple[float, list[Finding], list[Citation]]:
+    """Score: 1 - (duplicate_narrative_segments / total_narrative_segments).
+
+    A narrative segment is duplicate when its text matches another segment
+    exactly after whitespace/case normalization (M1.25 spec). Vacuous when the
+    profile has no narrative content at all.
+    """
+    groups = find_duplicate_narrative_groups(profile)
+    if not groups:
+        return 1.0, [], []
+
+    total = len(collect_narrative_segments(profile))
+    duplicate_count = sum(len(segments) - 1 for _, segments in groups)
+    score = 1 - (duplicate_count / max(total, 1))
+
+    element_id = _person_id(profile)
+    findings: list[Finding] = []
+    citations: list[Citation] = []
+    for _, segments in groups[:MAX_NARRATIVE_GROUPS_PER_DIMENSION]:
+        narrative = segments[0]["text"]
+        occurrence_count = len(segments)
+        occurrence_citations = tuple(
+            Citation(
+                entity_id=segment["entity_id"],
+                entity_type=segment["entity_type"],
+                property_path=segment["property_path"],
+                snippet=narrative,
+            )
+            for segment in segments
+        )
+        findings.append(
+            Finding(
+                rule_id=NARRATIVE_RULE_ID,
+                dimension=RULE_ID_TO_DIMENSION[NARRATIVE_RULE_ID],
+                element_id=element_id,
+                element_type="profile",
+                title="Remove duplicate narrative",
+                reason=(
+                    f"'{narrative[:120]}' appears {occurrence_count} times across "
+                    f"{occurrence_count} profile element(s)."
+                ),
+                suggested_action=(
+                    "Keep the narrative once and rewrite the other occurrences "
+                    "with unique, role-specific content."
+                ),
+                resolution_type=resolution_type_for_rule(NARRATIVE_RULE_ID),
+                evidence_refs=(),
+                priority="medium",
+                estimated_impact="medium",
+                confidence="high",
+                citations=occurrence_citations,
+            )
+        )
+        citations.extend(occurrence_citations)
+
+    return score, findings, citations
+
+
+# ---------------------------------------------------------------------------
 # 6. Business Outcome Language
 # ---------------------------------------------------------------------------
 
@@ -689,6 +766,7 @@ DIMENSION_CALCULATORS: dict[str, DimensionCalculator] = {
     "technology_presence": calculate_technology_presence,
     "summary_quality": calculate_summary_quality,
     "skill_deduplication": calculate_skill_deduplication,
+    "narrative_deduplication": calculate_narrative_deduplication,
     "business_outcome_language": calculate_business_outcome_language,
     "certification_utilization": calculate_certification_utilization,
     "project_skill_linkage": calculate_project_skill_linkage,
@@ -703,6 +781,7 @@ __all__ = [
     "calculate_achievement_measurability",
     "calculate_business_outcome_language",
     "calculate_certification_utilization",
+    "calculate_narrative_deduplication",
     "calculate_project_skill_linkage",
     "calculate_skill_deduplication",
     "calculate_skill_evidence_coverage",
