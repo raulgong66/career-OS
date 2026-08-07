@@ -28,6 +28,7 @@ from .runtime_config import (
 )
 
 from careeros.csks.api import CSKS_ROUTER
+from .routes.profile_quality import PROFILE_QUALITY_ROUTER
 
 try:
     runtime_config = validate_runtime_config()
@@ -36,7 +37,7 @@ except RuntimeConfigurationError as exc:
     raise SystemExit(1) from exc
 print_configuration_banner(runtime_config)
 
-from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv
+from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv, run_profile_quality
 from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.profile_repository import ProfileRepository, ProfileState
@@ -64,6 +65,7 @@ from .dto import to_import_response, to_profile_details, to_profile_summary
 from careeros.reasoning.rules.recommendation_rules import TECHNOLOGY_KEYWORDS
 from careeros.resolution import (
     AchievementNotMeasurableError,
+    EmptySummaryError,
     InvalidAchievementError,
     RESOLVABLE_RULES,
     ResolutionTargetNotFoundError,
@@ -76,6 +78,7 @@ logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s: %(messag
 
 app = FastAPI(title="CareerOS API", version=BACKEND_VERSION)
 app.include_router(CSKS_ROUTER)
+app.include_router(PROFILE_QUALITY_ROUTER)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -214,6 +217,12 @@ class CreateArtifactRequest(BaseModel):
     title: str | None = Field(default=None, description="Optional human-readable artifact title.")
 
 
+class TemplatePreviewRequest(BaseModel):
+    """Request payload for rendering a template preview."""
+
+    profile_id: str = Field(description="Profile identifier (filename without extension).")
+
+
 class CreateArtifactResponse(BaseModel):
     """Response after creating an artifact."""
 
@@ -235,6 +244,7 @@ class ResolveRecommendationRequest(BaseModel):
     experienceIds: list[str] = Field(default_factory=list, description="Selected experience references (project / skill evidence).")
     technologies: list[str] = Field(default_factory=list, description="Technology tags to attach to an experience.")
     achievementStatement: str = Field(default="", description="Measurable achievement statement to persist (NoMeasurableAchievementRule).")
+    summaryText: str = Field(default="", description="Professional summary text to persist (GenericSummaryRule).")
 
 
 class RegenerateArtifactRequest(BaseModel):
@@ -348,12 +358,14 @@ def resolve_profile_recommendation(profile_id: str, request: ResolveRecommendati
             experience_ids=request.experienceIds,
             technologies=request.technologies,
             achievement_statement=request.achievementStatement or "",
+            summary_text=request.summaryText or "",
         )
-    except (UnsupportedRuleError, InvalidAchievementError, AchievementNotMeasurableError) as exc:
+    except (UnsupportedRuleError, InvalidAchievementError, AchievementNotMeasurableError, EmptySummaryError) as exc:
         error = {
             UnsupportedRuleError: "UNSUPPORTED_RULE",
             InvalidAchievementError: "INVALID_ACHIEVEMENT",
             AchievementNotMeasurableError: "ACHIEVEMENT_NOT_MEASURABLE",
+            EmptySummaryError: "EMPTY_SUMMARY",
         }[type(exc)]
         raise HTTPException(status_code=400, detail=ApiErrorResponse(
             error=error,
@@ -520,6 +532,69 @@ def version() -> VersionResponse:
 def list_artifact_templates() -> list[dict[str, str]]:
     """Return all available artifact templates."""
     return default_template_registry().list()
+
+
+@app.post("/artifact-templates/{template_id}/preview")
+def preview_artifact_template(template_id: str, request: TemplatePreviewRequest) -> dict[str, Any]:
+    """Render a template preview for a profile (render-only, no side effects).
+
+    Transport-only wrapper around the existing generation pipeline: the template
+    renders markdown from the current canonical profile without creating an
+    artifact, persisting anything, or re-running the reasoning engine.
+    """
+    try:
+        record = PROFILE_REPOSITORY.get(request.profile_id)
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+
+    data = record.data
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail="Profile data is malformed.",
+        ).model_dump())
+
+    registry = default_template_registry()
+    try:
+        template = registry.get(template_id)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=ApiErrorResponse(
+            error="INVALID_TEMPLATE",
+            detail=f"Unknown artifact template: '{template_id}'. Available: {[t['id'] for t in registry.list()]}",
+        ).model_dump())
+
+    try:
+        markdown = template.preview(data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=ApiErrorResponse(
+            error="VALIDATION_ERROR",
+            detail=str(exc),
+        ).model_dump())
+    except EntityNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=ApiErrorResponse(
+            error="NOT_FOUND",
+            detail=str(exc),
+        ).model_dump())
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=ApiErrorResponse(
+            error="INTERNAL_ERROR",
+            detail=f"Failed to render template preview: {exc}",
+        ).model_dump())
+
+    virtual_artifact = template.build(data, title="Preview")
+    try:
+        health_score = run_profile_quality(data).health_score
+    except Exception:
+        health_score = None
+
+    return {
+        "markdown": markdown,
+        "source_count": len(virtual_artifact.get("sourceRefs", [])),
+        "estimated_health_score": health_score,
+    }
 
 
 ACCEPTED_MIME_TYPES = {

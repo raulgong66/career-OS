@@ -1069,6 +1069,147 @@ def test_artifact_templates_endpoint() -> None:
     assert interest["displayName"] == "Interest Letter"
 
 
+PREVIEW_TEST_PROFILE = {
+    "profileVersion": "1.0.0",
+    "person": {
+        "id": "preview-person",
+        "names": [{"value": "Preview Person", "usage": "professional"}],
+        "positioning": {"headline": "AI Platform Engineer"},
+    },
+    "professionalSummaries": [
+        {"id": "sum-1", "label": "Summary", "text": "Deterministic preview engineer."},
+    ],
+    "skills": [
+        {"id": "skill-1", "name": "Python"},
+        {"id": "skill-2", "name": "Kubernetes"},
+    ],
+    "experiences": [
+        {
+            "id": "exp-1",
+            "title": "Platform Engineer",
+            "organizationRefs": [{"id": "org-1", "type": "organization"}],
+            "dateRange": {"start": "2021-01", "end": "2024-12"},
+            "scope": "Built deterministic preview pipelines.",
+        },
+    ],
+    "organizations": [{"id": "org-1", "name": "ACME"}],
+    "projects": [],
+    "education": [],
+    "certifications": [],
+    "achievements": [],
+    "artifacts": [],
+    "targetContexts": [],
+}
+
+
+@pytest.fixture
+def preview_profile() -> str:
+    """Create a clean test profile for template preview tests and return its ID."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    profile_id = "preview-test-profile"
+    profile_path = PROFILES_ROOT / f"{profile_id}.yaml"
+    profile_path.write_text(yaml.safe_dump(PREVIEW_TEST_PROFILE), encoding="utf-8")
+    yield profile_id
+    if profile_path.exists():
+        profile_path.unlink()
+
+
+def _read_raw_profile(profile_id: str) -> str:
+    from api.main import PROFILES_ROOT
+    return (PROFILES_ROOT / f"{profile_id}.yaml").read_text(encoding="utf-8")
+
+
+def test_artifact_template_preview_returns_markdown_and_source_count(preview_profile: str) -> None:
+    """POST /artifact-templates/{id}/preview renders markdown with source_count."""
+    response = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "# Preview Person" in body["markdown"]
+    assert "Python" in body["markdown"]
+    assert body["source_count"] == 4  # summary + 2 skills + experience
+    assert isinstance(body["estimated_health_score"], int)
+
+
+def test_artifact_template_preview_is_deterministic(preview_profile: str) -> None:
+    """Same profile + same template produces identical preview output."""
+    first = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    second = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert first.status_code == 200
+    assert first.json() == second.json()
+
+
+def test_artifact_template_preview_has_no_side_effects(preview_profile: str) -> None:
+    """Preview is render-only: no artifact, no profile mutation, no versions."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    before = _read_raw_profile(preview_profile)
+    response = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 200
+    assert _read_raw_profile(preview_profile) == before
+
+    data = yaml.safe_load(_read_raw_profile(preview_profile))
+    assert data.get("artifacts") == []
+    assert data.get("extensions", {}).get("_versions") is None
+
+
+def test_artifact_template_preview_rejects_unknown_template(preview_profile: str) -> None:
+    """Preview rejects unknown template identifiers with INVALID_TEMPLATE."""
+    response = client.post(
+        "/artifact-templates/not-a-template/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "INVALID_TEMPLATE"
+
+
+def test_artifact_template_preview_reports_missing_profile() -> None:
+    """Preview reports unknown profiles with NOT_FOUND."""
+    response = client.post(
+        "/artifact-templates/standard_cv/preview",
+        json={"profile_id": "does-not-exist"},
+    )
+    assert response.status_code == 404
+    assert response.json()["error"] == "NOT_FOUND"
+
+
+def test_artifact_template_preview_interest_letter(preview_profile: str) -> None:
+    """Interest letter template renders a markdown preview through the pipeline."""
+    response = client.post(
+        "/artifact-templates/standard_interest_letter/preview",
+        json={"profile_id": preview_profile},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "Preview Person" in body["markdown"]
+    assert "Python" in body["markdown"]
+    assert body["source_count"] == 4  # summary + experience + 2 skills
+
+
+def test_standard_cv_template_preview_returns_markdown() -> None:
+    """ArtifactTemplate.preview(profile) renders markdown directly from a dict."""
+    from careeros.artifact_templates import StandardCVTemplate
+
+    markdown = StandardCVTemplate().preview(PREVIEW_TEST_PROFILE)
+    assert isinstance(markdown, str)
+    assert "# Preview Person" in markdown
+    assert "Python" in markdown
+
+
 RESOLVE_TEST_PROFILE = {
     "profileVersion": "1.0.0",
     "person": {"id": "resolve-test-person", "names": [{"value": "Resolve Test", "usage": "professional"}]},
@@ -1133,14 +1274,82 @@ def test_technologies_endpoint() -> None:
 
 
 def test_resolve_recommendation_unsupported_rule(resolve_profile: str) -> None:
-    """Resolution rejects rule types outside the M1.7 scope."""
+    """Resolution rejects rule types outside the M1.7/M1.24 scope."""
     response = client.post(
         f"/profiles/{resolve_profile}/resolve",
-        json={"triggeredRule": "GenericSummaryRule", "elementId": "exp-no-tech"},
+        json={"triggeredRule": "UnknownRule", "elementId": "exp-no-tech"},
     )
     assert response.status_code == 400
     body = response.json()
     assert body["error"] == "UNSUPPORTED_RULE"
+
+
+def test_resolve_professional_summary_creates_when_missing(resolve_profile: str) -> None:
+    """Resolving a missing professional summary writes a canonical summary and clears the recommendation."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "GenericSummaryRule", "elementId": "", "summaryText": "Senior engineer with 8 years of experience focused on cloud reliability."},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["profile"]["summary"] == "Senior engineer with 8 years of experience focused on cloud reliability."
+
+    canonical = _read_canonical(resolve_profile)
+    summaries = canonical["professionalSummaries"]
+    assert len(summaries) == 1
+    assert summaries[0]["text"] == "Senior engineer with 8 years of experience focused on cloud reliability."
+    assert summaries[0]["id"] == "professional-summary"
+
+    analysis = client.post("/analyze", json={"profileId": resolve_profile})
+    recs = analysis.json()["recommendations"]
+    assert not any(
+        r["triggered_rule"] == "GenericSummaryRule" for r in recs
+    )
+
+
+def test_resolve_professional_summary_updates_existing_and_marks_artifact_stale(resolve_profile: str) -> None:
+    """Resolving an existing summary rewrites its text and marks exporting artifacts stale."""
+    import yaml
+    from api.main import PROFILES_ROOT
+
+    path = PROFILES_ROOT / f"{resolve_profile}.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["professionalSummaries"] = [
+        {"id": "summary-main", "label": "Professional profile", "text": "Old summary text."}
+    ]
+    data["artifacts"] = [
+        {
+            "id": "art-cv",
+            "title": "Test CV",
+            "artifactType": "CV",
+            "sourceRefs": [{"id": "summary-main", "type": "professional_summary"}],
+            "status": "current",
+        }
+    ]
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "GenericSummaryRule", "elementId": "", "summaryText": "Results-driven engineer with 8 years of cloud and DevOps experience."},
+    )
+    assert response.status_code == 200
+
+    canonical = _read_canonical(resolve_profile)
+    assert canonical["professionalSummaries"][0]["id"] == "summary-main"
+    assert canonical["professionalSummaries"][0]["label"] == "Professional profile"
+    assert canonical["professionalSummaries"][0]["text"] == "Results-driven engineer with 8 years of cloud and DevOps experience."
+    assert canonical["artifacts"][0]["status"] == "stale"
+
+
+def test_resolve_professional_summary_requires_text(resolve_profile: str) -> None:
+    """Resolution rejects an empty professional summary text."""
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={"triggeredRule": "GenericSummaryRule", "elementId": "", "summaryText": "   "},
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"] == "EMPTY_SUMMARY"
 
 
 def test_resolve_recommendation_profile_not_found() -> None:
@@ -1465,6 +1674,35 @@ def test_resolve_measurable_achievement_source_ref_is_idempotent(resolve_profile
     achievement_refs = [r for r in cv["sourceRefs"] if r.get("type") == "achievement"]
     assert len(achievement_refs) == len({r["id"] for r in achievement_refs})
     assert len(achievement_refs) == len(canonical["achievements"])
+
+
+def test_resolve_clears_improvement_queue_item(resolve_profile: str) -> None:
+    """M1.24.4: resolving a recommendation removes it from the improvement-queue endpoint."""
+    queue = client.get(f"/profiles/{resolve_profile}/improvement-queue")
+    assert queue.status_code == 200
+    target = next(
+        (item for item in queue.json() if item["rule_id"] == "recommendation_add_technologies"),
+        None,
+    )
+    assert target is not None
+
+    response = client.post(
+        f"/profiles/{resolve_profile}/resolve",
+        json={
+            "triggeredRule": "ExperienceNoTechnologiesRule",
+            "elementId": target["element_id"],
+            "technologies": ["Python", "Terraform"],
+        },
+    )
+    assert response.status_code == 200
+
+    queue_after = client.get(f"/profiles/{resolve_profile}/improvement-queue")
+    assert queue_after.status_code == 200
+    assert not any(
+        item["rule_id"] == "recommendation_add_technologies"
+        and item["element_id"] == target["element_id"]
+        for item in queue_after.json()
+    )
 
 
 def test_resolved_achievement_renders_in_tailored_cv(resolve_profile: str) -> None:

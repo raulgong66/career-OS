@@ -34,6 +34,41 @@ class MarkdownCVGenerator:
         self._provider = provider
 
     # ------------------------------------------------------------------
+    # Display-value helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _display_value(value: Any) -> str:
+        """Return the human-readable display text of a value.
+
+        Canonical display objects (``{"label": ...}`` or ``{"value": ...}``)
+        are rendered through their display field rather than their Python
+        repr. Location objects without a display label are composed from their
+        city/region/country parts.
+        """
+        if isinstance(value, dict):
+            for key in ("label", "value"):
+                text = value.get(key)
+                if text:
+                    return str(text).strip()
+            parts = [value.get(key) for key in ("city", "region", "country")]
+            return ", ".join(str(part).strip() for part in parts if part)
+        return str(value).strip() if value else ""
+
+    def _person_location(self, person: dict[str, Any]) -> str:
+        """Render the person's location from the canonical location object.
+
+        Prefers the schema ``person.location`` display object and falls back
+        to legacy flat ``city``/``country`` fields for older profiles.
+        """
+        location = person.get("location")
+        if location:
+            text = self._display_value(location)
+            if text:
+                return text
+        return ", ".join(filter(None, [person.get("city"), person.get("country")]))
+
+    # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
 
@@ -150,9 +185,7 @@ class MarkdownCVGenerator:
         headline = safe(person.get("positioning", {}).get("headline"))
         email = safe(person.get("email"))
         phone = safe(person.get("phone"))
-        city = safe(person.get("city"))
-        country = safe(person.get("country"))
-        location = ", ".join(filter(None, [city, country]))
+        location = self._person_location(person)
         linkedin = safe(person.get("linkedin"))
         github = safe(person.get("github"))
         languages_raw = person.get("languages", [])
@@ -182,7 +215,7 @@ class MarkdownCVGenerator:
                 "start": safe(d.get("dateRange", {}).get("start") or d.get("startDate", "")),
                 "end": safe(d.get("dateRange", {}).get("end") or d.get("endDate", "")),
                 "isCurrent": d.get("dateRange", {}).get("isCurrent", False) or d.get("isCurrent", False),
-                "location": safe(d.get("location")),
+                "location": self._display_value(d.get("location")),
                 "scope": safe(d.get("scope")),
                 "responsibilities": d.get("responsibilities", []),
                 "achievements": self._merge_achievement_texts(d, linked_achievements.get(str(s.id), [])),
@@ -412,9 +445,7 @@ Job Description:
         headline = person.get("positioning", {}).get("headline")
         email = person.get("email")
         phone = person.get("phone")
-        city = person.get("city")
-        country = person.get("country")
-        location = ", ".join(filter(None, [city, country]))
+        location = self._person_location(person)
         linkedin = person.get("linkedin")
 
         parts = list(filter(None, [headline, location, email, phone]))
@@ -515,7 +546,7 @@ Job Description:
             start = dr.get("start") or d.get("startDate", "")
             end = dr.get("end") or d.get("endDate", "")
             is_current = dr.get("isCurrent", False) or d.get("isCurrent", False)
-            loc = d.get("location", "")
+            loc = self._display_value(d.get("location"))
             date_str = self._date_range_str(start, end, is_current)
             meta_parts = list(filter(None, [date_str, loc]))
             if meta_parts:

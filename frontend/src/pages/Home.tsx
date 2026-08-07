@@ -83,7 +83,7 @@ export default function Home() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="bg-white border-2 border-blue-500 rounded-lg p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold text-gray-900">Resume Generation</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Resume Workspace</h2>
                 <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
                   READY
                 </span>

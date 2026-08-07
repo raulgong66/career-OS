@@ -25,7 +25,21 @@ class KnowledgeGraphBuilder:
         self._add_education(nodes, edges, profile.get("education", []), person)
         self._add_organizations(nodes, profile.get("organizations", []))
 
-        return KnowledgeGraph(nodes, edges)
+        return KnowledgeGraph(self._dedupe_nodes(nodes), edges)
+
+    @staticmethod
+    def _dedupe_nodes(nodes: list[GraphNode]) -> list[GraphNode]:
+        """Collapse nodes sharing an ID (first occurrence wins).
+
+        A graph node set is keyed by entity ID, so a profile that lists the
+        same entity more than once must yield a single node. Such redundancy
+        can occur in real extracted profiles (for example repeated education
+        entries), and must not crash health analysis.
+        """
+        by_id: dict[str, GraphNode] = {}
+        for node in nodes:
+            by_id.setdefault(node.id, node)
+        return list(by_id.values())
 
     @staticmethod
     def _add_person(nodes: list[GraphNode], person: dict[str, Any]) -> None:

@@ -134,6 +134,28 @@ def test_markdown_cv_generator_uses_only_export_contract(repo_root: Path, profil
     assert not any(line.startswith("###") for line in markdown.splitlines())
 
 
+def test_markdown_cv_generator_uses_edited_summary_when_artifact_lacks_source_ref(
+    repo_root: Path, profile: dict
+) -> None:
+    """Stale CV artifacts missing a professional_summary sourceRef still render the edited summary.
+
+    The ExportContractBuilder appends canonical professionalSummaries for CV
+    contracts, so the generator never falls back to a synthesized summary.
+    """
+    profile["professionalSummaries"][0]["text"] = "Edited professional summary text."
+    profile["artifacts"][0]["sourceRefs"] = [
+        ref
+        for ref in profile["artifacts"][0]["sourceRefs"]
+        if ref["type"] != "professional_summary"
+    ]
+
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+    markdown = MarkdownCVGenerator().generate(contract)
+
+    assert "## Professional Summary" in markdown
+    assert "Edited professional summary text." in markdown
+
+
 def test_markdown_cv_generator_preserves_contract_source_order_within_sections(repo_root: Path, profile: dict) -> None:
     profile["skills"].append({"id": "skill-2", "name": "Schema design"})
     profile["artifacts"][0]["sourceRefs"].extend(
@@ -194,3 +216,30 @@ def test_markdown_cv_links_achievement_via_context_refs(repo_root: Path, profile
 
     assert "Cut infrastructure cost by 25% while migrating 40 microservices." in markdown
     assert "achievement-2" not in markdown
+
+
+def test_markdown_cv_renders_location_display_objects_as_text(repo_root: Path, profile: dict) -> None:
+    """Location display objects render via their human-readable field, never as Python reprs."""
+    profile["person"]["location"] = {"label": "Netherlands"}
+    profile["experiences"][0]["location"] = {"label": "Amsterdam"}
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+
+    markdown = MarkdownCVGenerator().generate(contract)
+
+    assert "Netherlands" in markdown
+    assert "Amsterdam" in markdown
+    assert "'label'" not in markdown
+    assert "{" not in markdown
+
+
+def test_markdown_cv_renders_location_city_country_parts(repo_root: Path, profile: dict) -> None:
+    """Locations without a label compose a label from city/region/country parts."""
+    profile["person"]["location"] = {"city": "Stockholm", "country": "Sweden"}
+    profile["experiences"][0]["location"] = {"city": "Utrecht", "country": "Netherlands"}
+    contract = ExportContractBuilder(SchemaLoader(repo_root / "schemas")).build(profile, "artifact-1")
+
+    markdown = MarkdownCVGenerator().generate(contract)
+
+    assert "Stockholm, Sweden" in markdown
+    assert "Utrecht, Netherlands" in markdown
+    assert "{" not in markdown

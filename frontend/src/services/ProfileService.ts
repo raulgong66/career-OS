@@ -1,4 +1,12 @@
-import type { AnalyzeResponse, ImportResponse, ProfileDetails, ProfileSummary } from '../types';
+import type {
+  AnalyzeResponse,
+  ImportResponse,
+  ProfileDetails,
+  ProfileSummary,
+  QualityReport,
+  UnifiedRecommendation,
+} from '../types';
+import { fetchJson } from './http';
 
 const BASE = '';
 
@@ -18,101 +26,89 @@ export class ProfileService {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch(`${BASE}/profiles/import`, {
+    return fetchJson<ImportResponse>(`${BASE}/profiles/import`, {
       method: 'POST',
       body: formData,
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to import profile');
-    }
-
-    return response.json();
+    }, 'Failed to import profile');
   }
 
   async getProfile(profileId: string): Promise<ProfileDetails> {
-    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}`);
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch profile');
-    }
-
-    return response.json();
+    return fetchJson<ProfileDetails>(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}`,
+      undefined,
+      'Failed to fetch profile',
+    );
   }
 
   async getCanonicalProfile(profileId: string): Promise<Record<string, unknown>> {
-    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}/canonical`);
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch canonical profile');
-    }
-
-    return response.json();
+    return fetchJson<Record<string, unknown>>(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}/canonical`,
+      undefined,
+      'Failed to fetch canonical profile',
+    );
   }
 
   async getProfiles(): Promise<ProfileSummary[]> {
-    const response = await fetch(`${BASE}/profiles`);
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to fetch profiles');
-    }
-
-    return response.json();
+    return fetchJson<ProfileSummary[]>(`${BASE}/profiles`, undefined, 'Failed to fetch profiles');
   }
 
   async deleteProfile(profileId: string): Promise<void> {
-    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}`, {
-      method: 'DELETE',
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to delete profile');
-    }
+    await fetchJson<unknown>(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}`,
+      { method: 'DELETE' },
+      'Failed to delete profile',
+    );
   }
 
   async analyzeProfile(profileId: string): Promise<AnalyzeResponse> {
-    const response = await fetch(`${BASE}/analyze`, {
+    return fetchJson<AnalyzeResponse>(`${BASE}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profileId }),
-    });
+    }, 'Failed to analyze profile');
+  }
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to analyze profile');
-    }
+  async getQualityReport(profileId: string): Promise<QualityReport> {
+    return fetchJson<QualityReport>(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}/quality-report`,
+      undefined,
+      'Failed to fetch quality report',
+    );
+  }
 
-    return response.json();
+  async getImprovementQueue(
+    profileId: string,
+    filters?: { priority?: string; resolutionType?: string },
+  ): Promise<UnifiedRecommendation[]> {
+    const params = new URLSearchParams();
+    if (filters?.priority) params.set('priority', filters.priority);
+    if (filters?.resolutionType) params.set('resolution_type', filters.resolutionType);
+    const query = params.toString();
+    return fetchJson<UnifiedRecommendation[]>(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}/improvement-queue${query ? `?${query}` : ''}`,
+      undefined,
+      'Failed to fetch improvement queue',
+    );
   }
 
   async createArtifact(profileId: string, template: string, title?: string): Promise<{ artifactId: string }> {
-    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}/artifacts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ template, title }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to create artifact');
-    }
-
-    return response.json();
+    return fetchJson<{ artifactId: string }>(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}/artifacts`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ template, title }),
+      },
+      'Failed to create artifact',
+    );
   }
 
   async getTechnologyKeywords(): Promise<string[]> {
-    const response = await fetch(`${BASE}/technologies`);
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch technology keywords');
-    }
-
-    const data = await response.json();
+    const data = await fetchJson<{ keywords?: string[] }>(
+      `${BASE}/technologies`,
+      undefined,
+      'Failed to fetch technology keywords',
+    );
     return data.keywords ?? [];
   }
 
@@ -125,22 +121,18 @@ export class ProfileService {
       experienceIds: string[];
       technologies: string[];
       achievementStatement: string;
+      summaryText?: string;
     },
   ): Promise<ProfileDetails> {
-    const response = await fetch(`${BASE}/profiles/${encodeURIComponent(profileId)}/resolve`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      const detail =
-        typeof error?.detail === 'string' ? error.detail : error?.detail?.detail ?? 'Failed to resolve recommendation';
-      throw new Error(detail);
-    }
-
-    const data = await response.json();
+    const data = await fetchJson<{ profile: ProfileDetails }>(
+      `${BASE}/profiles/${encodeURIComponent(profileId)}/resolve`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      },
+      'Failed to resolve recommendation',
+    );
     return data.profile;
   }
 

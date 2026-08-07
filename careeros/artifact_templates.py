@@ -21,11 +21,55 @@ class ArtifactTemplate(Protocol):
 
     def build(self, profile: dict[str, Any], title: str | None = None) -> dict[str, Any]: ...
 
+    def preview(self, profile: dict[str, Any]) -> str:
+        """Render the template against a profile as markdown without side effects.
+
+        Fastest path: reuses ExportContractBuilder + EvidenceSelector +
+        GeneratorRegistry and skips reasoning re-run, JD processing, and any
+        persistence. Must never create an artifact record or mutate the profile.
+        """
+
+
+def _render_preview(template: ArtifactTemplate, profile: dict[str, Any]) -> str:
+    """Render a template preview through the canonical generation pipeline.
+
+    Uses a deep copy of the profile with a virtual artifact appended so the
+    existing ExportContractBuilder can resolve sources without ever mutating or
+    persisting anything. Skips reasoning re-run and target-context filtering.
+    """
+    from copy import deepcopy
+
+    from .evidence_selector import EvidenceSelector
+    from .export_contract import ExportContractBuilder
+    from .generators import default_generator_registry
+    from .schema_loader import SchemaLoader
+
+    virtual_artifact = template.build(profile, title="Preview")
+
+    preview_profile = deepcopy(profile)
+    artifacts = preview_profile.get("artifacts", [])
+    artifacts.append(virtual_artifact)
+    preview_profile["artifacts"] = artifacts
+
+    contract = ExportContractBuilder(SchemaLoader()).build(
+        preview_profile,
+        virtual_artifact["id"],
+        validate=False,
+        reasoning=None,
+    )
+    selected = EvidenceSelector().select(contract)
+    generator = default_generator_registry().resolve(template.artifact_type, "markdown")
+    return generator.generate(selected)
+
 
 class StandardCVTemplate:
     template_id = "standard_cv"
     display_name = "Tailored CV"
     artifact_type = "CV"
+
+    def preview(self, profile: dict[str, Any]) -> str:
+        """Render a render-only markdown preview of this template."""
+        return _render_preview(self, profile)
 
     def build(self, profile: dict[str, Any], title: str | None = None) -> dict[str, Any]:
         source_refs: list[dict[str, str]] = []
@@ -75,6 +119,10 @@ class StandardInterestLetterTemplate:
     template_id = "standard_interest_letter"
     display_name = "Interest Letter"
     artifact_type = "INTEREST_LETTER"
+
+    def preview(self, profile: dict[str, Any]) -> str:
+        """Render a render-only markdown preview of this template."""
+        return _render_preview(self, profile)
 
     _interest_letter_mappings: list[tuple[str, str]] = [
         ("professional_summary", "professionalSummaries"),

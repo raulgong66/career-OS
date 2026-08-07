@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TailoringService } from '../services/TailoringService';
 import { DocumentService } from '../services/DocumentService';
 import { ProfileService } from '../services/ProfileService';
@@ -317,6 +318,7 @@ function renderMissingChecklist(
 }
 
 export default function TailoringPage() {
+  const navigate = useNavigate();
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
   const [selectedProfile, setSelectedProfile] = useState<ProfileDetails | null>(null);
@@ -351,6 +353,10 @@ export default function TailoringPage() {
   const [selectedTechnologies, setSelectedTechnologies] = useState<Set<string>>(new Set());
   const [techQuery, setTechQuery] = useState('');
   const [achievementStatement, setAchievementStatement] = useState('');
+  const [summaryDraft, setSummaryDraft] = useState('');
+  const [savingSummary, setSavingSummary] = useState(false);
+  const [summarySaveError, setSummarySaveError] = useState('');
+  const [summarySaved, setSummarySaved] = useState(false);
 
   const activeRec =
     activeRecId ? profileRecommendations.find((r) => r.id === activeRecId) ?? null : null;
@@ -512,8 +518,8 @@ export default function TailoringPage() {
     }
   };
 
-  const handleRegenerate = async () => {
-    if (!selectedProfile || !currentArtifactId) return;
+  const regeneratePreview = async (): Promise<boolean> => {
+    if (!selectedProfile || !currentArtifactId) return false;
     setRegenerating(true);
     setRegenerateError('');
     try {
@@ -527,12 +533,50 @@ export default function TailoringPage() {
       if (response.profile) {
         setSelectedProfile(response.profile);
       }
+      return true;
     } catch (err) {
       setRegenerateError(
         err instanceof Error ? err.message : 'Failed to regenerate document'
       );
+      return false;
     } finally {
       setRegenerating(false);
+    }
+  };
+
+  const handleRegenerate = () => regeneratePreview();
+
+  const saveSummary = async () => {
+    if (!selectedProfile) return;
+    setSavingSummary(true);
+    setSummarySaveError('');
+    try {
+      const updated = await ProfileService.getInstance().resolveRecommendation(selectedProfileId, {
+        triggeredRule: 'GenericSummaryRule',
+        elementId: '',
+        skillIds: [],
+        experienceIds: [],
+        technologies: [],
+        achievementStatement: '',
+        summaryText: summaryDraft,
+      });
+      setSelectedProfile(updated);
+      setSummaryDraft(updated.professionalSummaries?.[0]?.text ?? '');
+      setSummarySaved(true);
+      if (currentArtifactId) {
+        await regeneratePreview();
+      }
+      const analysis = await ProfileService.getInstance().analyzeProfile(selectedProfileId);
+      setProfileRecommendations(analysis.recommendations ?? []);
+      setReviewedIds(new Set());
+      setDismissedIds(new Set());
+      if (activeRecId && !(analysis.recommendations ?? []).some((r) => r.id === activeRecId)) {
+        setActiveRecId(null);
+      }
+    } catch (err) {
+      setSummarySaveError(err instanceof Error ? err.message : 'Failed to save summary');
+    } finally {
+      setSavingSummary(false);
     }
   };
 
@@ -751,6 +795,8 @@ export default function TailoringPage() {
         loadProfileRecommendations(profiles[0].id);
         ProfileService.getInstance().getProfile(profiles[0].id).then((details) => {
           setSelectedProfile(details);
+          setSummaryDraft(details.professionalSummaries?.[0]?.text ?? '');
+          setSummarySaved(false);
         }).catch(() => {}).finally(() => setLoadingProfiles(false));
       } else {
         setLoadingProfiles(false);
@@ -774,6 +820,8 @@ export default function TailoringPage() {
     loadProfileRecommendations(profileId);
     ProfileService.getInstance().getProfile(profileId).then((details) => {
       setSelectedProfile(details);
+      setSummaryDraft(details.professionalSummaries?.[0]?.text ?? '');
+      setSummarySaved(false);
       setErrorMessage('');
     }).catch(() => {
       setErrorMessage('Failed to load profile details. Please try again.');
@@ -883,7 +931,38 @@ export default function TailoringPage() {
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Professional Summary</h3>
           </div>
           {isSectionActive('professionalSummaries') && renderMissingChecklist(activeMissing, activeRec?.id ?? '', checkedChecklistItems, toggleChecklistItem)}
-          {profile.professionalSummaries.length === 0 ? (
+          {isSectionActive('professionalSummaries') ? (
+            <div className="px-3 py-3">
+              <p className="text-xs font-medium text-gray-500 mb-1">
+                {profile.professionalSummaries[0]?.label || 'Professional Summary'}
+              </p>
+              <textarea
+                value={summaryDraft}
+                onChange={(event) => {
+                  setSummaryDraft(event.target.value);
+                  setSummarySaved(false);
+                }}
+                rows={4}
+                placeholder="Write 2-3 lines covering your role, your strongest skills, and one quantified highlight."
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:border-blue-500 focus:outline-none"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  onClick={saveSummary}
+                  disabled={savingSummary || !summaryDraft.trim()}
+                  className="inline-flex items-center px-3 py-1.5 rounded text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {savingSummary ? 'Saving...' : 'Save summary'}
+                </button>
+                {summarySaved && (
+                  <span className="text-xs text-green-600">Summary saved to your profile.</span>
+                )}
+                {summarySaveError && (
+                  <span className="text-xs text-red-600">{summarySaveError}</span>
+                )}
+              </div>
+            </div>
+          ) : profile.professionalSummaries.length === 0 ? (
             <div className="px-3 py-4">
               <p className="text-sm text-gray-400 italic">No professional summary yet.</p>
             </div>
@@ -1121,9 +1200,17 @@ export default function TailoringPage() {
 
   return (
     <div className="h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <h1 className="text-2xl font-bold text-gray-900">CareerOS Platform Alpha</h1>
-        <p className="text-sm text-gray-600 mt-1">AI-Powered Document Tailoring</p>
+      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">CareerOS Platform Alpha</h1>
+          <p className="text-sm text-gray-600 mt-1">AI-Powered Document Tailoring</p>
+        </div>
+        <button
+          onClick={() => navigate('/')}
+          className="text-sm font-medium text-blue-600 hover:text-blue-800"
+        >
+          ← Back to Home
+        </button>
       </header>
 
       <div className="flex-1 overflow-hidden">
@@ -1181,12 +1268,6 @@ export default function TailoringPage() {
                               : '—'}
                           </p>
                         </div>
-                        {selectedProfile.summary && (
-                          <div className="px-3 py-2">
-                            <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide">Summary</label>
-                            <p className="mt-0.5 text-sm text-gray-700 leading-relaxed">{selectedProfile.summary}</p>
-                          </div>
-                        )}
                       </div>
 
                       {/* ── Entity Sections ── */}
