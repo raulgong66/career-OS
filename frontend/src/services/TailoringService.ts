@@ -14,6 +14,10 @@ interface RegenerateArtifactResponse {
   status: 'current' | 'stale';
   outputFormat: string;
   profile?: ProfileDetails;
+  optimizationStatus?: OptimizationStatus | null;
+  optimizationMessage?: string;
+  optimizationSummary?: OptimizationSummary | null;
+  recommendations?: Recommendation[];
 }
 
 export class TailoringService {
@@ -102,7 +106,8 @@ export class TailoringService {
   async regenerateTailoredArtifact(
     profileId: string,
     artifactId: string,
-    outputFormat: string
+    outputFormat: string,
+    jobDescription?: string
   ): Promise<RegenerateArtifactResponse> {
     try {
       const response = await fetch(
@@ -114,6 +119,7 @@ export class TailoringService {
           },
           body: JSON.stringify({
             output_format: outputFormat,
+            ...(jobDescription ? { job_description: jobDescription } : {}),
           }),
         }
       );
