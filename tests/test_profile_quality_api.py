@@ -91,7 +91,7 @@ def test_quality_report_endpoint() -> None:
     assert isinstance(body["health_score"], int)
     assert 0 <= body["health_score"] <= 100
     assert isinstance(body["dimensions"], list)
-    assert len(body["dimensions"]) == 8
+    assert len(body["dimensions"]) == 9
     for dimension in body["dimensions"]:
         assert {"name", "score", "weight"} <= set(dimension.keys())
         assert 0.0 <= dimension["score"] <= 1.0

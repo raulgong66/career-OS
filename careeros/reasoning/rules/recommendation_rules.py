@@ -102,6 +102,12 @@ EXAMPLES_PROJECT_SKILLS: tuple[str, ...] = (
     "Link a cloud migration project to your platform engineering experience",
 )
 
+EXAMPLES_DUPLICATE_NARRATIVE: tuple[str, ...] = (
+    "Keep one role-specific version of a sentence and rewrite the others with unique, quantified outcomes",
+    "Move a shared statement about your working style from each experience into a single summary line",
+    "Replace repeated filler with achievements specific to each role",
+)
+
 EXPLANATION_MEASURABLE_ACHIEVEMENT = (
     "Recruiters scan for quantified impact; an experience that only describes "
     "responsibilities looks like every other job description."
@@ -142,6 +148,12 @@ EXPLANATION_PROJECT_SKILLS = (
     "evidence."
 )
 
+EXPLANATION_DUPLICATE_NARRATIVE = (
+    "Repeating the same sentence across your summary, experiences, and "
+    "achievements wastes space reviewers could use to learn something new "
+    "about you."
+)
+
 RECRUITER_IMPACT_MEASURABLE_ACHIEVEMENT = (
     "Recruiters generally prioritize measurable achievements because they "
     "demonstrate real business value."
@@ -179,6 +191,11 @@ RECRUITER_IMPACT_CERTIFICATION = (
 
 RECRUITER_IMPACT_PROJECT_SKILLS = (
     "Projects without skill links cannot contribute to your skill evidence."
+)
+
+RECRUITER_IMPACT_DUPLICATE_NARRATIVE = (
+    "Recruiters skim; repeated sentences read as filler and reduce the "
+    "amount of unique information your profile conveys."
 )
 
 MISSING_MEASURABLE_ACHIEVEMENT: tuple[str, ...] = (
@@ -224,6 +241,10 @@ MISSING_CERTIFICATION: tuple[str, ...] = (
 MISSING_PROJECT_SKILLS: tuple[str, ...] = (
     "Linked skills",
     "Related experience",
+)
+
+MISSING_DUPLICATE_NARRATIVE: tuple[str, ...] = (
+    "Single canonical occurrence of the narrative",
 )
 
 
@@ -710,6 +731,169 @@ def _dedupe_preserving_order(items: list[str]) -> list[str]:
             seen.add(item)
             out.append(item)
     return out
+
+
+# ---------------------------------------------------------------------------
+# 5b. Duplicate narrative (Knowledge Quality, M1.25)
+# ---------------------------------------------------------------------------
+
+NARRATIVE_RULE_ID = "recommendation_remove_duplicate_narrative"
+
+
+def _normalize_narrative(text: str) -> str:
+    """Normalize narrative text for exact-duplicate comparison.
+
+    Lowercases and collapses runs of whitespace so that sentence-boundary and
+    case differences do not mask an exact duplicate (M1.25 spec).
+    """
+    return re.sub(r"\s+", " ", str(text).strip().lower())
+
+
+def collect_narrative_segments(
+    profile: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Collect narrative text segments from the canonical profile.
+
+    Sources (M1.25 spec): ``professionalSummaries[].text``,
+    ``experiences[].scope``, and ``achievements[].description``. Each segment
+    carries the owning entity id, entity type, property path, and raw text so
+    findings and citations can point at every occurrence.
+    """
+    segments: list[dict[str, str]] = []
+
+    for summary in profile.get("professionalSummaries", []) or []:
+        if not isinstance(summary, dict):
+            continue
+        text = str(summary.get("text", "") or "").strip()
+        if not text:
+            continue
+        segments.append(
+            {
+                "entity_id": str(summary.get("id", "") or "") or "professionalSummary",
+                "entity_type": "professional_summary",
+                "property_path": "professionalSummaries.text",
+                "text": text,
+            }
+        )
+
+    for experience in profile.get("experiences", []) or []:
+        if not isinstance(experience, dict):
+            continue
+        text = str(experience.get("scope", "") or "").strip()
+        if not text:
+            continue
+        segments.append(
+            {
+                "entity_id": str(experience.get("id", "") or "") or "experience",
+                "entity_type": "experience",
+                "property_path": "experiences.scope",
+                "text": text,
+            }
+        )
+
+    for achievement in profile.get("achievements", []) or []:
+        if not isinstance(achievement, dict):
+            continue
+        text = str(achievement.get("description", "") or "").strip()
+        if not text:
+            continue
+        segments.append(
+            {
+                "entity_id": str(achievement.get("id", "") or "") or "achievement",
+                "entity_type": "achievement",
+                "property_path": "achievements.description",
+                "text": text,
+            }
+        )
+
+    return segments
+
+
+def find_duplicate_narrative_groups(
+    profile: dict[str, Any],
+) -> list[tuple[str, list[dict[str, str]]]]:
+    """Return groups of segments whose normalized text matches exactly.
+
+    Only exact duplicates (after whitespace/case normalization) are reported.
+    Groups preserve first-seen ordering for determinism; each group maps its
+    normalized key to the list of segments carrying that text.
+    """
+    groups: dict[str, list[dict[str, str]]] = {}
+    for segment in collect_narrative_segments(profile):
+        key = _normalize_narrative(segment["text"])
+        if not key:
+            continue
+        groups.setdefault(key, []).append(segment)
+    return [
+        (key, segments)
+        for key, segments in groups.items()
+        if len(segments) > 1
+    ]
+
+
+class DuplicateNarrativeRule(Rule):
+    id = NARRATIVE_RULE_ID
+    name = "Duplicate Narrative"
+    description = (
+        "Flags the same narrative sentence repeated verbatim across the "
+        "professional summary, experiences, or achievements"
+    )
+
+    def execute(self, context: RuleContext) -> list[ReasoningResult]:
+        results: list[ReasoningResult] = []
+        for _, segments in find_duplicate_narrative_groups(context.profile):
+            occurrences = [
+                {
+                    "entity_id": segment["entity_id"],
+                    "entity_type": segment["entity_type"],
+                    "property_path": segment["property_path"],
+                }
+                for segment in segments
+            ]
+            narrative = segments[0]["text"]
+            entity_labels = ", ".join(
+                f"'{occurrence['entity_id']}'" for occurrence in occurrences
+            )
+            rec = _build_recommendation(
+                rule_id=self.id,
+                finding_type=self.id,
+                title="Remove duplicate narrative",
+                reason=(
+                    f"'{narrative[:120]}' appears {len(occurrences)} times "
+                    f"across {len(occurrences)} profile element(s): {entity_labels}."
+                ),
+                explanation=EXPLANATION_DUPLICATE_NARRATIVE,
+                suggested_action=(
+                    "Keep the narrative once and rewrite the other occurrences "
+                    "with unique, role-specific content."
+                ),
+                examples=EXAMPLES_DUPLICATE_NARRATIVE,
+                priority="medium",
+                estimated_impact="medium",
+                element_id=None,
+                element_type="profile",
+                confidence="high",
+                detected_pattern=(
+                    "The same narrative text is stored verbatim in more than "
+                    "one profile element."
+                ),
+                missing_information=MISSING_DUPLICATE_NARRATIVE,
+                recruiter_impact=RECRUITER_IMPACT_DUPLICATE_NARRATIVE,
+                triggered_rule=self.__class__.__name__,
+            )
+            value = dict(rec.value)
+            value["duplicated_narrative"] = narrative
+            value["occurrences"] = occurrences
+            value["occurrence_count"] = len(occurrences)
+            results.append(
+                ReasoningResult(
+                    rule_id=self.id,
+                    finding_type=self.id,
+                    value=value,
+                    confidence=1.0,
+                )
+            )
+        return _limit(results)
 
 
 # ---------------------------------------------------------------------------
