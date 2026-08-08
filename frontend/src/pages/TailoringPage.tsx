@@ -527,11 +527,20 @@ export default function TailoringPage() {
       const response = await service.regenerateTailoredArtifact(
         selectedProfileId,
         currentArtifactId,
-        'markdown'
+        'markdown',
+        jobDescription
       );
       setArtifact(response.artifact);
       if (response.profile) {
         setSelectedProfile(response.profile);
+      }
+      if (response.recommendations) {
+        setRecommendations(response.recommendations);
+      }
+      if (response.optimizationStatus != null) {
+        setOptimizationStatus(response.optimizationStatus);
+        setOptimizationMessage(response.optimizationMessage ?? '');
+        setOptimizationSummary(response.optimizationSummary ?? null);
       }
       return true;
     } catch (err) {

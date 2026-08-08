@@ -24,6 +24,7 @@ export default defineConfig({
       '/analyze': { target: 'http://localhost:8000', changeOrigin: true },
       '/technologies': { target: 'http://localhost:8000', changeOrigin: true },
       '/interviews': { target: 'http://localhost:8000', changeOrigin: true },
+      '/csks': { target: 'http://localhost:8000', changeOrigin: true },
     },
   },
 })
