@@ -1,8 +1,13 @@
+import json
 from pathlib import Path
+from typing import Any
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
+import careeros_cli.main as cli_module
+from careeros.exceptions import DuplicateProfileError
 from careeros_cli.main import app
 
 
@@ -382,3 +387,437 @@ def test_analyze_profile_command_missing_file(tmp_path: Path) -> None:
 
     assert result.exit_code == 1
     assert "Failed to load" in result.stdout
+
+
+def _write_profile(path: Path, *, person_id: str, name: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "profileVersion": "1.0.0",
+                "person": {
+                    "id": person_id,
+                    "names": [{"value": name, "usage": "professional"}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_profiles_list_lists_profiles_sorted(tmp_path: Path) -> None:
+    """careeros profiles list shows display name and id, sorted by name."""
+    _write_profile(tmp_path / "person-zz-profile.yaml", person_id="person-zz", name="Zoe Example")
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+    _write_profile(tmp_path / "person-mm-profile.yaml", person_id="person-mm", name="Mia Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Available profiles" in result.stdout
+    assert "Name" in result.stdout
+    assert "Profile ID" in result.stdout
+    assert result.stdout.index("Anna Example") < result.stdout.index("Mia Example")
+    assert result.stdout.index("Mia Example") < result.stdout.index("Zoe Example")
+    assert "person-aa" in result.stdout
+    assert "person-mm" in result.stdout
+    assert "person-zz" in result.stdout
+
+
+def test_profiles_list_displays_id_without_profile_suffix(tmp_path: Path) -> None:
+    """careeros profiles list shows ids addressable by csks query --profile."""
+    _write_profile(
+        tmp_path / "person-hechavarria-profile.yaml",
+        person_id="person-hechavarria",
+        name="Rene Hechavarria",
+    )
+
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Rene Hechavarria" in result.stdout
+    assert "person-hechavarria" in result.stdout
+    assert "person-hechavarria-profile" not in result.stdout
+
+
+def test_profiles_list_includes_staging_profiles(tmp_path: Path) -> None:
+    """careeros profiles list searches the same locations as the app, incl. staging."""
+    _write_profile(
+        tmp_path / "staging" / "person-staged-profile.yaml",
+        person_id="person-staged",
+        name="Staged Person",
+    )
+    _write_profile(
+        tmp_path / "person-canon-profile.yaml",
+        person_id="person-canon",
+        name="Canon Person",
+    )
+
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "person-staged" in result.stdout
+    assert "person-canon" in result.stdout
+
+
+def test_profiles_list_empty_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles list exits non-zero with a friendly message when empty."""
+    result = runner.invoke(app, ["profiles", "list", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "No profiles found" in result.stdout
+
+
+def test_profiles_list_help() -> None:
+    """careeros profiles list exposes help text."""
+    result = runner.invoke(app, ["profiles", "list", "--help"])
+
+    assert result.exit_code == 0
+    assert "List available profiles" in result.stdout
+    assert "--profiles-root" in result.stdout
+
+
+def test_profiles_list_json_outputs_valid_json(tmp_path: Path) -> None:
+    """careeros profiles list --json emits parseable JSON for multiple profiles."""
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+    _write_profile(tmp_path / "person-zz-profile.yaml", person_id="person-zz", name="Zoe Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    assert len(payload) == 2
+
+
+def test_profiles_list_json_shape(tmp_path: Path) -> None:
+    """Each --json record exposes name, id, and state."""
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+    _write_profile(tmp_path / "staging" / "person-bb-profile.yaml", person_id="person-bb", name="Beta Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert {"name", "id", "state"} <= set(payload[0])
+    by_id = {p["id"]: p for p in payload}
+    assert by_id["person-aa"]["name"] == "Anna Example"
+    assert by_id["person-aa"]["state"] == "canonical"
+    assert by_id["person-bb"]["state"] == "staging"
+
+
+def test_profiles_list_json_plain_machine_readable(tmp_path: Path) -> None:
+    """--json output omits the human-readable table formatting."""
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Available profiles" not in result.stdout
+    assert "Profile ID" not in result.stdout
+    json.loads(result.stdout)
+
+
+def test_profiles_list_json_deterministic_ordering(tmp_path: Path) -> None:
+    """--json output is ordered by display name, matching the table contract."""
+    _write_profile(tmp_path / "person-zz-profile.yaml", person_id="person-zz", name="Zoe Example")
+    _write_profile(tmp_path / "person-mm-profile.yaml", person_id="person-mm", name="Mia Example")
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [p["name"] for p in payload] == ["Anna Example", "Mia Example", "Zoe Example"]
+
+
+def test_profiles_list_json_empty_repo_exits_zero(tmp_path: Path) -> None:
+    """--json on an empty repository emits an empty array with exit 0."""
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == []
+
+
+def test_acquire_profile_duplicate_exits_nonzero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """careeros acquire-profile reports a deterministic conflict and exits non-zero."""
+    class _StubDuplicatePipeline:
+        def run(self, source_path, output_path=None):
+            raise DuplicateProfileError(
+                "person-dup", "profiles/staging/person-dup-profile.yaml"
+            )
+
+    monkeypatch.setattr(cli_module, "AcquisitionPipeline", _StubDuplicatePipeline)
+
+    result = runner.invoke(app, ["acquire-profile", str(tmp_path / "resume.docx")])
+
+    assert result.exit_code == 1
+    assert "Conflict:" in result.stdout
+    assert "person-dup" in result.stdout
+    assert "Traceback" not in result.stdout
+    assert "DuplicateProfileError" not in result.stdout
+
+
+def _write_full_profile(
+    path: Path,
+    *,
+    person_id: str,
+    name: str,
+    experiences: int = 0,
+    skills: int = 0,
+    achievements: int = 0,
+    artifacts: int = 0,
+    summary: str = "",
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, Any] = {
+        "profileVersion": "1.0.0",
+        "person": {
+            "id": person_id,
+            "names": [{"value": name, "usage": "professional"}],
+        },
+        "experiences": [{"id": f"exp-{i}", "role": "Engineer"} for i in range(experiences)],
+        "skills": [{"id": f"skill-{i}", "name": "Skill"} for i in range(skills)],
+        "achievements": [{"id": f"ach-{i}", "title": "Achievement"} for i in range(achievements)],
+        "artifacts": [{"id": f"art-{i}", "artifactType": "CV"} for i in range(artifacts)],
+    }
+    if summary:
+        data["professionalSummaries"] = [{"text": summary}]
+    path.write_text(yaml.safe_dump(data), encoding="utf-8")
+    return path
+
+
+def test_profiles_show_displays_metadata(tmp_path: Path) -> None:
+    """careeros profiles show displays metadata, counts, and summary."""
+    _write_full_profile(
+        tmp_path / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+        experiences=2,
+        skills=3,
+        achievements=1,
+        artifacts=1,
+        summary="Short professional summary for Anna.",
+    )
+
+    result = runner.invoke(app, ["profiles", "show", "person-aa", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Profile: Anna Example" in result.stdout
+    assert "Profile ID:   person-aa" in result.stdout
+    assert "Status:       Active" in result.stdout
+    assert "Last Modified: " in result.stdout
+    assert "Experiences:  2" in result.stdout
+    assert "Skills:       3" in result.stdout
+    assert "Achievements: 1" in result.stdout
+    assert "Artifacts:    1" in result.stdout
+    assert "Professional Summary:" in result.stdout
+    assert "Short professional summary for Anna." in result.stdout
+
+
+def test_profiles_show_truncates_long_summary(tmp_path: Path) -> None:
+    """careeros profiles show truncates long professional summaries."""
+    long_summary = "word " * 100
+    _write_full_profile(
+        tmp_path / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+        summary=long_summary,
+    )
+
+    result = runner.invoke(app, ["profiles", "show", "person-aa", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "..." in result.stdout
+
+
+def test_profiles_show_archived_status(tmp_path: Path) -> None:
+    """careeros profiles show reports Archived for profiles in the archived directory."""
+    _write_full_profile(
+        tmp_path / "archived" / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(app, ["profiles", "show", "person-aa", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Status:       Archived" in result.stdout
+
+
+def test_profiles_show_resolves_person_id(tmp_path: Path) -> None:
+    """careeros profiles show resolves profiles by person.id."""
+    _write_full_profile(
+        tmp_path / "person-xyz-profile.yaml",
+        person_id="p-xyz",
+        name="Xavier Example",
+    )
+
+    result = runner.invoke(app, ["profiles", "show", "p-xyz", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Profile: Xavier Example" in result.stdout
+    assert "person-xyz" in result.stdout
+
+
+def test_profiles_show_unknown_profile_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles show exits non-zero for an unknown profile id."""
+    result = runner.invoke(app, ["profiles", "show", "nope", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "Profile not found" in result.stdout
+
+
+def test_profiles_archive_moves_file_to_archived(tmp_path: Path) -> None:
+    """careeros profiles archive moves the profile file to the archived directory."""
+    source = _write_full_profile(
+        tmp_path / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(app, ["profiles", "archive", "person-aa", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Archived person-aa" in result.stdout
+    assert not source.exists()
+    assert (tmp_path / "archived" / "person-aa-profile.yaml").is_file()
+
+
+def test_profiles_archive_already_archived_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles archive reports a friendly error when already archived."""
+    _write_full_profile(
+        tmp_path / "archived" / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(app, ["profiles", "archive", "person-aa", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "already archived" in result.stdout
+
+
+def test_profiles_archive_unknown_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles archive exits non-zero for an unknown profile id."""
+    result = runner.invoke(app, ["profiles", "archive", "nope", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "Profile not found" in result.stdout
+
+
+def test_profiles_restore_moves_file_to_staging(tmp_path: Path) -> None:
+    """careeros profiles restore moves the profile from archived to staging."""
+    source = _write_full_profile(
+        tmp_path / "archived" / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(app, ["profiles", "restore", "person-aa", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Restored person-aa" in result.stdout
+    assert not source.exists()
+    assert (tmp_path / "staging" / "person-aa-profile.yaml").is_file()
+
+
+def test_profiles_restore_active_profile_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles restore rejects profiles that are not archived."""
+    _write_full_profile(
+        tmp_path / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(app, ["profiles", "restore", "person-aa", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "not archived" in result.stdout
+
+
+def test_profiles_restore_unknown_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles restore exits non-zero for an unknown profile id."""
+    result = runner.invoke(app, ["profiles", "restore", "nope", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "Profile not found" in result.stdout
+
+
+def test_profiles_delete_requires_confirmation(tmp_path: Path) -> None:
+    """careeros profiles delete removes the file when DELETE is confirmed."""
+    source = _write_full_profile(
+        tmp_path / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(
+        app,
+        ["profiles", "delete", "person-aa", "--profiles-root", str(tmp_path)],
+        input="DELETE",
+    )
+
+    assert result.exit_code == 0
+    assert "Deleted person-aa" in result.stdout
+    assert not source.exists()
+
+
+def test_profiles_delete_wrong_confirmation_aborts(tmp_path: Path) -> None:
+    """careeros profiles delete aborts and keeps the file when not confirmed."""
+    source = _write_full_profile(
+        tmp_path / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(
+        app,
+        ["profiles", "delete", "person-aa", "--profiles-root", str(tmp_path)],
+        input="NO",
+    )
+
+    assert result.exit_code == 1
+    assert "Aborted" in result.stdout
+    assert source.exists()
+
+
+def test_profiles_delete_force_skips_confirmation(tmp_path: Path) -> None:
+    """careeros profiles delete --force removes the file without prompting."""
+    source = _write_full_profile(
+        tmp_path / "person-aa-profile.yaml",
+        person_id="person-aa",
+        name="Anna Example",
+    )
+
+    result = runner.invoke(
+        app,
+        ["profiles", "delete", "person-aa", "--force", "--profiles-root", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Deleted person-aa" in result.stdout
+    assert not source.exists()
+
+
+def test_profiles_delete_unknown_exits_nonzero(tmp_path: Path) -> None:
+    """careeros profiles delete exits non-zero for an unknown profile id."""
+    result = runner.invoke(app, ["profiles", "delete", "nope", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "Profile not found" in result.stdout
+
+
+def test_profiles_lifecycle_help() -> None:
+    """careeros profiles show/archive/restore/delete expose help text."""
+    for command, help_text in [
+        ("show", "Display profile metadata"),
+        ("archive", "Move a profile to the archived state"),
+        ("restore", "Restore a profile from the archived state"),
+        ("delete", "Permanently delete a profile"),
+    ]:
+        result = runner.invoke(app, ["profiles", command, "--help"])
+        assert result.exit_code == 0
+        assert help_text in result.stdout
+        assert "--profiles-root" in result.stdout

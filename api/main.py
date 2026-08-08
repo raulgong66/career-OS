@@ -38,7 +38,7 @@ except RuntimeConfigurationError as exc:
 print_configuration_banner(runtime_config)
 
 from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv, run_profile_quality
-from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
+from careeros.exceptions import CareerOSException, DuplicateProfileError, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.profile_repository import ProfileRepository, ProfileState
 from careeros.interview import InterviewEngine
@@ -674,6 +674,12 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
     try:
         pipeline = AcquisitionPipeline()
         profile_path = pipeline.run(str(temp_path))
+    except DuplicateProfileError as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise HTTPException(status_code=409, detail=ApiErrorResponse(
+            error="DUPLICATE_PROFILE",
+            detail=str(exc),
+        ).model_dump())
     except (DocumentReadError, PipelineError) as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
         raise HTTPException(status_code=422, detail=ApiErrorResponse(
