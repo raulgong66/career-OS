@@ -718,8 +718,8 @@ class CSKSQueryEngine:
             "llm": "No LLM in M1.22 - CSKS is purely deterministic. LLM formatting layer planned for M1.25.",
             "llm integration": "No LLM in M1.22 - CSKS is purely deterministic. LLM formatting layer planned for M1.25.",
             "ai": "No LLM in M1.22 - CSKS is purely deterministic.",
-            "incremental": "Incremental indexing is deferred to M1.23.",
-            "incremental indexing": "Incremental indexing is deferred to M1.23.",
+            "incremental": "Yes - incremental indexing re-indexes only changed files via 'careeros csks index --incremental'.",
+            "incremental indexing": "Yes - incremental indexing re-indexes only changed files via 'careeros csks index --incremental'.",
         }
 
         q = question.lower()

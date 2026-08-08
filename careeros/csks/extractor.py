@@ -853,6 +853,26 @@ class YAMLTOMLConfigExtractor(BaseExtractor):
     def can_extract(self, source_path: str) -> bool:
         return source_path.endswith((".yaml", ".yml", ".toml", ".env", ".env.example"))
 
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        """Recursively convert non-JSON-native values to strings.
+
+        YAML/TOML parsers can produce native ``datetime.date``/``datetime``
+        scalars and other non-JSON types. Normalizing them to strings at
+        extraction time keeps the extraction output JSON-native, so the
+        persisted per-source artifacts round-trip without loss and incremental
+        rebuilds stay identical to full rebuilds.
+        """
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, dict):
+            return {key: YAMLTOMLConfigExtractor._json_safe(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [YAMLTOMLConfigExtractor._json_safe(item) for item in value]
+        if isinstance(value, (set, frozenset)):
+            return [YAMLTOMLConfigExtractor._json_safe(item) for item in sorted(value, key=repr)]
+        return str(value)
+
     def extract_entities(self, source_path: str) -> Iterable[ExtractedEntity]:
         content = self._read_file(source_path)
         lines = content.splitlines()
@@ -881,7 +901,7 @@ class YAMLTOMLConfigExtractor(BaseExtractor):
                 yield ExtractedEntity(
                     entity_type="configuration",
                     id=entity_id,
-                    properties={"section": section_name, "keys": list(section_data.keys()), "data": section_data},
+                    properties={"section": section_name, "keys": list(section_data.keys()), "data": self._json_safe(section_data)},
                     source_path=source_path,
                     line_start=1,
                     line_end=len(self._get_lines(source_path)),
@@ -891,7 +911,7 @@ class YAMLTOMLConfigExtractor(BaseExtractor):
                 yield ExtractedEntity(
                     entity_type="configuration",
                     id=entity_id,
-                    properties={"section": section_name, "type": "array", "items": section_data},
+                    properties={"section": section_name, "type": "array", "items": self._json_safe(section_data)},
                     source_path=source_path,
                     line_start=1,
                     line_end=len(self._get_lines(source_path)),
@@ -910,7 +930,7 @@ class YAMLTOMLConfigExtractor(BaseExtractor):
                 yield ExtractedEntity(
                     entity_type="configuration",
                     id=entity_id,
-                    properties={"key": key, "value_type": type(value).__name__, "value": value if not isinstance(value, (dict, list)) else str(value)[:100]},
+                    properties={"key": key, "value_type": type(value).__name__, "value": self._json_safe(value) if not isinstance(value, (dict, list)) else str(value)[:100]},
                     source_path=source_path,
                     line_start=1,
                     line_end=len(self._get_lines(source_path)),
