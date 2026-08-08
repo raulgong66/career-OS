@@ -28,5 +28,17 @@ class EntityNotFoundError(RepositoryError):
     """Raised when a requested entity cannot be found."""
 
 
+class DuplicateProfileError(RepositoryError):
+    """Raised when a profile with the same person.id already exists."""
+
+    def __init__(self, person_id: str, existing_path: str) -> None:
+        """Initialize with the conflicting profile id and its existing file path."""
+        super().__init__(
+            f"A profile with person.id '{person_id}' already exists at {existing_path}."
+        )
+        self.person_id = person_id
+        self.existing_path = existing_path
+
+
 class LLMConfigurationError(CareerOSException):
     """Raised when LLM provider configuration is missing or invalid."""

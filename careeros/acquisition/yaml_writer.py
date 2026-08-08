@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from careeros.exceptions import CareerOSException
+from careeros.exceptions import CareerOSException, DuplicateProfileError
 from careeros.profile_repository import ProfileState, STATE_DIR_MAP
 
 
@@ -27,6 +27,9 @@ class YamlWriter:
     ) -> Path:
         path = self._resolve_path(profile, output_path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_file():
+            person_id = profile.get("person", {}).get("id", "unknown")
+            raise DuplicateProfileError(person_id, str(path))
         try:
             path.write_text(
                 yaml.safe_dump(profile, sort_keys=False, allow_unicode=True),

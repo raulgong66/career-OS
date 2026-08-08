@@ -724,6 +724,36 @@ def test_import_profile_file_too_large() -> None:
     assert body["error"] == "FILE_TOO_LARGE"
 
 
+def test_import_profile_duplicate_returns_409(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """POST /profiles/import maps a DuplicateProfileError to HTTP 409 JSON."""
+    from careeros.exceptions import DuplicateProfileError
+    import api.main as api_main
+
+    class _StubDuplicatePipeline:
+        def run(self, source_path, output_path=None, schema=None):
+            raise DuplicateProfileError(
+                "person-dup", "profiles/staging/person-dup-profile.yaml"
+            )
+
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", _StubDuplicatePipeline)
+
+    existing = tmp_path / "person-dup-profile.yaml"
+    existing.write_text("keep: me\n", encoding="utf-8")
+
+    for _ in range(2):
+        response = client.post(
+            "/profiles/import",
+            files={"file": ("resume.docx", b"x", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        )
+        assert response.status_code == 409
+        body = response.json()
+        assert body["error"] == "DUPLICATE_PROFILE"
+        assert "person-dup" in body["detail"]
+        assert isinstance(body["detail"], str)
+
+    assert existing.read_text(encoding="utf-8") == "keep: me\n"
+
+
 def test_dto_mapping_profile_summary() -> None:
     """Verify DTO mapping layer produces correct ProfileSummary from canonical data."""
     from api.dto import to_profile_summary

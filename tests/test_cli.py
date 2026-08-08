@@ -1,9 +1,13 @@
+import json
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
+import careeros_cli.main as cli_module
+from careeros.exceptions import DuplicateProfileError
 from careeros_cli.main import app
 
 
@@ -472,6 +476,87 @@ def test_profiles_list_help() -> None:
     assert result.exit_code == 0
     assert "List available profiles" in result.stdout
     assert "--profiles-root" in result.stdout
+
+
+def test_profiles_list_json_outputs_valid_json(tmp_path: Path) -> None:
+    """careeros profiles list --json emits parseable JSON for multiple profiles."""
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+    _write_profile(tmp_path / "person-zz-profile.yaml", person_id="person-zz", name="Zoe Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    assert len(payload) == 2
+
+
+def test_profiles_list_json_shape(tmp_path: Path) -> None:
+    """Each --json record exposes name, id, and state."""
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+    _write_profile(tmp_path / "staging" / "person-bb-profile.yaml", person_id="person-bb", name="Beta Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert {"name", "id", "state"} <= set(payload[0])
+    by_id = {p["id"]: p for p in payload}
+    assert by_id["person-aa"]["name"] == "Anna Example"
+    assert by_id["person-aa"]["state"] == "canonical"
+    assert by_id["person-bb"]["state"] == "staging"
+
+
+def test_profiles_list_json_plain_machine_readable(tmp_path: Path) -> None:
+    """--json output omits the human-readable table formatting."""
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Available profiles" not in result.stdout
+    assert "Profile ID" not in result.stdout
+    json.loads(result.stdout)
+
+
+def test_profiles_list_json_deterministic_ordering(tmp_path: Path) -> None:
+    """--json output is ordered by display name, matching the table contract."""
+    _write_profile(tmp_path / "person-zz-profile.yaml", person_id="person-zz", name="Zoe Example")
+    _write_profile(tmp_path / "person-mm-profile.yaml", person_id="person-mm", name="Mia Example")
+    _write_profile(tmp_path / "person-aa-profile.yaml", person_id="person-aa", name="Anna Example")
+
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert [p["name"] for p in payload] == ["Anna Example", "Mia Example", "Zoe Example"]
+
+
+def test_profiles_list_json_empty_repo_exits_zero(tmp_path: Path) -> None:
+    """--json on an empty repository emits an empty array with exit 0."""
+    result = runner.invoke(app, ["profiles", "list", "--json", "--profiles-root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == []
+
+
+def test_acquire_profile_duplicate_exits_nonzero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """careeros acquire-profile reports a deterministic conflict and exits non-zero."""
+    class _StubDuplicatePipeline:
+        def run(self, source_path, output_path=None):
+            raise DuplicateProfileError(
+                "person-dup", "profiles/staging/person-dup-profile.yaml"
+            )
+
+    monkeypatch.setattr(cli_module, "AcquisitionPipeline", _StubDuplicatePipeline)
+
+    result = runner.invoke(app, ["acquire-profile", str(tmp_path / "resume.docx")])
+
+    assert result.exit_code == 1
+    assert "Conflict:" in result.stdout
+    assert "person-dup" in result.stdout
+    assert "Traceback" not in result.stdout
+    assert "DuplicateProfileError" not in result.stdout
 
 
 def _write_full_profile(

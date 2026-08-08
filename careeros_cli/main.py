@@ -30,7 +30,7 @@ from careeros import (
 )
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
 from careeros.csks.cli import CSKS_APP
-from careeros.exceptions import CareerOSException, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
+from careeros.exceptions import CareerOSException, DuplicateProfileError, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.profile_quality.cli import (
     print_improvement_queue as print_profile_quality_queue,
     print_profile_health,
@@ -417,6 +417,9 @@ def acquire_profile(
     pipeline = AcquisitionPipeline()
     try:
         output_path = pipeline.run(source, output)
+    except DuplicateProfileError as exc:
+        console.print(f"[bold red]Conflict:[/bold red] {exc}")
+        raise typer.Exit(code=1) from exc
     except (DocumentReadError, PipelineError) as exc:
         console.print(f"[bold red]{exc}[/bold red]")
         raise typer.Exit(code=1) from exc
@@ -538,15 +541,36 @@ def profiles_list(
         "--profiles-root",
         help="Profiles directory. Defaults to the repository profiles folder.",
     ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the result as JSON.",
+    ),
 ) -> None:
     """List available profiles with their display name and id."""
     root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
     records = ProfileRepository(root).list()
     if not records:
+        if json_output:
+            console.print_json(data=[])
+            return
         console.print(f"[bold red]No profiles found in[/bold red] {root}")
         raise typer.Exit(code=1)
 
     ordered = sorted(records, key=lambda record: profile_display_name(record.data).lower())
+
+    if json_output:
+        results = [
+            {
+                "name": profile_display_name(record.data),
+                "id": profile_display_id(record.profile_id),
+                "state": record.state.value,
+            }
+            for record in ordered
+        ]
+        console.print_json(data=results)
+        return
+
     rows = [
         (profile_display_name(record.data), profile_display_id(record.profile_id))
         for record in ordered
