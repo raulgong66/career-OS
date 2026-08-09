@@ -358,3 +358,20 @@ export interface AdvanceSessionResponse {
   next_question: InterviewQuestionInstance | null;
   report: InterviewReport | null;
 }
+
+export interface KnowledgeCitation {
+  file: string;
+  line_start: number;
+  line_end: number;
+  text: string;
+  entity_id: string;
+}
+
+export interface KnowledgeAnswer {
+  answer: string;
+  citations: KnowledgeCitation[];
+  confidence: number;
+  entities_found: number;
+  query_time_ms: number;
+  query_type: string;
+}
