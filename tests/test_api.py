@@ -492,6 +492,56 @@ def test_optimization_summary_deterministic() -> None:
     assert s.requirement_coverage is not None
 
 
+def test_optimization_summary_multilingual_swedish_job_description() -> None:
+    """Regression: an English canonical profile matched against a Swedish job description must
+    still produce populated tailored-profile statistics via canonical concept matching, guarding
+    the multilingual matching behavior introduced by 80698cc. Swedish-only expressions resolve
+    to canonical concepts: 'informationssäkerhet'/'nätverkssäkerhet' -> Cloud Security,
+    'monitorering' -> Monitoring & Observability, 'säkerhetskontroller' -> Security."""
+    swedish_job_description = (
+        "Vi söker en DevSecOps-ingenjör till vårt team. Du arbetar med monitorering och "
+        "säkerhetsverktyg för vår molnmiljö, och du ansvarar för informationssäkerhet och "
+        "nätverkssäkerhet i Azure. Vi lägger stor vikt vid säkerhetskontroller i hela "
+        "leveranskedjan. Erfarenhet av Kubernetes och Docker samt CI/CD-pipelines är ett "
+        "krav. Kunskaper i Python är meriterande."
+    )
+
+    response = client.post(
+        "/generate/artifact",
+        json={
+            "profile_id": "raul-gongora-profile",
+            "artifact_id": "cv-english-source",
+            "output_format": "markdown",
+            "job_description": swedish_job_description,
+        },
+    )
+
+    assert response.status_code == 200
+    summary_header = response.headers.get("X-Optimization-Summary")
+    assert summary_header is not None
+    import json
+    summary = json.loads(summary_header)
+
+    assert summary["profile_coverage"] is not None
+    assert summary["profile_coverage"] > 0
+
+    assert summary["requirement_coverage"] is not None
+    assert summary["requirement_coverage"] > 0
+
+    assert summary["requirements_detected"] is not None
+    assert summary["requirements_detected"] > 0
+
+    assert summary["requirements_matched"] is not None
+    assert summary["requirements_matched"] > 0
+    assert summary["matched_requirements"]
+
+    assert summary["target_context_emphasis"]
+
+    assert "Cloud Security" in summary["matched_requirements"]
+    assert "Monitoring & Observability" in summary["matched_requirements"]
+    assert "Security" in summary["matched_requirements"]
+
+
 def test_optimizer_compute_scores_with_emphasis_no_crash() -> None:
     """Regression test: _compute_scores must not crash when profile has targetContext emphasis
     and unreferenced elements exist. Verifies fix for optimizer.py element_text NameError."""
