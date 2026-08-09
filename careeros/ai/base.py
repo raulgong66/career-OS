@@ -40,6 +40,8 @@ class AIProvider(ABC):
         *,
         temperature: float = 0.1,
         timeout: float = 60.0,
+        max_tokens: int | None = None,
+        json_mode: bool = False,
     ) -> str:
         """Return the model's completion for a prompt.
 
@@ -47,6 +49,10 @@ class AIProvider(ABC):
             prompt: The full prompt text (built by the consumer).
             temperature: Sampling temperature.
             timeout: Request timeout in seconds.
+            max_tokens: Cap on the number of output tokens. Providers that
+                cannot enforce it may ignore it.
+            json_mode: When True, request well-formed JSON output from the
+                provider instead of free text.
 
         Returns:
             The raw model text.

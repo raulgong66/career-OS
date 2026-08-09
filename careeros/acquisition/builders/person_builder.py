@@ -24,8 +24,8 @@ class PersonBuilder(BaseBuilder):
             return []
         person = items[0]
         person_dict: dict[str, Any] = {
-            "id": person.id,
-            "names": [{"value": person.full_name, "usage": "professional"}],
+            "id": person.id or "person-unknown",
+            "names": [{"value": person.full_name or "", "usage": "professional"}],
         }
         contact: dict[str, str] = {}
         if person.email:

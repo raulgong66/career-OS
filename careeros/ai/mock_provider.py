@@ -48,6 +48,8 @@ class MockAIProvider(AIProvider):
         *,
         temperature: float = 0.1,
         timeout: float = 60.0,
+        max_tokens: int | None = None,
+        json_mode: bool = False,
     ) -> str:
         self.calls.append(prompt)
         if self.fail:
