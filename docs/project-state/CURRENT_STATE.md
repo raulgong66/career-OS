@@ -17,11 +17,11 @@
 
 ## HEAD SHA
 
-- `8adab822f605a6203bfe931a4193ffe517e75d79`
+- `1e6c337152c467bd855d3c8d616347569d3a05a3`
 
 ## origin/main SHA
 
-- `8adab822f605a6203bfe931a4193ffe517e75d79` (in sync with local `main`)
+- `1e6c337152c467bd855d3c8d616347569d3a05a3` (in sync with local `main`)
 
 ## Latest tag
 
@@ -51,19 +51,22 @@
 - `feature/tailored-cv-deduplication-pr` → `d6fc3522…` (CV dedup PR branch)
 - `feature/ui-restoration` → `c07eabc0…` (restored-UI work, merged via PR #9)
 - `feature/ui-restoration-pr` → `c0a68638…` (UI restoration PR branch)
+- `feature/recover-docx-import-robustness` → `571c1694…` (DOCX/LLM import robustness recovery, merged via PR #10)
 
 ## Verified test status
 
-Last verified on `main` at `8adab82` (2026-08-09):
+Last verified on `main` at `1e6c337` (2026-08-09):
 
-- Backend: `python -m pytest -q` → **1007 passed** (1 warning)
+- Backend: `python -m pytest -q` → **1040 passed** (1 warning)
 - Frontend: typecheck PASS · **61 tests (5 files) PASS** · lint PASS · build PASS
+  (previously verified; PR #10 did not touch frontend)
 
 ## Completed work
 
 - M1.27 — CSKS Incremental Indexing (PR #7, merge `782464c3`) — released as v1.27.0.
 - Tailored-CV duplicate-narrative suppression (PR #8, merge `80b2dc8`).
 - Frontend UI restoration (PR #9, merge `8adab82`).
+- DOCX/LLM extraction robustness recovery (PR #10, merge `1e6c337`).
 - Annotated tag `v1.27.0` created on `8adab82` and GitHub Release published.
 
 ## Pending work
@@ -80,13 +83,13 @@ Last verified on `main` at `8adab82` (2026-08-09):
 
 ## Current authorized action
 
-- Documentation/governance only: establish the Project State Checkpoint System
-  (`CURRENT_STATE.md`, `M1.27-STATE.md`, and governance-document wiring).
+- Documentation-only: refresh `CURRENT_STATE.md` to reflect the merged PR #10
+  (DOCX/LLM import robustness recovery). No code changes authorized.
 - Next commit/push is BLOCKED pending explicit review and authorization.
 
 ## Required baseline
 
-- `main` = `origin/main` = `8adab822f605a6203bfe931a4193ffe517e75d79`
+- `main` = `origin/main` = `1e6c337152c467bd855d3c8d616347569d3a05a3`
 - Working tree clean · `v1.27.0` points to `8adab82` · no open PRs
 - Any deviation from this baseline must be reconciled with this file before work proceeds.
 
@@ -94,6 +97,8 @@ Last verified on `main` at `8adab82` (2026-08-09):
 
 - 2026-08-09: `CURRENT_STATE.md` created as part of the Project State Checkpoint System
   (documentation-only change; commit pending review).
+- 2026-08-09: refreshed after PR #10 merge (`1e6c337`); DOCX/LLM extraction robustness
+  recovered; no new tag/release; `M1.27-STATE.md` untouched.
 
 ## Milestone numbering
 
