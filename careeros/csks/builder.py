@@ -90,6 +90,10 @@ class CSKSExtractorOrchestrator:
         from .extractor import get_all_extractors
         self.extractors = get_all_extractors(repo_root)
 
+    def discover_source_paths(self) -> list[str]:
+        """Return the canonical, deterministic source path order for this repo."""
+        return self._discover_source_paths()
+
     def extract_all(self, source_paths: list[str] | None = None) -> tuple[list, list]:
         """Extract all entities and relationships from the repository."""
         all_entities = []

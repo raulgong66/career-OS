@@ -72,10 +72,12 @@ def test_indexer_search_by_type(indexer: CSKSIndexer) -> None:
     assert all(r["type"] == "domain" for r in results)
 
 
-def test_indexer_incremental_update_stub(indexer: CSKSIndexer) -> None:
+def test_indexer_incremental_update_no_changes_is_noop(indexer: CSKSIndexer) -> None:
     before = indexer.graph.node_count
+    before_edges = indexer.graph.edge_count
     graph = indexer.incremental_update([])
     assert graph.node_count == before
+    assert graph.edge_count == before_edges
 
 
 def test_cli_query_end_to_end(csks_sample_repo: Path) -> None:

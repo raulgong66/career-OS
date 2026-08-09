@@ -83,12 +83,13 @@ def build_csks_app() -> typer.Typer:
     @csks_app.command("index")
     def index(
         repo_root: Path = typer.Option(None, "--repo-root", help="Repository root. Defaults to the package root."),
+        incremental: bool = typer.Option(False, "--incremental", help="Re-index only changed files instead of a full rebuild."),
     ) -> None:
-        """Build the full CSKS index from all sources."""
+        """Build the CSKS index. Use --incremental to update only changed files."""
         root = repo_root or _default_repo_root()
         indexer = CSKSIndexer(root)
         start = time.perf_counter()
-        graph = indexer.build_full_index()
+        graph = indexer.incremental_update([]) if incremental else indexer.build_full_index()
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         console.print(f"[bold green]Index built[/bold green] "
                       f"({graph.node_count} nodes, {graph.edge_count} edges, {elapsed_ms}ms)")
