@@ -13,10 +13,11 @@ from careeros.acquisition.person_data import (
     PersonData,
     SkillData,
 )
-from careeros.acquisition.pipeline import AcquisitionPipeline
+from careeros.acquisition.pipeline import AcquisitionPipeline, PipelineError
 from careeros.acquisition.profile_builder import CanonicalProfileBuilder
 from careeros.acquisition.text_extractor import TextExtractor
 from careeros.acquisition.yaml_writer import YamlWriter
+from careeros.ai.mock_provider import MockAIProvider
 from careeros.schema_loader import SchemaLoader
 from careeros.validator import EntityValidator
 
@@ -308,3 +309,193 @@ class TestLLMExtractorFactory:
         # pipeline accepts the factory-created extractor via injection.
         pipeline.llm_extractor = OllamaLLMExtractor()
         assert isinstance(pipeline.llm_extractor, OllamaLLMExtractor)
+
+
+def _run_pipeline_with(docx_path: Path, extractor: LLMExtractor, out: Path) -> dict:
+    pipeline = AcquisitionPipeline(llm_extractor=extractor)
+    result = pipeline.run(docx_path, out)
+    assert result == out.resolve()
+    return yaml.safe_load(out.read_text(encoding="utf-8"))
+
+
+def _canonical_generator(calls: list[str], payload: dict) -> Any:
+    import json
+
+    def generator(prompt: str, temperature: float, timeout: float) -> str:
+        calls.append(prompt)
+        return json.dumps(payload, ensure_ascii=False)
+
+    return generator
+
+
+def test_pipeline_accepts_profile_with_null_ids(tmp_path: Path) -> None:
+    """Explicit null ids from the LLM must not fail canonical validation."""
+    docx = tmp_path / "cv.docx"
+    _create_test_docx(docx)
+    calls: list[str] = []
+    payload = {
+        "person": {"id": None, "firstName": "Anna", "lastName": "Lindqvist", "fullName": "Anna Lindqvist"},
+        "experiences": [{"id": None, "organization": "Qred Bank", "title": "Dev"}],
+        "skills": [{"name": "Python"}],
+    }
+    extractor = LLMExtractor(
+        provider=MockAIProvider(generator=_canonical_generator(calls, payload))
+    )
+    loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
+
+    assert loaded["person"]["id"] == "person-unknown"
+    assert loaded["person"]["names"][0]["value"] == "Anna Lindqvist"
+    assert loaded["experiences"][0]["id"] == "exp-0"
+    assert loaded["skills"][0]["name"] == "Python"
+
+
+def test_pipeline_accepts_partial_profile_missing_optional_fields(tmp_path: Path) -> None:
+    """Missing optional fields (email, phone, education, skills) must not fail import."""
+    docx = tmp_path / "cv.docx"
+    _create_test_docx(docx)
+    calls: list[str] = []
+    payload = {
+        "person": {"id": "person-anna", "fullName": "Anna Lindqvist"},
+        "experiences": [{"id": "exp-qred", "organization": "Qred Bank", "title": "Dev"}],
+        "skills": [],
+        "education": [],
+    }
+    extractor = LLMExtractor(
+        provider=MockAIProvider(generator=_canonical_generator(calls, payload))
+    )
+    loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
+
+    assert loaded["person"]["id"] == "person-anna"
+    assert "contact" not in loaded["person"]
+    assert len(loaded["experiences"]) == 1
+    assert loaded["experiences"][0]["id"] == "exp-qred"
+
+
+def test_pipeline_accepts_minimal_profile_name_only(tmp_path: Path) -> None:
+    """A profile with only a name is still importable."""
+    docx = tmp_path / "cv.docx"
+    _create_test_docx(docx)
+    calls: list[str] = []
+    payload = {
+        "person": {"id": "person-anna", "fullName": "Anna Lindqvist"},
+        "experiences": [],
+        "skills": [],
+        "education": [],
+    }
+    extractor = LLMExtractor(
+        provider=MockAIProvider(generator=_canonical_generator(calls, payload))
+    )
+    loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
+
+    assert loaded["person"]["id"] == "person-anna"
+    assert loaded["person"]["names"][0]["value"] == "Anna Lindqvist"
+    assert loaded["experiences"] == []
+    assert loaded["skills"] == []
+
+
+def test_pipeline_accepts_swedish_cv(tmp_path: Path) -> None:
+    """Swedish section headings are handled semantically; a Swedish profile imports."""
+    from docx import Document
+
+    docx = tmp_path / "sv_cv.docx"
+    doc = Document()
+    doc.add_heading("Anna Lindqvist", 0)
+    doc.add_heading("Profil", 1)
+    doc.add_paragraph("Erfaren systemutvecklare med 10 års erfarenhet.")
+    doc.add_heading("Arbetslivserfarenhet", 1)
+    doc.add_heading("Senior Systemutvecklare - Qred Bank", 2)
+    doc.add_paragraph("Mars 2020 - Nu")
+    doc.add_heading("Utbildning", 1)
+    doc.add_paragraph("Civilingenjör Datateknik - KTH, 2009 - 2014")
+    doc.add_heading("Kompetens", 1)
+    doc.add_paragraph("Python, Kubernetes, AWS")
+    doc.add_heading("Certifieringar", 1)
+    doc.add_paragraph("AWS Certified Solutions Architect")
+    doc.add_heading("Språk", 1)
+    doc.add_paragraph("Svenska (Modersmål), Engelska (Flytande)")
+    doc.save(str(docx))
+
+    calls: list[str] = []
+    payload = {
+        "person": {"id": "person-lindqvist", "firstName": "Anna", "lastName": "Lindqvist", "fullName": "Anna Lindqvist", "location": "Stockholm, Sverige"},
+        "experiences": [{"id": "exp-qred", "organization": "Qred Bank", "title": "Senior Systemutvecklare", "startDate": "2020-03", "isCurrent": True}],
+        "skills": [{"name": "Kubernetes"}, {"name": "AWS"}],
+        "education": [{"institution": "KTH Royal Institute of Technology", "degree": "Civilingenjör Datateknik"}],
+    }
+    extractor = LLMExtractor(
+        provider=MockAIProvider(generator=_canonical_generator(calls, payload))
+    )
+    loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
+
+    assert loaded["person"]["names"][0]["value"] == "Anna Lindqvist"
+    assert loaded["person"]["location"]["label"] == "Stockholm, Sverige"
+    assert loaded["experiences"][0]["title"] == "Senior Systemutvecklare"
+    assert {s["name"] for s in loaded["skills"]} >= {"Kubernetes", "AWS"}
+    assert loaded["education"][0]["program"] == "Civilingenjör Datateknik"
+
+
+def test_pipeline_accepts_large_cv_via_chunking(tmp_path: Path) -> None:
+    """A CV larger than one chunk is split, extracted, merged, and validated."""
+    from docx import Document
+
+    docx = tmp_path / "large_cv.docx"
+    doc = Document()
+    doc.add_heading("Anna Lindqvist", 0)
+    for i in range(40):
+        doc.add_heading(f"Systemutvecklare - Company {i}", 1)
+        doc.add_paragraph(f"Jan 2010 - Dec 201{i % 10 + 5}")
+        doc.add_paragraph(
+            "Designed and deployed cloud services in Python with Kubernetes "
+            "and AWS. Automated infrastructure with Terraform and CI/CD."
+        )
+    doc.save(str(docx))
+
+    calls: list[str] = []
+    payload = {
+        "person": {"id": "person-lindqvist", "firstName": "Anna", "lastName": "Lindqvist", "fullName": "Anna Lindqvist"},
+        "experiences": [{"id": "exp-acme", "organization": "ACME", "title": "Systemutvecklare", "startDate": "2020-01", "isCurrent": True}],
+        "skills": [{"name": "Python"}],
+        "education": [],
+    }
+    extractor = LLMExtractor(
+        provider=MockAIProvider(generator=_canonical_generator(calls, payload))
+    )
+    loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
+
+    assert len(calls) > 1
+    assert loaded["person"]["names"][0]["value"] == "Anna Lindqvist"
+    assert loaded["experiences"][0]["organizationRefs"][0]["id"] == "org-acme"
+
+
+def test_pipeline_rejects_document_with_no_extractable_content(tmp_path: Path) -> None:
+    """A document that yields no name and no entities is genuinely invalid."""
+    docx = tmp_path / "cv.docx"
+    _create_test_docx(docx)
+    calls: list[str] = []
+    extractor = LLMExtractor(
+        provider=MockAIProvider(generator=_canonical_generator(calls, {}))
+    )
+    pipeline = AcquisitionPipeline(llm_extractor=extractor)
+    with pytest.raises(PipelineError, match="No profile content could be extracted"):
+        pipeline.run(docx, tmp_path / "out.yaml")
+
+
+def test_pipeline_rejects_genuinely_invalid_document(tmp_path: Path) -> None:
+    """Rejects unsupported content, and rejected imports do not write output."""
+    from docx import Document
+
+    docx = tmp_path / "cv.docx"
+    doc = Document()
+    doc.add_heading("Not a real CV", 0)
+    doc.add_paragraph("This document contains no professional information.")
+    doc.save(str(docx))
+
+    calls: list[str] = []
+    extractor = LLMExtractor(
+        provider=MockAIProvider(generator=_canonical_generator(calls, {}))
+    )
+    pipeline = AcquisitionPipeline(llm_extractor=extractor)
+    out = tmp_path / "out.yaml"
+    with pytest.raises(PipelineError, match="No profile content could be extracted"):
+        pipeline.run(docx, out)
+    assert not out.exists()

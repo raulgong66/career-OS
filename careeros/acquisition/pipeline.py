@@ -94,6 +94,10 @@ class AcquisitionPipeline:
         return written
 
     def _validate(self, profile: dict[str, Any]) -> None:
+        if not self._has_usable_content(profile):
+            raise PipelineError(
+                "No profile content could be extracted from the document."
+            )
         try:
             from careeros.schema_loader import SchemaLoader
             from careeros.validator import EntityValidator
@@ -110,6 +114,22 @@ class AcquisitionPipeline:
             raise
         except Exception as exc:
             raise PipelineError(f"Validation error: {exc}") from exc
+
+    @staticmethod
+    def _has_usable_content(profile: dict[str, Any]) -> bool:
+        person = profile.get("person", {}) or {}
+        names = person.get("names") if isinstance(person, dict) else None
+        has_person_name = any(
+            isinstance(name, dict) and (name.get("value") or name.get("label"))
+            for name in (names or [])
+        )
+        return bool(
+            has_person_name
+            or profile.get("experiences")
+            or profile.get("skills")
+            or profile.get("education")
+            or profile.get("organizations")
+        )
 
     @staticmethod
     def _default_llm_extractor() -> LLMExtractor:

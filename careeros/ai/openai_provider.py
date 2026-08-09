@@ -6,12 +6,15 @@ All OpenAI-specific vendor code lives here. Core and modules only ever see the
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
 from careeros.exceptions import LLMConfigurationError
 
 from .base import AIError, AIProvider, AIResponseError
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAIProvider(AIProvider):
@@ -50,6 +53,8 @@ class OpenAIProvider(AIProvider):
         *,
         temperature: float = 0.1,
         timeout: float = 60.0,
+        max_tokens: int | None = None,
+        json_mode: bool = False,
     ) -> str:
         import httpx
 
@@ -57,11 +62,15 @@ class OpenAIProvider(AIProvider):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        body = {
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": temperature,
         }
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
         try:
             with httpx.Client(timeout=timeout, transport=self._transport) as client:
                 response = client.post(self.base_url, headers=headers, json=body)
@@ -75,4 +84,12 @@ class OpenAIProvider(AIProvider):
         choices = result.get("choices", [])
         if not choices:
             raise AIResponseError("OpenAI returned no choices")
-        return choices[0].get("message", {}).get("content", "") or ""
+        content = choices[0].get("message", {}).get("content", "") or ""
+        if choices[0].get("finish_reason") == "length":
+            logger.warning(
+                "OpenAI generation stopped at the output length limit "
+                "(model=%s, max_tokens=%s); response may be truncated.",
+                self.model,
+                max_tokens,
+            )
+        return content
