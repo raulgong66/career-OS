@@ -33,6 +33,15 @@ AI agents must clearly distinguish:
 7. Repository publication is a user-controlled action unless explicitly delegated.
 8. Maintain a decision log for major architectural decisions.
 
+## Project State Checkpoints
+
+1. At the start of every session — and after any new chat, context, model, agent, or machine change — read `docs/project-state/CURRENT_STATE.md` and perform a fresh read-only repository checkpoint before continuing.
+2. Treat `CURRENT_STATE.md` as the authoritative answer to "where are we". Verify its baseline against the repository: branch, HEAD SHA, origin/main, latest tag, and working-tree status.
+3. Follow the checkpoint gates B1–B7 defined in `docs/development/PROJECT_OPERATIONS_MANUAL.md` at every implementation boundary.
+4. Never infer a branch's purpose from a task description.
+5. If branch purpose, ancestry, baseline, scope, or intended target is ambiguous: STOP and ask for clarification.
+6. No implementation may begin until the target branch, baseline, authorized files, forbidden scope, and next authorized action are explicitly established.
+
 ## Pre-submit verification
 
 Run these commands before considering a task complete:

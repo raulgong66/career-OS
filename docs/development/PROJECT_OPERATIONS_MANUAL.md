@@ -14,6 +14,7 @@ This living operations manual documents the official branch, release, and review
 - Standard milestone workflow
 - Context recovery procedure for a new AI session
 - Mandatory verification checklist (before and after implementation)
+- Project state checkpoint system
 - Branch synchronization and recovery (Mac <> Windows)
 - Checkpoint tag and GitHub Release policy
 - Architecture guardrails
@@ -88,6 +89,8 @@ Notes:
 
 When an agent or developer begins work on this repo without prior chat context, follow these steps to recover the project state and context.
 
+0. Read `docs/project-state/CURRENT_STATE.md` and verify its baseline against the repository (checkpoint gate B7).
+
 1. Checkout the repository and fetch origin:
 
 ```bash
@@ -152,6 +155,41 @@ After merge and release, validate:
 - [ ] Tag exists and Release notes published.
 - [ ] Quick smoke test: critical API endpoints and frontend routes respond correctly.
 - [ ] Update milestone doc with actual verification results and timestamps.
+- [ ] Update `docs/project-state/CURRENT_STATE.md` and the milestone `M<ver>-STATE.md` to reflect the merge/release.
+
+---
+
+## Project state checkpoint system
+
+State files live in `docs/project-state/`:
+
+- `docs/project-state/CURRENT_STATE.md` — the always-current factual snapshot (branch, HEAD SHA, origin/main, latest tag/release, milestone, working-tree status, open PRs, verified test status, completed/pending/excluded work, current authorized action, required baseline, last checkpoint). It is a factual snapshot, not conversational reasoning.
+- `docs/project-state/M<ver>-STATE.md` — one per implementation milestone (e.g. `M1.27-STATE.md`). Created at milestone start, updated at every checkpoint boundary, frozen when the milestone is released.
+
+Checkpoint gates (STOP-and-record at each boundary):
+
+1. **Before implementation** — perform a mandatory read-only PROJECT STATE CHECKPOINT: read `CURRENT_STATE.md`, verify the baseline (branch, HEAD SHA, origin/main, latest tag, clean working tree), and confirm the scope.
+2. **After reconnaissance / scope decision** — record the approved scope before implementation begins.
+3. **Before commit** — verify branch, HEAD/base, authorized files, test results, and absence of out-of-scope contamination.
+4. **Before PR** — verify the PR diff against the intended base and the exact authorized scope.
+5. **After merge** — verify the resulting `main` SHA and integration tests.
+6. **After tag/release** — verify the tag points to the intended release commit.
+7. **New chat / context / model / agent / machine** — read `CURRENT_STATE.md` and perform a fresh repository checkpoint before continuing.
+
+Working rules:
+
+- Never infer branch intent from a task description.
+- If branch purpose, ancestry, baseline, scope, or intended target is ambiguous: STOP and ask for clarification.
+- No implementation may begin until the target branch, baseline, authorized files, forbidden scope, and next authorized action are explicitly established.
+
+Milestone numbering — planning vs implementation:
+
+| Scheme | Format | Example | Used in |
+|---|---|---|---|
+| Planning milestone numbering | `M1`–`M5` | `M3 — Professional Intelligence` | `docs/platform-beta/Milestones.md` — capability workstream planning, not delivery commitments |
+| Implementation milestone numbering | `M1.<xx>` | `M1.27 — CSKS Incremental Indexing` | Feature branches (`feature/m1.27-*`), milestone specs, checkpoint tags, release versions (`v1.27.0`), `M<ver>-STATE.md` files |
+
+Implementation milestone numbers do not map 1:1 to planning milestone numbers. Verify the specific milestone before assuming scope.
 
 ---
 

@@ -80,6 +80,8 @@ Next Milestone
 
 An implementation milestone may only begin after the corresponding architecture has reached the Architecture Frozen state.
 
+Project State Checkpoints: every boundary in this lifecycle — before implementation, after scope decision, before commit, before PR, after merge, after tag/release, and on a new session/context/model/agent/machine — is a checkpoint gate. At each gate, read and update `docs/project-state/CURRENT_STATE.md` (and the active `docs/project-state/M<ver>-STATE.md`), verify the baseline, and stop if anything is ambiguous. The gates are defined in `docs/development/PROJECT_OPERATIONS_MANUAL.md`.
+
 ## 3. Workstation Responsibilities
 
 CareerOS uses a dual-workstation model for role separation.
@@ -218,6 +220,7 @@ A milestone is considered complete only when all applicable conditions are satis
 - ✓ Documentation updated
 - ✓ Code review completed
 - ✓ Repository clean
+- ✓ Project state checkpoint updated in `docs/project-state/`
 - ✓ Commit pushed
 - ✓ Annotated Git tag created (major milestones)
 - ✓ GitHub Release published (platform checkpoints)

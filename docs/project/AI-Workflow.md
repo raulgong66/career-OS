@@ -37,12 +37,14 @@ This document describes how AI tools should collaborate during the development a
 
 ## 4. Standard Development Workflow
 
-1. Review the relevant guidance in the constitution and agent instructions before starting.
-2. Clarify the task, scope, and expected outcome with the repository owner.
-3. Make the smallest change that addresses the request.
-4. Keep documentation, schemas, and repository structure consistent with existing conventions.
-5. Validate the result locally and explain any limitations or assumptions.
-6. Present the change clearly so the human can review and approve it.
+1. Read `docs/project-state/CURRENT_STATE.md` and verify a fresh read-only repository checkpoint before starting (checkpoint gates B1–B7 are defined in `docs/development/PROJECT_OPERATIONS_MANUAL.md`).
+2. Review the relevant guidance in the constitution and agent instructions before starting.
+3. Clarify the task, scope, and expected outcome with the repository owner.
+4. Record the approved scope before implementation begins.
+5. Make the smallest change that addresses the request.
+6. Keep documentation, schemas, and repository structure consistent with existing conventions.
+7. Validate the result locally and explain any limitations or assumptions.
+8. Present the change clearly so the human can review and approve it.
 
 ## 5. Decision Ownership
 
@@ -61,6 +63,7 @@ When a change affects the structure of CareerOS, the canonical profile model, or
 ## 7. Git Workflow
 
 - AI tools may create or amend local commits only when explicitly requested by the user.
+- Before creating a commit or PR, verify the branch, HEAD/base, authorized files, test results, and that no out-of-scope files were contaminated (checkpoint gates B3–B4).
 - AI tools must not push to the remote repository unless the user explicitly instructs them to do so and the required authentication and permissions are available.
 - If a push cannot proceed because of missing authentication, permissions, tooling, or other environment limitations, the limitation should be explained clearly and the workflow should stop without trying alternative publication methods.
 - Repository publication remains a user-controlled action unless it is explicitly delegated.

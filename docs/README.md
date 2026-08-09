@@ -15,5 +15,6 @@
 - [Data model](data-model/) — Canonical profile and data model
 - [Platform Beta](platform-beta/) — Evolution from document generation to Professional Knowledge Platform
 - [Project](project/) — Project documentation
+- [Project State](project-state/) — Current project-state snapshot and milestone checkpoints
 - [Releases](releases/) — Release notes
 
