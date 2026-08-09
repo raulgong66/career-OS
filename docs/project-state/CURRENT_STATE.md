@@ -17,11 +17,14 @@
 
 ## HEAD SHA
 
-- `1e6c337152c467bd855d3c8d616347569d3a05a3`
+- `dc8242b31101d803df18332f88818a52d5cde045` — GitHub `main` after the PR #11 merge
+  (merge commit of `feature/multilingual-tailored-regression-test`)
 
 ## origin/main SHA
 
-- `1e6c337152c467bd855d3c8d616347569d3a05a3` (in sync with local `main`)
+- `dc8242b31101d803df18332f88818a52d5cde045` (GitHub `origin/main`)
+- Local `origin/main` ref is stale at `c3ec0f9`; local `main` is stale at `4bf74e5`.
+  See "Local synchronization status".
 
 ## Latest tag
 
@@ -40,6 +43,15 @@
 
 - Clean. `git status --porcelain` is empty; no uncommitted changes.
 
+## Local synchronization status
+
+- Local checkout is intentionally stale relative to GitHub `main` (no fetch since the PR #11 merge):
+  - GitHub `main` = `dc8242b31101d803df18332f88818a52d5cde045`
+  - Local `main` = `4bf74e5697d079889735c8735c7b73431b3d6ec9`
+  - Local `origin/main` ref = `c3ec0f90e32894e45dabd5a11a790a730ef1b325`
+  - Checked-out branch: `docs/project-state-refresh-pr11` (checkpoint refresh branch)
+- Synchronization is deferred and must not be performed without explicit authorization.
+
 ## Open PRs
 
 - None.
@@ -52,14 +64,15 @@
 - `feature/ui-restoration` → `c07eabc0…` (restored-UI work, merged via PR #9)
 - `feature/ui-restoration-pr` → `c0a68638…` (UI restoration PR branch)
 - `feature/recover-docx-import-robustness` → `571c1694…` (DOCX/LLM import robustness recovery, merged via PR #10)
+- `feature/multilingual-tailored-regression-test` → `4bf74e5…` (multilingual Tailored Profile regression test, merged via PR #11)
 
 ## Verified test status
 
-Last verified on `main` at `1e6c337` (2026-08-09):
+Last verified on the PR #11 head at `4bf74e5` (2026-08-09), merged via PR #11:
 
-- Backend: `python -m pytest -q` → **1040 passed** (1 warning)
-- Frontend: typecheck PASS · **61 tests (5 files) PASS** · lint PASS · build PASS
-  (previously verified; PR #10 did not touch frontend)
+- Backend: `python -m pytest -q` → **1041 passed** (30.72s)
+- Focused regression test `test_optimization_summary_multilingual_swedish_job_description`: 1 passed
+- Frontend: unchanged by PR #11 (prior typecheck PASS · 61 tests (5 files) PASS · lint PASS · build PASS)
 
 ## Completed work
 
@@ -68,11 +81,24 @@ Last verified on `main` at `1e6c337` (2026-08-09):
 - Frontend UI restoration (PR #9, merge `8adab82`).
 - DOCX/LLM extraction robustness recovery (PR #10, merge `1e6c337`).
 - Annotated tag `v1.27.0` created on `8adab82` and GitHub Release published.
+- Multilingual Tailored Profile regression coverage (PR #11, merge `dc8242b`):
+  guards English canonical profile + Swedish job description → canonical multilingual
+  requirement matching → populated Tailored Profile optimization statistics. Test-only;
+  production code unchanged.
 
 ## Pending work
 
 - None. No implementation task is currently authorized, so there is nothing pending.
 - Planning-only candidates (not authorized): M1.28 and beyond, per `docs/platform-beta/`.
+
+## Deferred / preservation items (recorded, NOT resolved in this task)
+
+- `6e5281a` roadmap preservation decision — recorded, not yet applied/reviewed.
+- `feature/m1.24-resume-workspace` — historical/deferred content preserved.
+- `feature/platform-beta-architecture` — historical/deferred content preserved.
+- `AGENTS.md` stale "555 tests expected" governance drift — documented, not corrected.
+- Decision-log / ADR gap — documented, not filled.
+- Local `main`/`origin/main` refs stale vs GitHub `main` — sync deferred (no fetch performed).
 
 ## Explicitly excluded / do-not-touch work
 
@@ -83,15 +109,18 @@ Last verified on `main` at `1e6c337` (2026-08-09):
 
 ## Current authorized action
 
-- Documentation-only: refresh `CURRENT_STATE.md` to reflect the merged PR #10
-  (DOCX/LLM import robustness recovery). No code changes authorized.
-- Next commit/push is BLOCKED pending explicit review and authorization.
+- Documentation-only: refresh `CURRENT_STATE.md` to reflect the merged PR #11
+  (multilingual Tailored Profile regression test). No code changes authorized.
+- The checkpoint refresh is committed on short-lived branch `docs/project-state-refresh-pr11`
+  and published as a PR to `main`; PR merge is BLOCKED pending explicit authorization.
+- Local repository synchronization (fetch/pull/fast-forward) is NOT authorized in this task.
 
 ## Required baseline
 
-- `main` = `origin/main` = `1e6c337152c467bd855d3c8d616347569d3a05a3`
-- Working tree clean · `v1.27.0` points to `8adab82` · no open PRs
-- Any deviation from this baseline must be reconciled with this file before work proceeds.
+- GitHub `main` = `dc8242b31101d803df18332f88818a52d5cde045` (after PR #11 merge)
+- Working tree clean · `v1.27.0` points to `8adab82`
+- Local refs are stale (see "Local synchronization status"); baseline must be re-verified
+  after an authorized fetch/sync before further work proceeds.
 
 ## Last checkpoint / update
 
@@ -99,6 +128,9 @@ Last verified on `main` at `1e6c337` (2026-08-09):
   (documentation-only change; commit pending review).
 - 2026-08-09: refreshed after PR #10 merge (`1e6c337`); DOCX/LLM extraction robustness
   recovered; no new tag/release; `M1.27-STATE.md` untouched.
+- 2026-08-09: refreshed after PR #11 merge (`dc8242b`); multilingual Tailored Profile
+  regression coverage added (English profile + Swedish JD scenario); 1041 backend tests
+  verified; no new tag/release; M1.28 not authorized; `M1.27-STATE.md` untouched.
 
 ## Milestone numbering
 
