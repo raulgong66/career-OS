@@ -557,6 +557,37 @@ def test_recommendation_serialization_contains_displayName() -> None:
     assert result["displayName"] == "Kubernetes"
 
 
+def test_duplicate_narrative_suppressed_for_rene_profile_regression() -> None:
+    """Regression (M1.25 → suppression): René profile's repeated experience scope
+    is suppressed deterministically on the tailored CV contract only, without
+    altering the canonical profile file.
+    """
+    from careeros import ProfileLoader, SchemaLoader, EvidenceSelector, ExportContractBuilder
+    REPO_ROOT = Path(__file__).resolve().parents[1]
+    profile_path = REPO_ROOT / "profiles" / "staging" / "person-hechavarria-profile.yaml"
+    profile = ProfileLoader(SchemaLoader(REPO_ROOT / "schemas")).load(profile_path)
+    original_bytes = open(profile_path, "rb").read()
+
+    contract = ExportContractBuilder(SchemaLoader(REPO_ROOT / "schemas")).build(
+        profile, "artf-standard_cv-person-hechavarria", validate=False
+    )
+    # Verify the raw profile file is untouched after load/build
+    assert open(profile_path, "rb").read() == original_bytes
+
+    selected = EvidenceSelector().select(contract)
+    # Suppression should have removed duplicate experience scopes from the contract;
+    # the canonical profile file remains unchanged (verified above).
+    exp_scopes = {
+        s.id: s.data.get("scope")
+        for s in selected.sources if s.type.lower() == "experience"
+    }
+    # At least some scopes should have been cleared for duplicate experiences.
+    # The profile contains three experiences with identical scope text;
+    # the first occurrence keeps its scope; duplicates lose it.
+    cleared_scopes = [k for k, v in exp_scopes.items() if v is None]
+    assert len(cleared_scopes) >= 2, f"Expected at least 2 duplicate scopes cleared, got {cleared_scopes}"
+
+
 def test_list_profiles_returns_profile_summaries() -> None:
     """GET /profiles returns list of ProfileSummary DTOs with all required fields."""
     response = client.get("/profiles")

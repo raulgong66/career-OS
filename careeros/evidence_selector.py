@@ -6,6 +6,7 @@ from dataclasses import replace
 from typing import Any
 
 from .export_contract import ExportContract, ExportSource
+from .narrative_dedup import suppress_duplicate_narrative
 
 
 class EvidenceSelector:
@@ -18,6 +19,9 @@ class EvidenceSelector:
         providers. Sources without target-context constraints are retained. Sources
         with target-context constraints are retained only when they match the
         artifact's target contexts.
+
+        For CV/RESUME artifacts, redundant duplicate narrative is suppressed on the
+        generated contract (never on the canonical profile) after source selection.
         """
         target_context_ids = {
             str(context["id"])
@@ -29,7 +33,10 @@ class EvidenceSelector:
             for source in contract.sources
             if self._is_relevant(source, target_context_ids)
         ]
-        return replace(contract, sources=selected_sources)
+        contract = replace(contract, sources=selected_sources)
+        if contract.artifact_type.upper() in {"CV", "RESUME"}:
+            contract = suppress_duplicate_narrative(contract)
+        return contract
 
     def _is_relevant(self, source: ExportSource, target_context_ids: set[str]) -> bool:
         """Return whether a source is relevant for the target contexts."""
