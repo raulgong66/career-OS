@@ -42,3 +42,11 @@ class DuplicateProfileError(RepositoryError):
 
 class LLMConfigurationError(CareerOSException):
     """Raised when LLM provider configuration is missing or invalid."""
+
+
+class CheckpointError(CareerOSException):
+    """Base error for the Live Repository Checkpoint capability."""
+
+
+class CheckpointSafetyError(CheckpointError):
+    """Raised when the checkpoint adapter is asked to run a non-read-only operation."""

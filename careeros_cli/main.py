@@ -29,6 +29,7 @@ from careeros import (
     generate_tailored_artifact as run_tailored_artifact_pipeline,
 )
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, PipelineError
+from careeros.checkpoint.cli import CHECKPOINT_APP
 from careeros.csks.cli import CSKS_APP
 from careeros.exceptions import CareerOSException, DuplicateProfileError, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.profile_quality.cli import (
@@ -44,6 +45,7 @@ app = typer.Typer(
     rich_markup_mode="rich",
 )
 app.add_typer(CSKS_APP)
+app.add_typer(CHECKPOINT_APP)
 console = Console()
 
 PROFILES_APP = typer.Typer(
