@@ -20,6 +20,8 @@ from .exceptions import (
     RepositoryError,
     SchemaLoadError,
     ValidationError,
+    CheckpointError,
+    CheckpointSafetyError,
 )
 from .models import EntityRecord, ValidationResult
 from .export_contract import ExportContract, ExportContractBuilder, ExportSource
@@ -108,6 +110,26 @@ from .csks import (
     ExtractedRelationship,
     KnowledgeExtractor,
     StructuredQueryResult,
+)
+
+from .checkpoint import (
+    CheckpointService,
+    Discrepancy,
+    GitHubAccessError,
+    GitHubProvider,
+    HttpGitHubProvider,
+    LocalGitAdapter,
+    ProjectStateReader,
+    RepositoryCheckpoint,
+    RepositoryInfo,
+    LocalGitState,
+    RemoteGitHubState,
+    SyncState,
+    create_github_provider,
+    detect_discrepancies,
+    parse_github_slug,
+    render_json,
+    render_markdown,
 )
 
 __all__ = [
@@ -211,4 +233,23 @@ __all__ = [
     "ExtractedRelationship",
     "KnowledgeExtractor",
     "StructuredQueryResult",
+    "CheckpointService",
+    "Discrepancy",
+    "GitHubAccessError",
+    "GitHubProvider",
+    "HttpGitHubProvider",
+    "LocalGitAdapter",
+    "ProjectStateReader",
+    "RepositoryCheckpoint",
+    "RepositoryInfo",
+    "LocalGitState",
+    "RemoteGitHubState",
+    "SyncState",
+    "create_github_provider",
+    "detect_discrepancies",
+    "parse_github_slug",
+    "render_json",
+    "render_markdown",
+    "CheckpointError",
+    "CheckpointSafetyError",
 ]

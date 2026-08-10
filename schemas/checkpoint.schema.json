@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://career-os.local/schemas/checkpoint.schema.json",
+  "title": "CareerOS Live Repository Checkpoint",
+  "description": "Read-only snapshot of repository, Git, GitHub, and project-state documentation, including detected conflicts between sources of truth.",
+  "version": "1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "generated_at",
+    "repository",
+    "local_git",
+    "remote",
+    "project_docs",
+    "sync",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "tool_version": {
+      "type": "string"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "repository": {
+      "$ref": "#/$defs/repository"
+    },
+    "local_git": {
+      "$ref": "#/$defs/local_git"
+    },
+    "remote": {
+      "$ref": "#/$defs/remote"
+    },
+    "project_docs": {
+      "$ref": "#/$defs/project_docs"
+    },
+    "sync": {
+      "$ref": "#/$defs/sync"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "$defs": {
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo_name",
+        "local_path",
+        "remote_url",
+        "remote_slug"
+      ],
+      "properties": {
+        "repo_name": {
+          "type": "string"
+        },
+        "local_path": {
+          "type": "string"
+        },
+        "remote_url": {
+          "type": "string"
+        },
+        "remote_slug": {
+          "type": "string"
+        }
+      }
+    },
+    "local_git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current_branch",
+        "local_head_sha",
+        "recent_commit_subject",
+        "working_tree_clean",
+        "dirty_file_count",
+        "upstream_ref",
+        "local_origin_main_ref"
+      ],
+      "properties": {
+        "current_branch": {
+          "type": "string"
+        },
+        "local_head_sha": {
+          "type": "string"
+        },
+        "recent_commit_subject": {
+          "type": "string"
+        },
+        "working_tree_clean": {
+          "type": "boolean"
+        },
+        "dirty_file_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "upstream_ref": {
+          "type": "string"
+        },
+        "local_origin_main_ref": {
+          "type": "string"
+        }
+      }
+    },
+    "remote": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "github_main_sha",
+        "github_main_commit_subject",
+        "latest_release_tag",
+        "latest_release_sha",
+        "open_pr_count",
+        "open_prs",
+        "error"
+      ],
+      "properties": {
+        "github_main_sha": {
+          "type": "string"
+        },
+        "github_main_commit_subject": {
+          "type": "string"
+        },
+        "latest_release_tag": {
+          "type": "string"
+        },
+        "latest_release_sha": {
+          "type": "string"
+        },
+        "open_pr_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "open_prs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "number",
+              "title",
+              "head",
+              "base"
+            ],
+            "properties": {
+              "number": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "head": {
+                "type": "string"
+              },
+              "base": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    },
+    "project_docs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "docs_found",
+        "documented_head_sha",
+        "documented_origin_main_sha",
+        "documented_latest_tag",
+        "documented_open_pr_count",
+        "documented_test_status",
+        "documented_authorized_action",
+        "documented_deferred_items",
+        "documented_last_checkpoint"
+      ],
+      "properties": {
+        "docs_found": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "documented_head_sha": {
+          "type": "string"
+        },
+        "documented_origin_main_sha": {
+          "type": "string"
+        },
+        "documented_latest_tag": {
+          "type": "string"
+        },
+        "documented_open_pr_count": {
+          "type": "string"
+        },
+        "documented_test_status": {
+          "type": "string"
+        },
+        "documented_authorized_action": {
+          "type": "string"
+        },
+        "documented_deferred_items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "documented_last_checkpoint": {
+          "type": "string"
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "in_sync",
+        "discrepancies"
+      ],
+      "properties": {
+        "in_sync": {
+          "type": "boolean"
+        },
+        "discrepancies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/discrepancy"
+          }
+        }
+      }
+    },
+    "discrepancy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "source_a",
+        "value_a",
+        "source_b",
+        "value_b",
+        "description"
+      ],
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "source_a": {
+          "type": "string"
+        },
+        "value_a": {
+          "type": "string"
+        },
+        "source_b": {
+          "type": "string"
+        },
+        "value_b": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
