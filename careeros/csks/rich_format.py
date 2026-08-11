@@ -14,6 +14,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .models import CSKSEvidence, EvidencePack
+
 
 @dataclass(frozen=True)
 class RichRender:
@@ -23,10 +25,25 @@ class RichRender:
     citations: list[dict]
 
 
+_TYPE_LABEL = {
+    "adr": "ADR",
+    "api_endpoint": "API endpoint",
+    "cli_command": "CLI command",
+    "component": "Component",
+    "document": "Document",
+    "domain": "Domain",
+    "generator": "Generator",
+    "milestone": "Milestone",
+    "principle": "Principle",
+    "rule": "Rule",
+    "schema": "Schema",
+}
+
+
 class RichFormatter:
     """Formats a single graph node into a rich, cited answer."""
 
-    _SPECIALISED = frozenset({"component", "rule", "generator", "domain", "adr", "milestone", "schema"})
+    _SPECIALISED = frozenset({"component", "rule", "generator", "domain", "adr", "milestone", "schema", "document"})
 
     def __init__(self, graph, root: "Path | None" = None) -> None:
         self.graph = graph
@@ -57,6 +74,8 @@ class RichFormatter:
             return self._milestone(node)
         if node.type == "schema":
             return self._schema(node)
+        if node.type == "document":
+            return self._document(node)
         return self._generic(node)
 
     # --- component/rule/generator ------------------------------------------
@@ -178,6 +197,101 @@ class RichFormatter:
 
         return RichRender("\n".join(lines), self._citations(node))
 
+    # --- document -----------------------------------------------------------
+
+    def _document(self, node) -> "RichRender":
+        props = node.properties
+        lines: list[str] = [f"Document: {node.label} ({node.id})"]
+        purpose = self._purpose(node)
+        if purpose:
+            lines.append(f"  Purpose: {purpose}")
+        else:
+            lines.append("  Purpose: No source summary available for this document.")
+        source = self._source(node)
+        if source:
+            lines.append(f"  Source: {source}")
+        return RichRender("\n".join(lines), self._citations(node))
+
+    def document_text(self, node) -> str | None:
+        """Return the node's source-backed section text, if any.
+
+        Pure text extraction: the formatter never selects related evidence,
+        so callers use this only to read the text for a given node.
+        """
+        return self._purpose(node)
+
+    def format_evidence(self, pack: "EvidencePack") -> "RichRender":
+        """Render an already-assembled :class:`EvidencePack`.
+
+        Renders exactly the evidence the caller selected (primary plus at
+        most two related sections) without performing any candidate search.
+        The legacy compact layout is preserved when no related evidence is
+        present, so direct document callers see identical output.
+        """
+        citations: list[dict] = []
+        primary = pack.primary
+        if primary is None:
+            lines = ["Document: (unresolved)"]
+            if pack.related:
+                lines.append("")
+                lines.append("Details:")
+                lines.extend(f"- {item.text}" for item in pack.related)
+            citations.extend(self._evidence_citation(item) for item in pack.related)
+            return RichRender("\n".join(lines), citations)
+
+        lines = [f"{self._type_label(primary)}: {primary.label} ({primary.entity_id})"]
+        purpose = primary.text or "No source summary available for this document."
+        citations.append(self._evidence_citation(primary))
+
+        if not pack.related:
+            lines.append(f"  Purpose: {purpose}")
+            source = self._evidence_source(primary)
+            if source:
+                lines.append(f"  Source: {source}")
+            return RichRender("\n".join(lines), citations)
+
+        lines.append("")
+        lines.append(f"Purpose: {purpose}")
+        lines.append("")
+        lines.append("Details:")
+        lines.extend(f"- {item.text}" for item in pack.related)
+        lines.append("")
+        lines.append("Source:")
+        sources = [
+            s
+            for s in (self._evidence_source(primary), *(self._evidence_source(item) for item in pack.related))
+            if s
+        ]
+        lines.extend(f"- {s}" for s in sources)
+        citations.extend(self._evidence_citation(item) for item in pack.related)
+        return RichRender("\n".join(lines), citations)
+
+    @staticmethod
+    def _type_label(evidence: "CSKSEvidence") -> str:
+        etype = evidence.entity_id.split(".", 1)[0]
+        return _TYPE_LABEL.get(etype, etype.title())
+
+    @staticmethod
+    def _evidence_citation(evidence: "CSKSEvidence") -> dict:
+        return {
+            "file": evidence.source_path,
+            "line_start": evidence.line_start,
+            "line_end": evidence.line_end,
+            "text": f"{evidence.label} - {_TYPE_LABEL.get(evidence.entity_id.split('.', 1)[0], 'document').lower()}",
+            "entity_id": evidence.entity_id,
+        }
+
+    @staticmethod
+    def _evidence_source(evidence: "CSKSEvidence") -> str | None:
+        path = evidence.source_path
+        if not path:
+            return None
+        start = evidence.line_start
+        end = evidence.line_end
+        if start and end and start != end:
+            return f"{path}:{start}-{end}"
+        return f"{path}:{start}" if start else path
+
     # --- generic fallback ---------------------------------------------------
 
     def _generic(self, node) -> "RichRender":
@@ -288,7 +402,7 @@ class RichFormatter:
         if path.endswith(".py"):
             purpose = self._python_docstring(path, line)
         elif path.endswith(".md"):
-            purpose = self._markdown_intro(path)
+            purpose = self._markdown_section_intro(path, line)
         else:
             purpose = None
         self._purpose_cache[cache_key] = purpose
@@ -327,6 +441,36 @@ class RichFormatter:
                     if stripped and not stripped.startswith(("#", "-", "|", ">")):
                         return stripped
                 return None
+        return None
+
+    def _markdown_section_intro(self, path: str, line: int) -> str | None:
+        """Return the first paragraph after the markdown heading at or above ``line``.
+
+        Unlike :meth:`_markdown_intro` (file-level), this anchors to the heading
+        the entity was extracted from, so a ``##`` section returns its own
+        paragraph rather than the document's opening intro.
+        """
+        try:
+            lines = self._resolve(path).read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return None
+
+        heading_index = None
+        for i, ln in enumerate(lines):
+            if i + 1 > line:
+                break
+            if re.match(r"^#{1,6}\s+\S", ln):
+                heading_index = i
+        if heading_index is None:
+            return None
+
+        for ln in lines[heading_index + 1:]:
+            stripped = ln.strip()
+            if not stripped:
+                continue
+            if stripped.startswith(("#", "-", "|", ">", "```")):
+                continue
+            return stripped
         return None
 
     def _adr_summary(self, path: str) -> str | None:

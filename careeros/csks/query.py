@@ -11,7 +11,9 @@ from careeros.knowledge import GraphEdge, GraphNode, KnowledgeGraph
 
 from .grammar import classify
 from .models import (
+    CSKSEvidence,
     Citation,
+    EvidencePack,
     StructuredQueryResult,
     CSKSAnswer,
     QueryType,
@@ -45,6 +47,9 @@ class CSKSQueryEngine:
         "was", "were", "be", "the", "and", "or", "of", "in", "on", "at",
         "for", "with", "about", "into", "over", "all", "any", "that",
     })
+
+    _DEFINITION_PREFIXES = (" is a", " is an", " is the")
+    _GOAL_PREFIXES = (" addresses", " provides", " supports", " aims")
 
     def __init__(
         self,
@@ -81,8 +86,9 @@ class CSKSQueryEngine:
         quoted = re.findall(r'"([^"]+)"', question)
         candidates = list(quoted)
 
-        # CamelCase identifiers (e.g. InterviewEngine, ProfileLoader)
-        candidates += re.findall(r'\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+)*\b', question)
+        # CamelCase identifiers with optional trailing acronym (e.g. InterviewEngine,
+        # ProfileLoader, CareerOS, ResolutionEngine)
+        candidates += re.findall(r'\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]+|[A-Z]{2,})*\b', question)
 
         # Acronym + number identifiers (e.g. ADR-008, ADR 008, ADR008)
         candidates += re.findall(r'\b[A-Z]{2,}[- ]?\d+\b', question)
@@ -219,6 +225,10 @@ class CSKSQueryEngine:
         query_type = intent.query_type
         if query_type == "entity_lookup":
             result = self._handle_entity_lookup(question)
+            if not result.get("citations") and not result.get("entities"):
+                fallback = self._concept_fallback(question)
+                if fallback is not None:
+                    result, query_type = fallback
         elif query_type == "type_filter":
             result = self._handle_type_filter(question)
         elif query_type == "dependency_traversal":
@@ -227,14 +237,29 @@ class CSKSQueryEngine:
             result = self._handle_reverse_dependency(question, intent)
         elif query_type == "data_flow_path":
             result = self._handle_data_flow_path(question, intent)
+            if result["answer"].startswith("Unknown data flow"):
+                fallback = self._concept_fallback(question)
+                if fallback is not None:
+                    result, query_type = fallback
         elif query_type == "capability_check":
             result = self._handle_capability_check(question)
+            if result["answer"].startswith("Unknown capability query"):
+                fallback = self._concept_fallback(question)
+                if fallback is not None:
+                    result, query_type = fallback
         elif query_type == "status_check":
             result = self._handle_status_check(question)
         elif query_type == "impact_analysis":
             result = self._handle_impact_analysis(question)
         elif query_type == "profile_quality_check":
-            result = self._handle_profile_quality_check(question, intent)
+            if self.profile is None:
+                fallback = self._concept_fallback(question)
+                if fallback is not None:
+                    result, query_type = fallback
+                else:
+                    result = self._handle_profile_quality_check(question, intent)
+            else:
+                result = self._handle_profile_quality_check(question, intent)
         elif query_type == "improvement_queue":
             result = self._handle_improvement_queue()
         elif query_type == "stale_artifacts":
@@ -242,11 +267,35 @@ class CSKSQueryEngine:
         elif query_type == "search":
             result = self._handle_search(question, intent)
         else:
-            result = self._handle_unknown(question)
+            fallback = self._concept_fallback(question)
+            if fallback is not None:
+                result, query_type = fallback
+            else:
+                result = self._handle_unknown(question)
 
         query_time_ms = int((time.perf_counter() - start_time) * 1000)
 
         return self._format_result(result, query_type, query_time_ms)
+
+    def _concept_fallback(self, question: str) -> "tuple[dict, str] | None":
+        """Answer via Tier 1 concept retrieval when deterministic handlers fail.
+
+        Returns ``(result_dict, "concept_retrieval")`` when a strong,
+        source-backed concept candidate exists; ``None`` otherwise so callers
+        keep their original no-evidence answer.
+        """
+        from .concept_retrieval import ConceptRetriever
+        from .rich_format import RichFormatter
+
+        pack = ConceptRetriever(self.graph, repo_root=self.repo_root).retrieve(question)
+        if pack is None:
+            return None
+        render = RichFormatter(self.graph, root=self.repo_root).format_evidence(pack)
+        return {
+            "answer": render.text,
+            "citations": render.citations,
+            "entities": [c["entity_id"] for c in render.citations],
+        }, "concept_retrieval"
 
     def _classify_query(self, question: str) -> str:
         """Classify the query type using the M1.23 deterministic grammar."""
@@ -290,7 +339,7 @@ class CSKSQueryEngine:
         node = self._resolve_target(question)
         if node is None:
             return {"answer": f"Could not find entity matching: {question}", "citations": [], "entities": []}
-        return self._format_entity_result(node)
+        return self._format_entity_result(node, question)
 
     def _format_cluster_result(self, entry, nodes: list) -> dict:
         """Build a lookup result for an alias cluster (e.g. Interview Intelligence)."""
@@ -322,9 +371,18 @@ class CSKSQueryEngine:
             "entities": entities,
         }
 
-    def _format_entity_result(self, node: "GraphNode") -> dict:
+    def _format_entity_result(self, node: "GraphNode", question: str = "") -> dict:
         """Build a lookup result describing a single entity."""
         from .rich_format import RichFormatter
+
+        if node.type == "document":
+            pack = self._retrieve_document_evidence(node, question)
+            render = RichFormatter(self.graph, root=self.repo_root).format_evidence(pack)
+            return {
+                "answer": render.text,
+                "citations": render.citations,
+                "entities": [node.id],
+            }
 
         if node.type in RichFormatter._SPECIALISED:
             render = RichFormatter(self.graph, root=self.repo_root).format(node)
@@ -360,6 +418,80 @@ class CSKSQueryEngine:
             "citations": [citation],
             "entities": [node.id],
         }
+
+    def _retrieve_document_evidence(self, node: "GraphNode", question: str) -> "EvidencePack":
+        """Assemble a bounded EvidencePack for a resolved document node.
+
+        The primary evidence is the node's own source-backed section text.
+        Related evidence is selected from other indexed document nodes (Markdown
+        sources only) whose section text opens with the primary label followed
+        by a definitional clause ("<label> is a/an/the ...") or a goal clause
+        ("<label> addresses/provides/supports/aims ..."). Selection is
+        deterministic: definitional statements rank above goal statements, then
+        by source path, then by line; duplicates share the same text; at most
+        two related pieces of evidence are kept.
+        """
+        from .rich_format import RichFormatter
+
+        formatter = RichFormatter(self.graph, root=self.repo_root)
+        primary = CSKSEvidence(
+            entity_id=node.id,
+            label=node.label,
+            source_path=node.properties.get("source_path", ""),
+            line_start=node.properties.get("line_start", 0),
+            line_end=node.properties.get("line_end", 0),
+            text=formatter.document_text(node) or "",
+            role="primary",
+        )
+
+        label = node.label.lower()
+        definitions = tuple(label + suffix for suffix in self._DEFINITION_PREFIXES)
+        goals = tuple(label + suffix for suffix in self._GOAL_PREFIXES)
+
+        candidates: list[tuple[int, str, int, "CSKSEvidence"]] = []
+        for other in self.graph.nodes.values():
+            if other.id == node.id or other.type != "document":
+                continue
+            path = other.properties.get("source_path", "")
+            if not path.endswith(".md"):
+                continue
+            text = formatter.document_text(other)
+            if not text:
+                continue
+            lowered = text.lower()
+            if lowered.startswith(definitions):
+                rank = 0
+            elif lowered.startswith(goals):
+                rank = 1
+            else:
+                continue
+            candidates.append((
+                rank,
+                path,
+                other.properties.get("line_start", 0),
+                CSKSEvidence(
+                    entity_id=other.id,
+                    label=other.label,
+                    source_path=path,
+                    line_start=other.properties.get("line_start", 0),
+                    line_end=other.properties.get("line_end", 0),
+                    text=text,
+                    role="related",
+                ),
+            ))
+
+        seen: set[tuple[str, str]] = set()
+        related: list["CSKSEvidence"] = []
+        for _rank, _path, _line, evidence in sorted(candidates, key=lambda item: (item[0], item[1], item[2])):
+            key = (evidence.source_path, evidence.text)
+            if key in seen:
+                continue
+            seen.add(key)
+            related.append(evidence)
+            if len(related) == 2:
+                break
+
+        return EvidencePack(query=question, primary=primary, related=tuple(related))
 
     def _handle_type_filter(self, question: str) -> dict:
         """Handle type filter queries (e.g., 'list all domains')."""
@@ -523,6 +655,9 @@ class CSKSQueryEngine:
             "cv generation": ["Profile", "Load", "Validate", "Knowledge Graph", "Reasoning", "Contract", "Generate", "Render CV"],
             "acquisition": ["Source DOCX", "Reader", "Text Extractor", "LLM Extractor", "Canonical Profile Builder", "Validator", "YAML Writer"],
             "reasoning": ["Profile", "Graph Build", "Rule Execution", "Result Assembly"],
+            "ai": ["Profile", "Graph Build", "Rule Execution", "Result Assembly"],
+            "recommendations": ["Profile", "Quality", "Findings", "Unified Recommendations", "Improvement Queue"],
+            "recommendation": ["Profile", "Quality", "Findings", "Unified Recommendations", "Improvement Queue"],
             "interview preparation": ["Profile", "Load", "Knowledge Graph", "Reasoning", "Interview Simulation", "Preparation Guide Generator"],
         }
 
@@ -537,7 +672,7 @@ class CSKSQueryEngine:
                 break
 
         if not matched_flow:
-            return {"answer": "Unknown data flow. Known flows: 'artifact generation', 'cv', 'interview preparation', 'acquisition', 'reasoning'.", "citations": [], "entities": []}
+            return {"answer": "Unknown data flow. Known flows: 'artifact generation', 'cv', 'interview preparation', 'acquisition', 'reasoning', 'ai', 'recommendations'.", "citations": [], "entities": []}
 
         answer_lines = [f"Data flow for {flow_label}:"]
         for i, step in enumerate(matched_flow, 1):
@@ -1055,12 +1190,13 @@ class CSKSQueryEngine:
             for c in result.get("citations", [])
         )
 
+        confidence = 1.0 if result.get("entities") and result.get("citations") else 0.0
         return StructuredQueryResult(
             answer=result["answer"],
             citations=citations,
             matched_entities=tuple(result.get("entities", [])),
             traversal_path=tuple(),
-            confidence=1.0,
+            confidence=confidence,
             entities_found=len(result.get("entities", [])),
             query_time_ms=query_time_ms,
             query_type=query_type,
