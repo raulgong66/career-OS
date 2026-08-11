@@ -66,6 +66,40 @@ class CSKSAnswer:
     query_type: str
 
 
+@dataclass(frozen=True)
+class CSKSEvidence:
+    """A single piece of source-backed evidence used to answer a CSKS query."""
+
+    entity_id: str
+    label: str
+    source_path: str
+    line_start: int
+    line_end: int
+    text: str
+    role: str
+    confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class EvidencePack:
+    """Bounded, source-backed evidence assembled for a query before rendering.
+
+    ``primary`` is the resolved entity's own section text; ``related`` holds
+    at most two supporting sections selected deterministically by the query
+    engine. The formatter renders this pack without further selection.
+
+    ``retrieval_layer`` and ``retrieval_score`` are optional metadata added by
+    concept retrieval (Tier 1); the deterministic entity-resolution path leaves
+    them unset.
+    """
+
+    query: str
+    primary: Optional[CSKSEvidence]
+    related: tuple[CSKSEvidence, ...] = ()
+    retrieval_layer: Optional[str] = None
+    retrieval_score: Optional[float] = None
+
+
 QueryType = Literal[
     "entity_lookup",
     "type_filter",
@@ -80,6 +114,7 @@ QueryType = Literal[
     "profile_quality_check",
     "improvement_queue",
     "stale_artifacts",
+    "concept_retrieval",
 ]
 
 
