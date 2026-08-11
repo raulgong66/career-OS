@@ -133,6 +133,7 @@ RULES: tuple[IntentRule, ...] = (
         (
             r"\bhow (does|do|is|are|would) .{0,40}(work|generated|produced|built|created|flow)",
             r"\b(walk me through|explain how|data flow for|flow for|pipeline for|steps in|sequence for)",
+            r"\bhow (?:is|are) (?P<topic>[\w .-]{1,40}?) applied\b",
         ),
         _flow_topic,
     ),
@@ -299,9 +300,11 @@ def classify(question: str) -> "ClassifiedIntent":
 def suggest(question: str) -> list[str]:
     """Deterministic suggestions for an unclassifiable question."""
     topic = " ".join(
-        t for t in re.findall(r"[A-Za-z][A-Za-z0-9_.-]{2,}", question)
+        t for t in re.findall(r"[A-Za-z][A-Za-z0-9_.-]{1,}", question)
         if t.lower() not in {
             "what", "why", "how", "does", "the", "and", "for", "with", "you",
+            "is", "are", "was", "were", "it", "at", "to", "of", "in", "on",
+            "be", "or", "a", "an", "as", "do",
         }
     )
     if topic:

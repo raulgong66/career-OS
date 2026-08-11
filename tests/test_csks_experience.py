@@ -46,6 +46,70 @@ def indexer(csks_sample_repo: Path) -> CSKSIndexer:
     return indexer
 
 
+def _graph_with_documents(
+    graph: KnowledgeGraph,
+    csks_sample_repo: Path,
+    files: dict[str, str],
+    docs: list[tuple[str, str, str, int]],
+) -> KnowledgeGraph:
+    """Add source files plus hand-built document nodes to the sample graph."""
+    for relpath, content in files.items():
+        path = csks_sample_repo / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    nodes = list(graph.nodes.values())
+    for entity_id, label, source_path, line_start in docs:
+        nodes.append(GraphNode(
+            entity_id,
+            "document",
+            label,
+            {
+                "title": label,
+                "level": 1 if line_start == 1 else 2,
+                "source_path": source_path,
+                "line_start": line_start,
+                "line_end": line_start,
+            },
+        ))
+    return KnowledgeGraph(nodes, list(graph.edges))
+
+
+_CAREEROS_FILES = {
+    "README.md": (
+        "# CareerOS\n"
+        "\n"
+        "CareerOS is a schema-driven toolkit for managing professional profile, application, and project data.\n"
+    ),
+    "docs/architecture/00-executive-summary.md": (
+        "# 00 - Executive Summary\n"
+        "\n"
+        "## What Is CareerOS Today?\n"
+        "\n"
+        "CareerOS is a Python 3.11+ command-line toolkit and REST API for managing professional career data.\n"
+        "\n"
+        "## What Problem Does It Solve?\n"
+        "\n"
+        "CareerOS addresses the fragmentation of professional data across multiple formats and platforms.\n"
+    ),
+}
+
+_CAREEROS_DOCS = [
+    ("document.README.careeros", "CareerOS", "README.md", 1),
+    (
+        "document.00-executive-summary.what_is_careeros_today?",
+        "What Is CareerOS Today?",
+        "docs/architecture/00-executive-summary.md",
+        3,
+    ),
+    (
+        "document.00-executive-summary.what_problem_does_it_solve?",
+        "What Problem Does It Solve?",
+        "docs/architecture/00-executive-summary.md",
+        9,
+    ),
+]
+
+
 # --- grammar ---------------------------------------------------------------
 
 
@@ -71,6 +135,11 @@ def test_grammar_classifies_data_flow_cv() -> None:
     assert intent.query_type == "data_flow_path"
 
 
+def test_grammar_classifies_how_applied() -> None:
+    intent = classify("How is AI applied?")
+    assert intent.query_type == "data_flow_path"
+
+
 def test_grammar_classifies_unknown() -> None:
     assert classify("potato potato potato").query_type == "unknown"
 
@@ -81,6 +150,12 @@ def test_grammar_suggest_deterministic() -> None:
     assert first == second
     assert any("flurble" in item for item in first)
     assert "Search flurble." in first
+
+
+def test_grammar_suggest_includes_short_tokens() -> None:
+    items = suggest("AI potato")
+    assert any("AI" in item for item in items)
+    assert any("potato" in item for item in items)
 
 
 # --- alias registry ---------------------------------------------------------
@@ -107,6 +182,14 @@ def test_alias_cluster_interview_intelligence() -> None:
     assert entry is not None
     assert entry.kind == "cluster"
     assert entry.module_prefix == "careeros.interview"
+
+
+def test_alias_resolves_careeros_variants() -> None:
+    for alias in ("CareerOS", "careeros", "career os", "career-os", "CAREER_OS"):
+        entry = resolve_alias(alias)
+        assert entry is not None, alias
+        assert entry.kind == "entity"
+        assert entry.entity_id == "document.README.careeros"
 
 
 def test_entity_lookup_knowledge_layer_alias(engine: CSKSQueryEngine) -> None:
@@ -162,6 +245,176 @@ def test_milestone_resolution_is_order_independent(graph: KnowledgeGraph) -> Non
         g = KnowledgeGraph(nodes[:insertion] + [milestone] + nodes[insertion:], list(graph.edges))
         result = CSKSQueryEngine(g).query("What is M1.22?")
         assert "milestone.m1.22-csks-foundation" in result.matched_entities
+
+
+def test_entity_lookup_careeros_document(graph: KnowledgeGraph, csks_sample_repo: Path) -> None:
+    (csks_sample_repo / "README.md").write_text(
+        "# CareerOS\n"
+        "\n"
+        "CareerOS is a schema-driven toolkit for managing professional profile data.\n",
+        encoding="utf-8",
+    )
+    doc = GraphNode(
+        "document.README.careeros",
+        "document",
+        "CareerOS",
+        {
+            "title": "CareerOS",
+            "level": 1,
+            "source_path": "README.md",
+            "line_start": 1,
+            "line_end": 1,
+        },
+    )
+    g = KnowledgeGraph(list(graph.nodes.values()) + [doc], list(graph.edges))
+    result = CSKSQueryEngine(g, repo_root=csks_sample_repo).query("What is CareerOS?")
+    assert result.query_type == "entity_lookup"
+    assert "document.README.careeros" in result.matched_entities
+    assert result.confidence == 1.0
+    assert len(result.citations) >= 1
+    assert "schema-driven toolkit" in result.answer
+    assert "Source: README.md:1" in result.answer
+    assert result.answer != "Document: CareerOS (document.README.careeros)"
+
+
+def test_entity_lookup_document_uses_section_intro(graph: KnowledgeGraph, csks_sample_repo: Path) -> None:
+    (csks_sample_repo / "docs").mkdir(exist_ok=True)
+    (csks_sample_repo / "docs" / "core.md").write_text(
+        "# Platform\n"
+        "\n"
+        "File-level intro text.\n"
+        "\n"
+        "## Resolution Engine\n"
+        "\n"
+        "Resolution Engine coordinates deterministic rule evaluation and mutation proposals.\n",
+        encoding="utf-8",
+    )
+    doc = GraphNode(
+        "document.core.resolution_engine",
+        "document",
+        "Resolution Engine",
+        {
+            "title": "Resolution Engine",
+            "level": 2,
+            "source_path": "docs/core.md",
+            "line_start": 5,
+            "line_end": 5,
+        },
+    )
+    g = KnowledgeGraph(list(graph.nodes.values()) + [doc], list(graph.edges))
+    result = CSKSQueryEngine(g, repo_root=csks_sample_repo).query("Explain the Resolution Engine")
+    assert result.query_type == "entity_lookup"
+    assert "document.core.resolution_engine" in result.matched_entities
+    assert "coordinates deterministic rule evaluation" in result.answer
+    assert "File-level intro text" not in result.answer
+    assert "Details:" not in result.answer
+
+
+def test_entity_lookup_document_without_source_content(graph: KnowledgeGraph) -> None:
+    doc = GraphNode(
+        "document.missing.source_doc",
+        "document",
+        "Source Doc",
+        {
+            "title": "Source Doc",
+            "level": 1,
+            "source_path": "does-not-exist.md",
+            "line_start": 1,
+            "line_end": 1,
+        },
+    )
+    g = KnowledgeGraph(list(graph.nodes.values()) + [doc], list(graph.edges))
+    result = CSKSQueryEngine(g).query("What is Source Doc?")
+    assert result.query_type == "entity_lookup"
+    assert "document.missing.source_doc" in result.matched_entities
+    assert "No source summary available" in result.answer
+
+
+# --- EvidencePack document lookups ------------------------------------------
+
+
+def test_evidence_pack_document_lookup_with_related(graph: KnowledgeGraph, csks_sample_repo: Path) -> None:
+    g = _graph_with_documents(graph, csks_sample_repo, _CAREEROS_FILES, _CAREEROS_DOCS)
+    engine = CSKSQueryEngine(g, repo_root=csks_sample_repo)
+
+    result = engine.query("What is CareerOS?")
+    assert result.query_type == "entity_lookup"
+    assert "document.README.careeros" in result.matched_entities
+    assert result.confidence == 1.0
+    assert len(result.citations) >= 3
+    assert "schema-driven toolkit for managing professional profile" in result.answer
+    assert "Python 3.11+ command-line toolkit" in result.answer
+    assert "addresses the fragmentation" in result.answer
+    assert "Details:" in result.answer
+    assert result.answer.index("Python 3.11+") < result.answer.index("addresses the fragmentation")
+
+    again = engine.query("What is CareerOS?")
+    assert result.answer == again.answer
+    assert result.citations == again.citations
+
+
+def test_evidence_pack_related_capped_at_two(graph: KnowledgeGraph, csks_sample_repo: Path) -> None:
+    files = dict(_CAREEROS_FILES)
+    files["docs/architecture/04-support.md"] = (
+        "# Architecture\n"
+        "\n"
+        "## CareerOS Support\n"
+        "\n"
+        "CareerOS supports portable artifact generation for CVs and cover letters.\n"
+    )
+    docs = _CAREEROS_DOCS + [
+        ("document.04-support.careeros_support", "CareerOS Support", "docs/architecture/04-support.md", 3),
+    ]
+    engine = CSKSQueryEngine(_graph_with_documents(graph, csks_sample_repo, files, docs), repo_root=csks_sample_repo)
+
+    result = engine.query("What is CareerOS?")
+    details = [line for line in result.answer.splitlines() if line.startswith("- CareerOS")]
+    assert len(details) == 2
+    assert "portable artifact generation" not in result.answer
+    assert len(result.citations) == 3
+
+
+def test_evidence_pack_ranking_definitional_before_goal(graph: KnowledgeGraph, csks_sample_repo: Path) -> None:
+    files = {
+        "README.md": "# CareerOS\n\nCareerOS is a schema-driven toolkit for managing professional profile data.\n",
+        "docs/architecture/zzz-is.md": (
+            "# Is\n"
+            "\n"
+            "## CareerOS Identity\n"
+            "\n"
+            "CareerOS is an open-source command-line toolkit for professional career data.\n"
+        ),
+        "docs/architecture/aaa-goal.md": (
+            "# Goal\n"
+            "\n"
+            "## CareerOS Value\n"
+            "\n"
+            "CareerOS provides deterministic analysis of profile data.\n"
+        ),
+    }
+    docs = [
+        ("document.README.careeros", "CareerOS", "README.md", 1),
+        ("document.zzz-is.careeros_identity", "CareerOS Identity", "docs/architecture/zzz-is.md", 3),
+        ("document.aaa-goal.careeros_value", "CareerOS Value", "docs/architecture/aaa-goal.md", 3),
+    ]
+    engine = CSKSQueryEngine(_graph_with_documents(graph, csks_sample_repo, files, docs), repo_root=csks_sample_repo)
+
+    result = engine.query("What is CareerOS?")
+    assert result.answer.index("open-source command-line toolkit") < result.answer.index(
+        "provides deterministic analysis"
+    )
+    assert result.citations[1].file == "docs/architecture/zzz-is.md"
+    assert result.citations[2].file == "docs/architecture/aaa-goal.md"
+
+
+def test_rich_formatter_does_not_select_related_evidence(graph: KnowledgeGraph, csks_sample_repo: Path) -> None:
+    g = _graph_with_documents(graph, csks_sample_repo, _CAREEROS_FILES, _CAREEROS_DOCS)
+    doc_node = next(n for n in g.nodes.values() if n.id == "document.README.careeros")
+
+    render = RichFormatter(g, root=csks_sample_repo).format(doc_node)
+    assert "Python 3.11+ command-line toolkit" not in render.text
+    assert "Details:" not in render.text
+    assert len(render.citations) == 1
 
 
 # --- reverse dependency -----------------------------------------------------
