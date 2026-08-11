@@ -130,6 +130,7 @@ from .checkpoint import (
     parse_github_slug,
     render_json,
     render_markdown,
+    render_prompt,
 )
 
 __all__ = [
@@ -250,6 +251,7 @@ __all__ = [
     "parse_github_slug",
     "render_json",
     "render_markdown",
+    "render_prompt",
     "CheckpointError",
     "CheckpointSafetyError",
 ]
