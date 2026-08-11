@@ -8,7 +8,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from .render import render_json, render_markdown
+from .render import render_json, render_markdown, render_prompt
 from .service import CheckpointService
 
 CHECKPOINT_APP = typer.Typer(
@@ -37,12 +37,19 @@ def checkpoint_live(
         "--json",
         help="Emit JSON instead of Markdown.",
     ),
+    prompt_output: bool = typer.Option(
+        False,
+        "--prompt",
+        help="Emit a copy/paste-ready New Chat bootstrap prompt.",
+    ),
 ) -> None:
     """Collect and render a read-only Live Repository Checkpoint."""
     root = repo_root or _default_repo_root()
     service = CheckpointService(root)
     checkpoint = service.collect()
-    if json_output:
+    if prompt_output:
+        _console.print(render_prompt(checkpoint), soft_wrap=True)
+    elif json_output:
         _console.print(render_json(checkpoint), soft_wrap=True)
     else:
         _console.print(render_markdown(checkpoint))

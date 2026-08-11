@@ -28,7 +28,7 @@ from .models import (
     SyncState,
 )
 from .project_state import ProjectStateReader
-from .render import render_json, render_markdown
+from .render import render_json, render_markdown, render_prompt
 from .service import CheckpointService, TOOL_VERSION
 
 __all__ = [
@@ -53,4 +53,5 @@ __all__ = [
     "ProjectStateReader",
     "render_json",
     "render_markdown",
+    "render_prompt",
 ]
