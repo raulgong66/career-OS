@@ -17,12 +17,12 @@
 
 ## HEAD SHA
 
-- `dc8242b31101d803df18332f88818a52d5cde045` — GitHub `main` after the PR #11 merge
-  (merge commit of `feature/multilingual-tailored-regression-test`)
+- `45a2e0d296183c3aaefcad5616e4a24ec3733f68` — GitHub `main` after the PR #13 merge
+  (merge commit of `docs/project-state-refresh-pr11`; live repository checkpoint capability)
 
 ## origin/main SHA
 
-- `dc8242b31101d803df18332f88818a52d5cde045` (GitHub `origin/main`)
+- `45a2e0d296183c3aaefcad5616e4a24ec3733f68` (GitHub `origin/main`)
 - Local `origin/main` ref is stale at `c3ec0f9`; local `main` is stale at `4bf74e5`.
   See "Local synchronization status".
 
@@ -46,15 +46,16 @@
 ## Local synchronization status
 
 - Local checkout is intentionally stale relative to GitHub `main` (no fetch since the PR #11 merge):
-  - GitHub `main` = `dc8242b31101d803df18332f88818a52d5cde045`
+  - GitHub `main` = `45a2e0d296183c3aaefcad5616e4a24ec3733f68`
   - Local `main` = `4bf74e5697d079889735c8735c7b73431b3d6ec9`
   - Local `origin/main` ref = `c3ec0f90e32894e45dabd5a11a790a730ef1b325`
-  - Checked-out branch: `docs/project-state-refresh-pr11` (checkpoint refresh branch)
+  - Checked-out branch: `docs/project-state-refresh-pr11` (checkpoint capability branch, merged via PR #13)
 - Synchronization is deferred and must not be performed without explicit authorization.
 
 ## Open PRs
 
-- None.
+- 1 — the checkpoint-refresh PR carrying this update (`docs/project-state-refresh-pr13` → `main`, OPEN, not merged).
+  At checkpoint capture (2026-08-10T19:48:55Z, immediately after the PR #13 merge) GitHub reported 0 open PRs.
 
 ## Relevant retained branches
 
@@ -65,14 +66,16 @@
 - `feature/ui-restoration-pr` → `c0a68638…` (UI restoration PR branch)
 - `feature/recover-docx-import-robustness` → `571c1694…` (DOCX/LLM import robustness recovery, merged via PR #10)
 - `feature/multilingual-tailored-regression-test` → `4bf74e5…` (multilingual Tailored Profile regression test, merged via PR #11)
+- `docs/project-state-refresh-pr11` → `15036de…` (live repository checkpoint capability, merged via PR #13)
 
 ## Verified test status
 
-Last verified on the PR #11 head at `4bf74e5` (2026-08-09), merged via PR #11:
+Last verified on the PR #13 head at `15036de` (2026-08-10), merged via PR #13:
 
-- Backend: `python -m pytest -q` → **1041 passed** (30.72s)
+- Backend: `python -m pytest -q` → **1125 passed** (full suite, includes the checkpoint suite)
+- Focused checkpoint suite `tests/test_checkpoint_*.py`: 84 passed
 - Focused regression test `test_optimization_summary_multilingual_swedish_job_description`: 1 passed
-- Frontend: unchanged by PR #11 (prior typecheck PASS · 61 tests (5 files) PASS · lint PASS · build PASS)
+- Frontend: unchanged by PR #13 (prior typecheck PASS · 61 tests (5 files) PASS · lint PASS · build PASS)
 
 ## Completed work
 
@@ -85,6 +88,10 @@ Last verified on the PR #11 head at `4bf74e5` (2026-08-09), merged via PR #11:
   guards English canonical profile + Swedish job description → canonical multilingual
   requirement matching → populated Tailored Profile optimization statistics. Test-only;
   production code unchanged.
+- Live repository checkpoint capability (PR #13, merge `45a2e0d`): new `careeros checkpoint live`
+  command producing a read-only, schema-valid checkpoint of GitHub + local Git + project-state
+  documentation with conflict detection (2320 insertions / 0 deletions; existing feature
+  behavior unchanged).
 
 ## Pending work
 
@@ -109,15 +116,15 @@ Last verified on the PR #11 head at `4bf74e5` (2026-08-09), merged via PR #11:
 
 ## Current authorized action
 
-- Documentation-only: refresh `CURRENT_STATE.md` to reflect the merged PR #11
-  (multilingual Tailored Profile regression test). No code changes authorized.
-- The checkpoint refresh is committed on short-lived branch `docs/project-state-refresh-pr11`
+- Documentation-only: refresh `CURRENT_STATE.md` to reflect the merged PR #13
+  (live repository checkpoint capability). No code changes authorized.
+- The checkpoint refresh is committed on short-lived branch `docs/project-state-refresh-pr13`
   and published as a PR to `main`; PR merge is BLOCKED pending explicit authorization.
 - Local repository synchronization (fetch/pull/fast-forward) is NOT authorized in this task.
 
 ## Required baseline
 
-- GitHub `main` = `dc8242b31101d803df18332f88818a52d5cde045` (after PR #11 merge)
+- GitHub `main` = `45a2e0d296183c3aaefcad5616e4a24ec3733f68` (after PR #13 merge)
 - Working tree clean · `v1.27.0` points to `8adab82`
 - Local refs are stale (see "Local synchronization status"); baseline must be re-verified
   after an authorized fetch/sync before further work proceeds.
@@ -130,6 +137,11 @@ Last verified on the PR #11 head at `4bf74e5` (2026-08-09), merged via PR #11:
   recovered; no new tag/release; `M1.27-STATE.md` untouched.
 - 2026-08-09: refreshed after PR #11 merge (`dc8242b`); multilingual Tailored Profile
   regression coverage added (English profile + Swedish JD scenario); 1041 backend tests
+  verified; no new tag/release; M1.28 not authorized; `M1.27-STATE.md` untouched.
+- 2026-08-09: refreshed after PR #12 merge (`f0340efd`); documentation-only PR #12 carried
+  the post-PR-#11 refresh to `main`.
+- 2026-08-10: refreshed after PR #13 merge (`45a2e0d`); live repository checkpoint capability
+  added and verified (`careeros checkpoint live --json` schema-valid); 1125 backend tests
   verified; no new tag/release; M1.28 not authorized; `M1.27-STATE.md` untouched.
 
 ## Milestone numbering
