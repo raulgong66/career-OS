@@ -19,6 +19,7 @@ from .models import (
     QueryType,
     make_entity_id,
 )
+from .synthesis import is_synthesis_enabled
 
 
 @dataclass(frozen=True)
@@ -56,10 +57,12 @@ class CSKSQueryEngine:
         graph: "KnowledgeGraph",
         repo_root: "Path | None" = None,
         profile: dict[str, Any] | None = None,
+        synthesis_provider: "AIProvider | None" = None,
     ) -> None:
         self.graph = graph
         self.repo_root = repo_root
         self.profile = profile
+        self.synthesis_provider = synthesis_provider
         self._node_cache: dict[str, "GraphNode"] = {}
         self._edge_index: dict[str, list] = defaultdict(list)
         self._reverse_edge_index: dict[str, list] = defaultdict(list)
@@ -275,7 +278,48 @@ class CSKSQueryEngine:
 
         query_time_ms = int((time.perf_counter() - start_time) * 1000)
 
+        return self._finalize(question, result, query_type, query_time_ms)
+
+    def _finalize(self, question: str, result: dict, query_type: str, query_time_ms: int) -> "StructuredQueryResult":
+        """Finish a query: optionally synthesize, otherwise format deterministically."""
+        if self.synthesis_provider is not None and is_synthesis_enabled():
+            pack = result.get("evidence_pack") if isinstance(result, dict) else None
+            if pack is not None:
+                synthesized = self._synthesize(question, pack, result, query_type, query_time_ms)
+                if synthesized is not None:
+                    return synthesized
         return self._format_result(result, query_type, query_time_ms)
+
+    def _synthesize(
+        self,
+        question: str,
+        pack: "EvidencePack",
+        result: dict,
+        query_type: str,
+        query_time_ms: int,
+    ) -> "StructuredQueryResult | None":
+        """Synthesize grounded prose from a validated EvidencePack.
+
+        Only a ``grounded`` result replaces the deterministic answer; a refusal
+        or insufficient-evidence outcome falls back to the deterministic
+        answer so the LLM can never degrade a grounded response.
+        """
+        from .synthesis import SynthesisEngine, citations_from_pack
+
+        synthesis = SynthesisEngine(self.synthesis_provider).synthesize(question, pack)
+        if synthesis.status != "grounded":
+            return None
+        citations = citations_from_pack(pack, synthesis.evidence_ids)
+        return StructuredQueryResult(
+            answer=synthesis.answer,
+            citations=citations,
+            matched_entities=tuple(c.entity_id for c in citations),
+            traversal_path=tuple(),
+            confidence=synthesis.confidence,
+            entities_found=len(result.get("entities", [])),
+            query_time_ms=query_time_ms,
+            query_type=query_type,
+        )
 
     def _concept_fallback(self, question: str) -> "tuple[dict, str] | None":
         """Answer via Tier 1 concept retrieval when deterministic handlers fail.
@@ -295,6 +339,7 @@ class CSKSQueryEngine:
             "answer": render.text,
             "citations": render.citations,
             "entities": [c["entity_id"] for c in render.citations],
+            "evidence_pack": pack,
         }, "concept_retrieval"
 
     def _classify_query(self, question: str) -> str:
@@ -382,6 +427,7 @@ class CSKSQueryEngine:
                 "answer": render.text,
                 "citations": render.citations,
                 "entities": [node.id],
+                "evidence_pack": pack,
             }
 
         if node.type in RichFormatter._SPECIALISED:
