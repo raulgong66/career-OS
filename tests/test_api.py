@@ -607,33 +607,79 @@ def test_recommendation_serialization_contains_displayName() -> None:
     assert result["displayName"] == "Kubernetes"
 
 
-def test_duplicate_narrative_suppressed_for_rene_profile_regression() -> None:
-    """Regression (M1.25 → suppression): René profile's repeated experience scope
-    is suppressed deterministically on the tailored CV contract only, without
-    altering the canonical profile file.
+def test_duplicate_narrative_suppressed_for_rene_profile_regression(tmp_path: Path) -> None:
+    """Regression (M1.25 → suppression): a repeated experience scope (synthetic
+    Rene Hechavarria persona) is suppressed deterministically on the tailored CV
+    contract only, without altering the canonical profile file.
     """
     from careeros import ProfileLoader, SchemaLoader, EvidenceSelector, ExportContractBuilder
     REPO_ROOT = Path(__file__).resolve().parents[1]
-    profile_path = REPO_ROOT / "profiles" / "staging" / "person-hechavarria-profile.yaml"
+    repeated_scope = (
+        "Familiar with the Agile way of working and DevOps concepts. "
+        "Possesses first-rate communication skills which are used to forge "
+        "productive relationships with stakeholders, business users and customers."
+    )
+    profile_path = tmp_path / "profiles" / "staging" / "person-hechavarria-profile.yaml"
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    profile_path.write_text(
+        yaml.safe_dump(
+            {
+                "profileVersion": "1.0.0",
+                "person": {
+                    "id": "person-hechavarria",
+                    "names": [{"value": "Rene Hechavarria", "usage": "professional"}],
+                },
+                "professionalSummaries": [
+                    {
+                        "id": "sum-1",
+                        "text": (
+                            "A trusted Technical Consultant with broad skills in System "
+                            "Administration and Implementation. "
+                            f"{repeated_scope} "
+                            "Passionate about delivering exceptional customer service standards."
+                        ),
+                    }
+                ],
+                "experiences": [
+                    {"id": "exp-1", "title": "Consultant", "scope": repeated_scope},
+                    {"id": "exp-2", "title": "Senior Consultant", "scope": repeated_scope},
+                    {"id": "exp-3", "title": "Principal Consultant", "scope": repeated_scope},
+                ],
+                "artifacts": [
+                    {
+                        "id": "artf-standard_cv-person-hechavarria",
+                        "title": "Standard CV",
+                        "artifactType": "CV",
+                        "sourceRefs": [
+                            {"id": "exp-1", "type": "experience"},
+                            {"id": "exp-2", "type": "experience"},
+                            {"id": "exp-3", "type": "experience"},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     profile = ProfileLoader(SchemaLoader(REPO_ROOT / "schemas")).load(profile_path)
-    original_bytes = open(profile_path, "rb").read()
+    original_bytes = profile_path.read_bytes()
 
     contract = ExportContractBuilder(SchemaLoader(REPO_ROOT / "schemas")).build(
         profile, "artf-standard_cv-person-hechavarria", validate=False
     )
     # Verify the raw profile file is untouched after load/build
-    assert open(profile_path, "rb").read() == original_bytes
+    assert profile_path.read_bytes() == original_bytes
 
     selected = EvidenceSelector().select(contract)
-    # Suppression should have removed duplicate experience scopes from the contract;
-    # the canonical profile file remains unchanged (verified above).
+    # Suppression should have removed duplicate experience scopes from the
+    # contract; the canonical profile file remains unchanged (verified above).
     exp_scopes = {
         s.id: s.data.get("scope")
         for s in selected.sources if s.type.lower() == "experience"
     }
-    # At least some scopes should have been cleared for duplicate experiences.
-    # The profile contains three experiences with identical scope text;
-    # the first occurrence keeps its scope; duplicates lose it.
+    # The profile contains three experiences with identical scope text; the
+    # narrative is duplicated with the professional summary, so suppression
+    # clears the duplicate scopes.
     cleared_scopes = [k for k, v in exp_scopes.items() if v is None]
     assert len(cleared_scopes) >= 2, f"Expected at least 2 duplicate scopes cleared, got {cleared_scopes}"
 
