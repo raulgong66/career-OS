@@ -53,6 +53,7 @@ class AcquisitionPipeline:
         source_path: str | Path,
         output_path: str | Path | None = None,
         schema: dict[str, Any] | None = None,
+        source_metadata: dict[str, Any] | None = None,
     ) -> Path:
         # 1. Read — parse the source document into raw text
         raw_text = self.document_reader.read(source_path)
@@ -84,6 +85,9 @@ class AcquisitionPipeline:
             education=reviewed.education,
             source_document=reviewed.source_document,
             extraction_timestamp=reviewed.extraction_timestamp,
+            source_name=(source_metadata or {}).get("sourceName"),
+            source_hash=(source_metadata or {}).get("sourceHash"),
+            imported_at=reviewed.extraction_timestamp,
         )
 
         # 7. Validate — ensure the profile satisfies the canonical schema

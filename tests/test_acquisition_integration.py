@@ -248,6 +248,55 @@ def test_acquisition_pipeline_rejects_unsupported_format(tmp_path: Path) -> None
         pipeline.run(txt_path)
 
 
+def test_acquisition_pipeline_records_source_provenance(tmp_path: Path) -> None:
+    """Phase 2A: pipeline records sourceName/sourceHash/importedAt provenance."""
+    docx_path = tmp_path / "test_resume.docx"
+    _create_test_docx(docx_path)
+    output_path = tmp_path / "generated-profile.yaml"
+
+    pipeline = AcquisitionPipeline(
+        document_reader=DocumentReader(),
+        text_extractor=TextExtractor(),
+        llm_extractor=MockLLMExtractor(),
+        profile_builder=CanonicalProfileBuilder(),
+        yaml_writer=YamlWriter(),
+    )
+    pipeline.run(
+        docx_path,
+        output_path,
+        source_metadata={
+            "sourceName": "raul-gongora-cv.docx",
+            "sourceHash": "a" * 64,
+        },
+    )
+
+    loaded = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    acquisition = loaded["extensions"]["_acquisition"]
+    assert acquisition["sourceName"] == "raul-gongora-cv.docx"
+    assert acquisition["sourceHash"] == "a" * 64
+    assert "sourceDocument" in acquisition
+    assert "extractionTimestamp" in acquisition
+    assert "importedAt" in acquisition
+    assert loaded["extensions"]["importedAt"] == acquisition["importedAt"]
+
+
+def test_acquisition_pipeline_without_source_metadata_omits_hash(tmp_path: Path) -> None:
+    """Without source_metadata the pipeline still stamps import timestamps."""
+    docx_path = tmp_path / "test_resume.docx"
+    _create_test_docx(docx_path)
+    output_path = tmp_path / "generated-profile.yaml"
+
+    pipeline = AcquisitionPipeline(llm_extractor=MockLLMExtractor())
+    pipeline.run(docx_path, output_path)
+
+    loaded = yaml.safe_load(output_path.read_text(encoding="utf-8"))
+    acquisition = loaded["extensions"]["_acquisition"]
+    assert "sourceName" not in acquisition
+    assert "sourceHash" not in acquisition
+    assert "importedAt" in acquisition
+    assert loaded["extensions"]["importedAt"] == acquisition["importedAt"]
+
+
 class TestLLMExtractorFactory:
     def test_create_ollama_extractor(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LLM_PROVIDER", "ollama")

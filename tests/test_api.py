@@ -857,7 +857,7 @@ def test_import_profile_duplicate_returns_409(monkeypatch: pytest.MonkeyPatch, t
     import api.main as api_main
 
     class _StubDuplicatePipeline:
-        def run(self, source_path, output_path=None, schema=None):
+        def run(self, source_path, output_path=None, schema=None, source_metadata=None):
             raise DuplicateProfileError(
                 "person-dup", "profiles/staging/person-dup-profile.yaml"
             )
@@ -879,6 +879,248 @@ def test_import_profile_duplicate_returns_409(monkeypatch: pytest.MonkeyPatch, t
         assert isinstance(body["detail"], str)
 
     assert existing.read_text(encoding="utf-8") == "keep: me\n"
+
+
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+class _StubImportPipeline:
+    """Mimics AcquisitionPipeline.run for Phase 2A API tests.
+
+    Writes the configured profile payload into the (monkeypatched) staging
+    directory and returns its path, mirroring the real pipeline's provenance
+    fields so the API read-back and classification behave realistically.
+    """
+
+    def __init__(self, person: dict, source_hash: str = "") -> None:
+        self.person = person
+        self.source_hash = source_hash
+
+    def run(self, source_path, output_path=None, schema=None, source_metadata=None):
+        import api.main as api_main
+        from careeros.exceptions import DuplicateProfileError
+
+        meta = source_metadata or {}
+        data = {
+            "profileVersion": "1.0.0",
+            "person": self.person,
+            "professionalSummaries": [],
+            "experiences": [],
+            "organizations": [],
+            "projects": [],
+            "skills": [],
+            "achievements": [],
+            "evidence": [],
+            "education": [],
+            "certifications": [],
+            "artifacts": [],
+            "targetContexts": [],
+            "extensions": {
+                "_acquisition": {
+                    "sourceName": meta.get("sourceName", ""),
+                    "sourceHash": self.source_hash or meta.get("sourceHash", ""),
+                    "sourceDocument": str(source_path),
+                    "extractionTimestamp": "2026-01-01T00:00:00+00:00",
+                    "importedAt": "2026-01-01T00:00:00+00:00",
+                },
+                "importedAt": "2026-01-01T00:00:00+00:00",
+            },
+        }
+        person_id = self.person["id"]
+        staging = api_main.PROFILES_ROOT / "staging"
+        staging.mkdir(parents=True, exist_ok=True)
+        path = staging / f"{person_id}-profile.yaml"
+        if path.is_file():
+            raise DuplicateProfileError(person_id, str(path))
+        path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        return path
+
+
+@pytest.fixture
+def isolated_profile_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Redirect the API profile store to a temporary directory."""
+    import api.main as api_main
+    from careeros.profile_repository import ProfileRepository
+
+    root = tmp_path / "profiles"
+    root.mkdir()
+    monkeypatch.setattr(api_main, "PROFILES_ROOT", root)
+    monkeypatch.setattr(api_main, "PROFILE_REPOSITORY", ProfileRepository(root))
+    return root
+
+
+def _person(pid: str, name: str | None = None, email: str | None = None) -> dict:
+    person: dict = {"id": pid}
+    if name:
+        person["names"] = [{"value": name, "usage": "professional"}]
+    if email:
+        person["contact"] = {"email": email}
+    return person
+
+
+def _write_profile(rel_path: Path, person: dict, *, source_hash: str | None = None) -> Path:
+    import api.main as api_main
+
+    data = {
+        "profileVersion": "1.0.0",
+        "person": person,
+        "professionalSummaries": [],
+        "experiences": [],
+        "organizations": [],
+        "projects": [],
+        "skills": [],
+        "achievements": [],
+        "evidence": [],
+        "education": [],
+        "certifications": [],
+        "artifacts": [],
+        "targetContexts": [],
+        "extensions": {},
+    }
+    if source_hash:
+        data["extensions"]["_acquisition"] = {"sourceHash": source_hash}
+    path = api_main.PROFILES_ROOT / rel_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(data, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    return path
+
+
+def test_import_retains_source_and_records_provenance(
+    isolated_profile_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2A: upload is hashed, the source is retained, provenance is recorded."""
+    import hashlib
+
+    import api.main as api_main
+
+    payload = b"phase-2a-retention-docx-bytes"
+    source_hash = hashlib.sha256(payload).hexdigest()
+    stub = _StubImportPipeline(_person("person-anna-lindqvist", name="Anna Lindqvist"))
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", lambda: stub)
+
+    response = client.post(
+        "/profiles/import",
+        files={"file": ("anna-cv.docx", payload, _DOCX_MIME)},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["profileId"] == "person-anna-lindqvist-profile"
+    assert body["classification"]["result"] == "NEW_PERSON"
+
+    retained = isolated_profile_store / "staging" / "_sources" / f"{source_hash}.docx"
+    assert retained.read_bytes() == payload
+
+    profile_data = yaml.safe_load(
+        (isolated_profile_store / "staging" / "person-anna-lindqvist-profile.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    acquisition = profile_data["extensions"]["_acquisition"]
+    assert acquisition["sourceName"] == "anna-cv.docx"
+    assert acquisition["sourceHash"] == source_hash
+    assert acquisition["importedAt"]
+    assert profile_data["extensions"]["importedAt"] == acquisition["importedAt"]
+    assert body["profile"]["importedAt"] == acquisition["importedAt"]
+
+    # the retained source store must never be discovered as a profile
+    listed = [p["id"] for p in client.get("/profiles").json()]
+    assert listed == ["person-anna-lindqvist-profile"]
+
+
+def test_import_same_document_detected(
+    isolated_profile_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2A: a byte-identical re-import is classified SAME_DOCUMENT."""
+    import hashlib
+
+    import api.main as api_main
+
+    payload = b"same-document-bytes"
+    source_hash = hashlib.sha256(payload).hexdigest()
+    _write_profile(
+        Path("staging") / "person-jane-doe-profile.yaml",
+        _person("person-jane-doe", name="Jane Doe"),
+        source_hash=source_hash,
+    )
+    stub = _StubImportPipeline(
+        _person("person-raul-gongora-betancourt", name="Raul Gongora Betancourt")
+    )
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", lambda: stub)
+
+    response = client.post(
+        "/profiles/import",
+        files={"file": ("resume.docx", payload, _DOCX_MIME)},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["classification"]["result"] == "SAME_DOCUMENT"
+    assert body["classification"]["candidates"][0]["profileId"] == "person-jane-doe-profile"
+    assert body["classification"]["candidates"][0]["matchedOn"] == ["sourceHash"]
+
+
+def test_import_possible_same_person_without_merge_or_promotion(
+    isolated_profile_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2A: different deterministic ids for the same human surface a candidate
+    without merging or promoting, and leave the canonical profile untouched."""
+    import api.main as api_main
+
+    canonical = _write_profile(
+        Path("raul-gongora-profile.yaml"),
+        _person("person-raul-gongora", name="Raul Gongora"),
+    )
+    before = canonical.read_bytes()
+    stub = _StubImportPipeline(
+        _person("person-raul-gongora-betancourt", name="Raul Gongora Betancourt")
+    )
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", lambda: stub)
+
+    response = client.post(
+        "/profiles/import",
+        files={"file": ("new-cv.docx", b"new-cv-bytes", _DOCX_MIME)},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["classification"]["result"] == "POSSIBLE_SAME_PERSON"
+    candidate = body["classification"]["candidates"][0]
+    assert candidate["profileId"] == "raul-gongora-profile"
+    assert "name-tokens" in candidate["matchedOn"]
+
+    # no merge, no promotion: canonical untouched, import stays in staging
+    assert canonical.read_bytes() == before
+    assert (
+        isolated_profile_store / "staging" / "person-raul-gongora-betancourt-profile.yaml"
+    ).exists()
+
+
+def test_import_identity_conflict_reported_not_merged(
+    isolated_profile_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2A: same name with a different email is a conflict, never a merge."""
+    import api.main as api_main
+
+    _write_profile(
+        Path("staging") / "person-gongora-profile.yaml",
+        _person("person-gongora", name="Raul Gongora Betancourt", email="old@example.com"),
+    )
+    stub = _StubImportPipeline(
+        _person(
+            "person-raul-gongora-betancourt",
+            name="Raul Gongora Betancourt",
+            email="new@example.com",
+        )
+    )
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", lambda: stub)
+
+    response = client.post(
+        "/profiles/import",
+        files={"file": ("cv.docx", b"conflict-bytes", _DOCX_MIME)},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["classification"]["result"] == "IDENTITY_CONFLICT"
+    candidate = body["classification"]["candidates"][0]
+    assert candidate["conflictingOn"] == ["email"]
 
 
 def test_dto_mapping_profile_summary() -> None:
