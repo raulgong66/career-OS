@@ -150,7 +150,7 @@ def test_acquisition_pipeline_full_vertical_slice(tmp_path: Path, repo_root: Pat
 
     loaded = yaml.safe_load(output_path.read_text(encoding="utf-8"))
     assert loaded["profileVersion"] == "1.0.0"
-    assert loaded["person"]["id"] == "person-gongora"
+    assert loaded["person"]["id"] == "person-raul-gongora-betancourt"
     assert loaded["person"]["names"] == [
         {"value": "Raul Gongora Betancourt", "usage": "professional"}
     ]
@@ -343,7 +343,7 @@ def test_pipeline_accepts_profile_with_null_ids(tmp_path: Path) -> None:
     )
     loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
 
-    assert loaded["person"]["id"] == "person-unknown"
+    assert loaded["person"]["id"] == "person-anna-lindqvist"
     assert loaded["person"]["names"][0]["value"] == "Anna Lindqvist"
     assert loaded["experiences"][0]["id"] == "exp-0"
     assert loaded["skills"][0]["name"] == "Python"
@@ -365,7 +365,7 @@ def test_pipeline_accepts_partial_profile_missing_optional_fields(tmp_path: Path
     )
     loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
 
-    assert loaded["person"]["id"] == "person-anna"
+    assert loaded["person"]["id"] == "person-anna-lindqvist"
     assert "contact" not in loaded["person"]
     assert len(loaded["experiences"]) == 1
     assert loaded["experiences"][0]["id"] == "exp-qred"
@@ -387,7 +387,7 @@ def test_pipeline_accepts_minimal_profile_name_only(tmp_path: Path) -> None:
     )
     loaded = _run_pipeline_with(docx, extractor, tmp_path / "out.yaml")
 
-    assert loaded["person"]["id"] == "person-anna"
+    assert loaded["person"]["id"] == "person-anna-lindqvist"
     assert loaded["person"]["names"][0]["value"] == "Anna Lindqvist"
     assert loaded["experiences"] == []
     assert loaded["skills"] == []

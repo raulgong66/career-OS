@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 COMPANY_ABBREVIATIONS: dict[str, str] = {
     "international business machines": "ibm",
@@ -28,6 +29,20 @@ def normalize_date(date_str: str) -> str:
     date_str = _DATE_REPLACE_MAP.get(date_lower, date_str)
     date_str = re.sub(r"\s+", " ", date_str).strip()
     return date_str
+
+
+def person_id_from_name(name: str) -> str:
+    """Derive a deterministic ``person-*`` id from a person's display name.
+
+    Follows the documented profile-id contract (lowercase, spaces become
+    hyphens, non-alphanumerics dropped) and folds non-ASCII letters to their
+    ASCII equivalents (e.g. ``González`` -> ``gonzalez``). Returns an empty
+    string when no usable id can be derived.
+    """
+    folded = unicodedata.normalize("NFKD", name.strip().lower())
+    ascii_lower = "".join(ch for ch in folded if not unicodedata.combining(ch))
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_lower).strip("-")
+    return f"person-{slug}" if slug else ""
 
 
 def extract_year(date_str: str | None) -> int | None:
