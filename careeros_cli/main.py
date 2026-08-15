@@ -36,6 +36,7 @@ from careeros.profile_quality.cli import (
     print_improvement_queue as print_profile_quality_queue,
     print_profile_health,
 )
+from careeros.profile_repository import ProfileRepository, ProfileState, profile_display_id, profile_display_name
 from careeros.reconciliation import (
     load_profiles_for_reconciliation,
     reconcile_profiles,
@@ -835,6 +836,14 @@ def profiles_reconcile(
         console.print("[bold]Conflicts[/bold]")
         for diff in conflicts:
             console.print(f"  {diff.entity_type}/{diff.entity_id}: {diff.details}")
+        console.print()
+
+    evidence_matches = [d for d in plan.entity_diffs if d.matched_on]
+    if evidence_matches:
+        console.print("[bold]Evidence Matches[/bold]")
+        for diff in evidence_matches:
+            matched = f" ({diff.matched_with})" if diff.matched_with else ""
+            console.print(f"  {diff.entity_type}/{diff.entity_id}{matched}: on {', '.join(diff.matched_on)}")
         console.print()
     
     left_only = [d for d in plan.entity_diffs if d.diff_type == EntityDiffType.ONLY_IN_LEFT]

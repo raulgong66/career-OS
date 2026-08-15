@@ -12,6 +12,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Sequence
 
+from .evidence import EVIDENCE_MATCHED_TYPES, match_entities
 from .import_classification import _compare_identity, _person_signals
 from .profile_repository import ProfileRecord, ProfileRepository
 
@@ -41,6 +42,8 @@ class EntityDiff:
     left_value: Any | None = None
     right_value: Any | None = None
     details: str = ""
+    matched_on: tuple[str, ...] = ()
+    matched_with: str | None = None
 
 
 @dataclass(frozen=True)
@@ -185,6 +188,99 @@ def _compare_entities(
     return diffs
 
 
+def _content_without_id(entity: dict[str, Any]) -> dict[str, Any]:
+    """Return entity content with the identity key removed.
+
+    Cross-ID evidence matches pair entities that legitimately carry different
+    IDs, so content equality must be judged on the payload only.
+    """
+    return {k: v for k, v in entity.items() if k != "id"}
+
+
+def _compare_entities_with_evidence(
+    left_entities: Any,
+    right_entities: Any,
+    entity_type: str,
+    left_org_names: dict[str, str],
+    right_org_names: dict[str, str],
+) -> list[EntityDiff]:
+    """Compare two lists of entities, adding cross-ID evidence matches.
+
+    Uses exact-ID comparison first, then the deterministic evidence layer to
+    pair entities that represent the same real-world fact under different IDs.
+    Matched pairs are reclassified as ``SAME`` (identical content) or
+    ``CONFLICT`` (differing content) with ``matched_on`` evidence recorded.
+    """
+    left_map = _normalize_entity_list(left_entities)
+    right_map = _normalize_entity_list(right_entities)
+
+    diffs: list[EntityDiff] = []
+
+    for entity_id in sorted(set(left_map) & set(right_map)):
+        left_entity = left_map[entity_id]
+        right_entity = right_map[entity_id]
+        if left_entity == right_entity:
+            diffs.append(EntityDiff(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                diff_type=EntityDiffType.SAME,
+                left_value=left_entity,
+                right_value=right_entity,
+            ))
+        else:
+            diffs.append(EntityDiff(
+                entity_type=entity_type,
+                entity_id=entity_id,
+                diff_type=EntityDiffType.CONFLICT,
+                left_value=left_entity,
+                right_value=right_entity,
+                details=f"Entities with same id have different content",
+            ))
+
+    left_only = [left_map[eid] for eid in sorted(set(left_map) - set(right_map))]
+    right_only = [right_map[eid] for eid in sorted(set(right_map) - set(left_map))]
+
+    matches = match_entities(entity_type, left_only, right_only, left_org_names, right_org_names)
+    matched_left = {m.left_entity_id for m in matches}
+    matched_right = {m.right_entity_id for m in matches}
+
+    for m in matches:
+        left_entity = left_map[m.left_entity_id]
+        right_entity = right_map[m.right_entity_id]
+        if _content_without_id(left_entity) == _content_without_id(right_entity):
+            diff_type = EntityDiffType.SAME
+        else:
+            diff_type = EntityDiffType.CONFLICT
+        diffs.append(EntityDiff(
+            entity_type=entity_type,
+            entity_id=m.left_entity_id,
+            diff_type=diff_type,
+            left_value=left_entity,
+            right_value=right_entity,
+            details=f"Evidence-based match on {', '.join(m.matched_on)}",
+            matched_on=m.matched_on,
+            matched_with=m.right_entity_id,
+        ))
+
+    for entity_id in sorted(set(left_map) - set(right_map) - matched_left):
+        diffs.append(EntityDiff(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            diff_type=EntityDiffType.ONLY_IN_LEFT,
+            left_value=left_map[entity_id],
+        ))
+
+    for entity_id in sorted(set(right_map) - set(left_map) - matched_right):
+        diffs.append(EntityDiff(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            diff_type=EntityDiffType.ONLY_IN_RIGHT,
+            right_value=right_map[entity_id],
+        ))
+
+    return diffs
+
+
 def _get_person_id(record: ProfileRecord | None) -> str | None:
     """Extract person.id from a profile record."""
     if record is None:
@@ -192,6 +288,17 @@ def _get_person_id(record: ProfileRecord | None) -> str | None:
     data = record.data if isinstance(record.data, dict) else {}
     person = data.get("person") or {}
     return person.get("id") if isinstance(person, dict) else None
+
+
+def _organization_names(entities: Any) -> dict[str, str]:
+    """Map organization IDs to their display names for a profile."""
+    result: dict[str, str] = {}
+    if not isinstance(entities, list):
+        return result
+    for entity in entities:
+        if isinstance(entity, dict) and entity.get("id") and entity.get("name"):
+            result[entity["id"]] = str(entity["name"])
+    return result
 
 
 def reconcile_profiles(
@@ -219,7 +326,10 @@ def reconcile_profiles(
     
     left_data = left_record.data if left_record and isinstance(left_record.data, dict) else {}
     right_data = right_record.data if right_record and isinstance(right_record.data, dict) else {}
-    
+
+    left_org_names = _organization_names(left_data.get("organizations"))
+    right_org_names = _organization_names(right_data.get("organizations"))
+
     entity_types = [
         ("experiences", "id"),
         ("organizations", "id"),
@@ -238,7 +348,16 @@ def reconcile_profiles(
     for entity_type, key_field in entity_types:
         left_entities = left_data.get(entity_type, [])
         right_entities = right_data.get(entity_type, [])
-        diffs = _compare_entities(left_entities, right_entities, entity_type, key_field)
+        if entity_type in EVIDENCE_MATCHED_TYPES:
+            diffs = _compare_entities_with_evidence(
+                left_entities,
+                right_entities,
+                entity_type,
+                left_org_names,
+                right_org_names,
+            )
+        else:
+            diffs = _compare_entities(left_entities, right_entities, entity_type, key_field)
         all_diffs.extend(diffs)
     
     warnings = _extract_provenance_warnings(left_record, right_record)
@@ -308,6 +427,8 @@ def format_reconciliation_plan(plan: ReconciliationPlan, output_format: str = "y
                 "leftValue": diff.left_value,
                 "rightValue": diff.right_value,
                 "details": diff.details,
+                "matchedOn": list(diff.matched_on),
+                "matchedWith": diff.matched_with,
             }
             for diff in plan.entity_diffs
         ],

@@ -504,3 +504,400 @@ class TestLoadProfiles:
         
         assert left_record is None
         assert right_record is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 3B: deterministic cross-ID evidence matching
+# ---------------------------------------------------------------------------
+
+def _real_experience(
+    eid: str,
+    title: str,
+    org_id: str,
+    start: str,
+    end: str | None,
+    scope: str | None = None,
+) -> dict:
+    exp: dict = {
+        "id": eid,
+        "title": title,
+        "organizationRefs": [{"id": org_id, "type": "organization"}],
+        "dateRange": {"start": start, "end": end, "isCurrent": False},
+        "engagementType": "Full-time",
+    }
+    if scope:
+        exp["scope"] = scope
+    return exp
+
+
+def _real_organization(oid: str, name: str) -> dict:
+    return {"id": oid, "name": name}
+
+
+def _real_skill(sid: str, name: str, category: str) -> dict:
+    return {"id": sid, "name": name, "category": category}
+
+
+class TestEvidenceMatching:
+    """Phase 3B: cross-ID evidence matching on observed real-world cases."""
+
+    def test_experience_cross_id_match_title_and_dates(self) -> None:
+        """exp-qred-bank2 ↔ exp-gongora-betancourt-senior-devsecops-specialist
+        share title + dateRange despite different IDs."""
+        from careeros.evidence import match_entities
+
+        left = [_real_experience(
+            "exp-qred-bank2", "Senior DevSecOps Specialist", "org-vmware-vxrail-datacenters-to-aws",
+            "2023-05", "2024-12",
+        )]
+        right = [_real_experience(
+            "exp-gongora-betancourt-senior-devsecops-specialist", "Senior DevSecOps Specialist",
+            "org-selfemployed", "2023-05", "2024-12",
+            scope="Led migration from VMware VxRail datacenters to AWS, reducing infrastructure overhead by over 50%",
+        )]
+        matches = match_entities("experiences", left, right)
+        assert len(matches) == 1
+        assert matches[0].left_entity_id == "exp-qred-bank2"
+        assert matches[0].right_entity_id == "exp-gongora-betancourt-senior-devsecops-specialist"
+        assert matches[0].matched_on == ("title", "dateRange")
+
+    def test_experience_cross_id_match_title_tokens_and_dates(self) -> None:
+        """exp-qred-bank5 ↔ exp-acmecorp5 match on title-token containment + exact dates."""
+        from careeros.evidence import match_entities
+
+        left = [_real_experience(
+            "exp-qred-bank5", "System Administrator / IT Engineer", "org-distributed-hotel-systems-integration",
+            "1996-08", "2001-04",
+        )]
+        right = [_real_experience(
+            "exp-acmecorp5", "System Administrator", "org-acme-corp",
+            "1996-08", "2001-04",
+            scope="Spearheaded integration of distributed hotel systems into a standardized, secure central IT structure.",
+        )]
+        matches = match_entities("experiences", left, right)
+        assert len(matches) == 1
+        assert matches[0].matched_on == ("title-tokens", "dateRange")
+
+    def test_different_roles_do_not_match(self) -> None:
+        """exp-qred-bank2 (Senior DevSecOps Specialist) and exp-acmecorp2
+        (System Developer & AI Architect) are distinct roles and must not match."""
+        from careeros.evidence import match_entities
+
+        left = [_real_experience(
+            "exp-qred-bank2", "Senior DevSecOps Specialist", "org-vmware-vxrail-datacenters-to-aws",
+            "2023-05", "2024-12",
+        )]
+        right = [_real_experience(
+            "exp-acmecorp2", "System Developer & AI Architect", "org-acme-corp",
+            "2022-02", "2023-04",
+            scope="Architected, coded, and deployed accent-mvp; built Python Django REST APIs and React frontend.",
+        )]
+        matches = match_entities("experiences", left, right)
+        assert matches == []
+
+    def test_skill_token_containment(self) -> None:
+        """skill-agentic-ai-&-engineering ↔ skill-agentic-ai share the Agentic AI skill."""
+        from careeros.evidence import match_entities
+
+        left = [_real_skill("skill-agentic-ai-&-engineering", "Agentic AI & Engineering", "AI and Machine Learning")]
+        right = [_real_skill("skill-agentic-ai", "Agentic AI", "AI & Machine Learning")]
+        matches = match_entities("skills", left, right)
+        assert len(matches) == 1
+        assert matches[0].matched_on == ("name-tokens",)
+
+    def test_skill_exact_name_match(self) -> None:
+        from careeros.evidence import match_entities
+
+        left = [_real_skill("skill-cloud-&-containers", "Cloud & Containers", "Cloud")]
+        right = [_real_skill("skill-cloud", "Cloud", "Cloud Platform")]
+        matches = match_entities("skills", left, right)
+        assert len(matches) == 1
+        assert matches[0].matched_on == ("name-tokens",)
+
+    def test_skill_no_containment_no_match(self) -> None:
+        from careeros.evidence import match_entities
+
+        left = [_real_skill("skill-network-&-monitoring", "Network & Monitoring", "Networking")]
+        right = [_real_skill("skill-networking", "Networking", "Network & Monitoring")]
+        matches = match_entities("skills", left, right)
+        assert matches == []
+
+    def test_organization_name_variants(self) -> None:
+        """Organization names that normalize the same (case/punctuation) match."""
+        from careeros.evidence import match_entities
+
+        left = [_real_organization("org-left", "ACME Corp")]
+        right = [_real_organization("org-right", "Acme Corp.")]
+        matches = match_entities("organizations", left, right)
+        assert len(matches) == 1
+        assert matches[0].matched_on == ("name",)
+
+    def test_organization_company_abbreviation(self) -> None:
+        from careeros.evidence import match_entities
+
+        left = [_real_organization("org-ibm", "International Business Machines")]
+        right = [_real_organization("org-ibm2", "IBM")]
+        matches = match_entities("organizations", left, right)
+        assert len(matches) == 1
+        assert matches[0].matched_on == ("name",)
+
+    def test_organization_different_names_no_match(self) -> None:
+        from careeros.evidence import match_entities
+
+        left = [_real_organization("org-google-cloud", "Google Cloud")]
+        right = [_real_organization("org-acme-corp", "ACME Corp")]
+        matches = match_entities("organizations", left, right)
+        assert matches == []
+
+    def test_education_program_match(self) -> None:
+        from careeros.evidence import match_entities
+
+        left = [{
+            "id": "edu-left",
+            "institutionRef": {"id": "org-kth", "type": "organization"},
+            "program": "Master's Degree",
+        }]
+        right = [{
+            "id": "edu-right",
+            "institutionRef": {"id": "org-kth-2", "type": "organization"},
+            "program": "Master's Degree",
+        }]
+        matches = match_entities("education", left, right)
+        assert len(matches) == 1
+        assert matches[0].matched_on == ("program",)
+
+    def test_education_institution_and_dates_match(self) -> None:
+        from careeros.evidence import match_entities
+
+        left = [{
+            "id": "edu-left",
+            "institutionRef": {"id": "org-kth", "type": "organization"},
+            "program": "M.S.",
+            "dateRange": {"start": "1985-08", "end": "1990-06", "isCurrent": False},
+        }]
+        right = [{
+            "id": "edu-right",
+            "institutionRef": {"id": "org-kth-2", "type": "organization"},
+            "program": "M.S.",
+            "dateRange": {"start": "1985-09", "end": "1990-06", "isCurrent": False},
+        }]
+        org_names = {"org-kth": "KTH Royal Institute of Technology", "org-kth-2": "KTH Royal Institute of Technology"}
+        matches = match_entities("education", left, right, org_names, org_names)
+        assert len(matches) == 1
+        assert "program" in matches[0].matched_on
+        assert "dateRange-overlap" in matches[0].matched_on
+
+    def test_one_to_one_matching(self) -> None:
+        """Each right entity can be consumed at most once."""
+        from careeros.evidence import match_entities
+
+        left = [
+            _real_experience("exp-a1", "Senior DevSecOps Specialist", "org-x", "2023-05", "2024-12"),
+            _real_experience("exp-b1", "Founder & CEO", "org-x", "2019-08", "2022-01"),
+        ]
+        right = [
+            _real_experience("exp-a2", "Senior DevSecOps Specialist", "org-y", "2023-05", "2024-12"),
+            _real_experience("exp-b2", "Founder & CEO", "org-y", "2019-08", "2022-01"),
+        ]
+        matches = match_entities("experiences", left, right)
+        assert len(matches) == 2
+        right_ids = {m.right_entity_id for m in matches}
+        assert right_ids == {"exp-a2", "exp-b2"}
+
+    def test_deterministic_matching(self) -> None:
+        from careeros.evidence import match_entities
+
+        left = [
+            _real_experience("exp-qred-bank", "Senior IT System Administrator & DevSecOps Specialist", "org-google-cloud", "2025-03", "2025-12"),
+            _real_experience("exp-qred-bank2", "Senior DevSecOps Specialist", "org-vmware-vxrail-datacenters-to-aws", "2023-05", "2024-12"),
+            _real_experience("exp-qred-bank3", "Founder & CEO", "org-healthcaresector-business", "2019-08", "2022-01"),
+        ]
+        right = [
+            _real_experience("exp-acmecorp3", "Founder & CEO", "org-acme-corp", "2019-08", "2022-01"),
+            _real_experience("exp-gongora-betancourt-senior-devsecops-specialist", "Senior DevSecOps Specialist", "org-selfemployed", "2023-05", "2024-12"),
+            _real_experience("exp-gongora-betancourt-senior-system-administrator", "Senior IT System Administrator & DevSecOps Specialist", "org-selfemployed", "2025-03", "2025-12"),
+        ]
+        matches1 = match_entities("experiences", left, right)
+        matches2 = match_entities("experiences", left, right)
+        assert [(m.left_entity_id, m.right_entity_id, m.matched_on) for m in matches1] == \
+               [(m.left_entity_id, m.right_entity_id, m.matched_on) for m in matches2]
+
+
+class TestReconciliationWithEvidence:
+    """Phase 3B: reconciliation reclassifies cross-ID evidence matches."""
+
+    def test_real_world_staging_pair_reclassified(self) -> None:
+        """The observed exp-qred-bank* family now matches its betancourt counterparts."""
+        left = _record(
+            "person-gongora-profile",
+            _profile(
+                "person-gongora",
+                person=_person("person-gongora", name="Raul Gongora Betancourt"),
+                experiences=[
+                    _real_experience("exp-qred-bank", "Senior IT System Administrator & DevSecOps Specialist", "org-google-cloud", "2025-03", "2025-12"),
+                    _real_experience("exp-qred-bank2", "Senior DevSecOps Specialist", "org-vmware-vxrail-datacenters-to-aws", "2023-05", "2024-12"),
+                    _real_experience("exp-qred-bank3", "Founder & CEO", "org-healthcaresector-business", "2019-08", "2022-01"),
+                    _real_experience("exp-qred-bank4", "System Administrator / IT Engineer", "org-largescale-windows-and-linux-environments", "2001-05", "2019-08"),
+                    _real_experience("exp-qred-bank5", "System Administrator / IT Engineer", "org-distributed-hotel-systems-integration", "1996-08", "2001-04"),
+                ],
+                organizations=[
+                    _real_organization("org-google-cloud", "Google Cloud"),
+                    _real_organization("org-vmware-vxrail-datacenters-to-aws", "VMware VxRail datacenters to AWS"),
+                    _real_organization("org-healthcaresector-business", "Healthcare-sector business"),
+                    _real_organization("org-largescale-windows-and-linux-environments", "Large-scale Windows and Linux environments"),
+                    _real_organization("org-distributed-hotel-systems-integration", "Distributed hotel systems integration"),
+                ],
+                skills=[
+                    _real_skill("skill-agentic-ai-&-engineering", "Agentic AI & Engineering", "AI and Machine Learning"),
+                    _real_skill("skill-cloud-&-containers", "Cloud & Containers", "Cloud Computing and Containerization"),
+                    _real_skill("skill-infrastructure-&-os", "Infrastructure & OS", "IT Infrastructure and Operating Systems"),
+                    _real_skill("skill-network-&-monitoring", "Network & Monitoring", "Networking and Monitoring"),
+                    _real_skill("skill-web-&-databases", "Web & Databases", "Web Development and Databases"),
+                ],
+            ),
+        )
+        right = _record(
+            "person-raul-gongora-betancourt-profile",
+            _profile(
+                "person-raul-gongora-betancourt",
+                person=_person("person-raul-gongora-betancourt", name="Raul Gongora Betancourt"),
+                experiences=[
+                    _real_experience("exp-gongora-betancourt-senior-system-administrator", "Senior IT System Administrator & DevSecOps Specialist", "org-selfemployed", "2025-03", "2025-12"),
+                    _real_experience("exp-gongora-betancourt-senior-devsecops-specialist", "Senior DevSecOps Specialist", "org-selfemployed", "2023-05", "2024-12"),
+                    _real_experience("exp-acmecorp3", "Founder & CEO", "org-acme-corp", "2019-08", "2022-01"),
+                    _real_experience("exp-acmecorp4", "System Administrator / IT Engineer", "org-acme-corp", "2001-05", "2019-08"),
+                    _real_experience("exp-acmecorp5", "System Administrator", "org-acme-corp", "1996-08", "2001-04"),
+                    _real_experience("exp-acmecorp", "Senior Engineer", "org-acme-corp", "2023-05", None),
+                    _real_experience("exp-acmecorp2", "System Developer & AI Architect", "org-acme-corp", "2022-02", "2023-04"),
+                ],
+                organizations=[
+                    _real_organization("org-selfemployed", "Self-employed"),
+                    _real_organization("org-acme-corp", "ACME Corp"),
+                ],
+                skills=[
+                    _real_skill("skill-agentic-ai", "Agentic AI", "AI & Machine Learning"),
+                    _real_skill("skill-cloud", "Cloud", "Cloud Platform"),
+                    _real_skill("skill-infrastructure", "Infrastructure", "Infrastructure & OS"),
+                    _real_skill("skill-web", "Web", "Web & Databases"),
+                    _real_skill("skill-python", "Python", "Programming Language"),
+                ],
+            ),
+        )
+        plan = reconcile_profiles(left, right)
+
+        experience_diffs = {d.entity_id: d for d in plan.entity_diffs if d.entity_type == "experiences"}
+        assert experience_diffs["exp-qred-bank"].diff_type == EntityDiffType.CONFLICT
+        assert experience_diffs["exp-qred-bank"].matched_on == ("title", "dateRange")
+        assert experience_diffs["exp-qred-bank"].matched_with == "exp-gongora-betancourt-senior-system-administrator"
+        assert experience_diffs["exp-qred-bank2"].matched_with == "exp-gongora-betancourt-senior-devsecops-specialist"
+        assert experience_diffs["exp-qred-bank3"].matched_with == "exp-acmecorp3"
+        assert experience_diffs["exp-qred-bank4"].matched_with == "exp-acmecorp4"
+        assert experience_diffs["exp-qred-bank5"].matched_on == ("title-tokens", "dateRange")
+        assert experience_diffs["exp-qred-bank5"].matched_with == "exp-acmecorp5"
+        # exp-acmecorp and exp-acmecorp2 have no cross-ID counterpart in the left profile
+        assert experience_diffs["exp-acmecorp"].diff_type == EntityDiffType.ONLY_IN_RIGHT
+        assert experience_diffs["exp-acmecorp2"].diff_type == EntityDiffType.ONLY_IN_RIGHT
+
+        skill_diffs = {d.entity_id: d for d in plan.entity_diffs if d.entity_type == "skills"}
+        assert skill_diffs["skill-agentic-ai-&-engineering"].matched_with == "skill-agentic-ai"
+        assert skill_diffs["skill-agentic-ai-&-engineering"].matched_on == ("name-tokens",)
+        assert skill_diffs["skill-cloud-&-containers"].matched_with == "skill-cloud"
+        assert skill_diffs["skill-network-&-monitoring"].diff_type == EntityDiffType.ONLY_IN_LEFT
+        assert skill_diffs["skill-python"].diff_type == EntityDiffType.ONLY_IN_RIGHT
+
+    def test_evidence_same_when_content_equal(self) -> None:
+        """Cross-ID matches with identical content are reclassified as SAME."""
+        left = _record(
+            "left",
+            _profile(
+                "p1",
+                person=_person("p1", name="Raul"),
+                skills=[_real_skill("skill-a-&-b", "Agentic AI", "AI")],
+            ),
+        )
+        right = _record(
+            "right",
+            _profile(
+                "p2",
+                person=_person("p2", name="Raul"),
+                skills=[_real_skill("skill-a", "Agentic AI", "AI")],
+            ),
+        )
+        plan = reconcile_profiles(left, right)
+        skill_diffs = {d.entity_id: d for d in plan.entity_diffs if d.entity_type == "skills"}
+        assert skill_diffs["skill-a-&-b"].diff_type == EntityDiffType.SAME
+        assert skill_diffs["skill-a-&-b"].matched_on == ("name",)
+        assert skill_diffs["skill-a-&-b"].matched_with == "skill-a"
+
+    def test_by_id_semantics_preserved_for_artifacts(self) -> None:
+        """Artifacts keep by-ID semantics (no cross-ID evidence matching)."""
+        left = _record(
+            "left",
+            _profile(
+                "p1",
+                person=_person("p1", name="Raul"),
+                artifacts=[{"id": "artf-cv-left", "title": "Tailored CV", "artifactType": "CV"}],
+            ),
+        )
+        right = _record(
+            "right",
+            _profile(
+                "p2",
+                person=_person("p2", name="Raul"),
+                artifacts=[{"id": "artf-cv-right", "title": "Tailored CV", "artifactType": "CV"}],
+            ),
+        )
+        plan = reconcile_profiles(left, right)
+        artifact_diffs = {d.entity_id: d for d in plan.entity_diffs if d.entity_type == "artifacts"}
+        assert artifact_diffs["artf-cv-left"].diff_type == EntityDiffType.ONLY_IN_LEFT
+        assert artifact_diffs["artf-cv-left"].matched_on == ()
+        assert artifact_diffs["artf-cv-right"].diff_type == EntityDiffType.ONLY_IN_RIGHT
+
+    def test_by_id_semantics_preserved_for_professional_summaries(self) -> None:
+        left = _record(
+            "left",
+            _profile(
+                "p1",
+                person=_person("p1", name="Raul"),
+                professionalSummaries=[{"id": "summary-1", "text": "Summary text"}],
+            ),
+        )
+        right = _record(
+            "right",
+            _profile(
+                "p2",
+                person=_person("p2", name="Raul"),
+                professionalSummaries=[{"id": "summary-2", "text": "Summary text"}],
+            ),
+        )
+        plan = reconcile_profiles(left, right)
+        summary_diffs = {d.entity_id: d for d in plan.entity_diffs if d.entity_type == "professionalSummaries"}
+        assert summary_diffs["summary-1"].diff_type == EntityDiffType.ONLY_IN_LEFT
+        assert summary_diffs["summary-2"].diff_type == EntityDiffType.ONLY_IN_RIGHT
+
+    def test_format_includes_evidence_fields(self) -> None:
+        from careeros.reconciliation import format_reconciliation_plan
+
+        left = _record(
+            "left",
+            _profile(
+                "p1",
+                person=_person("p1", name="Raul"),
+                skills=[_real_skill("skill-a-&-b", "Agentic AI & Engineering", "AI")],
+            ),
+        )
+        right = _record(
+            "right",
+            _profile(
+                "p2",
+                person=_person("p2", name="Raul"),
+                skills=[_real_skill("skill-a", "Agentic AI", "AI")],
+            ),
+        )
+        plan = reconcile_profiles(left, right)
+        yaml_output = format_reconciliation_plan(plan, output_format="yaml")
+        assert "matchedOn" in yaml_output
+        assert "name-tokens" in yaml_output
+        json_output = format_reconciliation_plan(plan, output_format="json")
+        assert '"matchedOn"' in json_output
+        assert '"matchedWith": "skill-a"' in json_output
