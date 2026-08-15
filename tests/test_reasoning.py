@@ -1,3 +1,5 @@
+import copy
+
 from datetime import datetime, timezone
 from typing import Any
 
@@ -1000,7 +1002,22 @@ def test_engine_analyze_deterministic() -> None:
     profile = {"person": {"id": "p"}, "experiences": [], "skills": []}
     report1 = engine.analyze(profile)
     report2 = engine.analyze(profile)
-    assert report1.to_dict() == report2.to_dict()
+    assert _deterministic_payload(report1) == _deterministic_payload(report2)
+
+
+def _deterministic_payload(report: ReasoningReport) -> dict[str, Any]:
+    """Strip runtime-only metadata so determinism asserts semantic output only.
+
+    ``generated_at`` and timing statistics vary between executions; all other
+    computed content must remain byte-identical (see test_profile_quality).
+    """
+    payload = copy.deepcopy(report.to_dict())
+    payload.pop("generated_at", None)
+    payload.get("execution_stats", {}).pop("started_at", None)
+    payload.get("execution_stats", {}).pop("completed_at", None)
+    payload.get("execution_stats", {}).pop("execution_time_seconds", None)
+    payload.get("summary", {}).pop("execution_time_seconds", None)
+    return payload
 
 
 def test_engine_analyze_serialization_roundtrip() -> None:

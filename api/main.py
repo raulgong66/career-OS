@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -40,7 +41,15 @@ print_configuration_banner(runtime_config)
 from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv, run_profile_quality
 from careeros.exceptions import CareerOSException, DuplicateProfileError, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, LLMExtractionError, PipelineError
-from careeros.profile_repository import ProfileRepository, ProfileState
+from careeros.import_classification import (
+    CandidateMatch,
+    ImportClassification,
+    SAME_DOCUMENT,
+    classify_import,
+    retain_source,
+    source_hash_for_bytes,
+)
+from careeros.profile_repository import ProfileRecord, ProfileRepository, ProfileState
 from careeros.interview import InterviewEngine
 from careeros.interview.exceptions import InvalidProfileError
 from careeros.interview.simulation import (
@@ -188,11 +197,27 @@ class ProfileInfo(BaseModel):
     state: str = Field(default="canonical", description="Current profile state (staging, canonical, archived).")
 
 
+class ImportCandidate(BaseModel):
+    """An existing profile that deterministically matched a new import."""
+
+    profileId: str = Field(description="Identifier of the existing profile that matched.")
+    matchedOn: list[str] = Field(default_factory=list, description="Deterministic signals that matched (sourceHash, name, name-tokens, email, phone, linkedin, github).")
+    conflictingOn: list[str] = Field(default_factory=list, description="Deterministic signals that conflict (email, phone).")
+
+
+class ImportClassificationInfo(BaseModel):
+    """Deterministic Phase 2A import classification (never merges or promotes)."""
+
+    result: str = Field(description="NEW_PERSON, SAME_DOCUMENT, POSSIBLE_SAME_PERSON, or IDENTITY_CONFLICT.")
+    candidates: list[ImportCandidate] = Field(default_factory=list, description="Existing profiles matched as candidates.")
+
+
 class ImportResponse(BaseModel):
     """Response after a successful profile import."""
 
     profileId: str = Field(description="Identifier of the imported profile.")
     profile: ProfileInfo = Field(description="Profile summary DTO.")
+    classification: ImportClassificationInfo | None = Field(default=None, description="Deterministic Phase 2A import classification.")
 
 
 class AnalyzeRequest(BaseModel):
@@ -632,6 +657,48 @@ def list_profiles() -> list[ProfileInfo]:
     return profiles
 
 
+def _to_classification_info(
+    classification: ImportClassification,
+) -> ImportClassificationInfo:
+    """Map a core import classification to its transport DTO."""
+    return ImportClassificationInfo(
+        result=classification.result,
+        candidates=[
+            ImportCandidate(
+                profileId=candidate.profile_id,
+                matchedOn=list(candidate.matched_on),
+                conflictingOn=list(candidate.conflicting_on),
+            )
+            for candidate in classification.candidates
+        ],
+    )
+
+
+def _colliding_record(exc: DuplicateProfileError) -> ProfileRecord | None:
+    """Best-effort lookup of the profile record that blocked an import."""
+    try:
+        return PROFILE_REPOSITORY.get(Path(exc.existing_path).stem)
+    except (EntityNotFoundError, ValueError):
+        return None
+
+
+def _same_source_document(record: ProfileRecord | None, source_hash: str) -> bool:
+    """True when a colliding record was produced from the same source bytes."""
+    if record is None:
+        return False
+    data = record.data if isinstance(record.data, dict) else {}
+    extensions = data.get("extensions") or {}
+    if not isinstance(extensions, dict):
+        extensions = {}
+    acquisition = extensions.get("_acquisition") or {}
+    if not isinstance(acquisition, dict):
+        acquisition = {}
+    return (
+        str(acquisition.get("sourceHash") or "").strip().lower()
+        == (source_hash or "").strip().lower()
+    )
+
+
 @app.post("/profiles/import", response_model=ImportResponse, status_code=status.HTTP_201_CREATED)
 def import_profile(file: UploadFile = File(...)) -> ImportResponse:
     """Import a CV document, run the acquisition pipeline, and create a canonical profile."""
@@ -658,6 +725,9 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
             detail=f"File size {len(contents) / 1024 / 1024:.1f} MB exceeds maximum of {MAX_UPLOAD_SIZE / 1024 / 1024:.0f} MB",
         ).model_dump())
 
+    source_name = file.filename or "uploaded_cv.docx"
+    source_hash = source_hash_for_bytes(contents)
+
     temp_dir = Path(tempfile.mkdtemp())
     temp_path = temp_dir / (file.filename or "uploaded_cv.docx")
     try:
@@ -673,9 +743,40 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
 
     try:
         pipeline = AcquisitionPipeline()
-        profile_path = pipeline.run(str(temp_path))
+        profile_path = pipeline.run(
+            str(temp_path),
+            source_metadata={
+                "sourceName": source_name,
+                "sourceHash": source_hash,
+            },
+        )
     except DuplicateProfileError as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        # Phase 2B: an import that collides with an existing person.id is
+        # idempotent when the colliding record was produced from the exact
+        # same source document; otherwise the duplicate is real and 409.
+        existing = _colliding_record(exc)
+        if _same_source_document(existing, source_hash):
+            classification = ImportClassification(
+                result=SAME_DOCUMENT,
+                candidates=(
+                    CandidateMatch(
+                        profile_id=existing.profile_id,
+                        matched_on=("sourceHash",),
+                    ),
+                ),
+            )
+            return ImportResponse(
+                profileId=existing.profile_id,
+                profile=ProfileInfo(
+                    **to_profile_summary(
+                        existing.data,
+                        existing.profile_id,
+                        state=existing.state,
+                    )
+                ),
+                classification=_to_classification_info(classification),
+            )
         raise HTTPException(status_code=409, detail=ApiErrorResponse(
             error="DUPLICATE_PROFILE",
             detail=str(exc),
@@ -694,6 +795,16 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
             detail=f"Profile import failed: {exc}",
         ).model_dump())
 
+    # Phase 2A: retain the original uploaded document (byte-identical) in the
+    # gitignored staging source store before the temporary copy is removed.
+    try:
+        sources_dir = PROFILES_ROOT / "staging" / "_sources"
+        retain_source(contents, sources_dir, source_hash, suffix)
+    except OSError as exc:
+        logging.getLogger(__name__).warning(
+            "Failed to retain source document in %s: %s", sources_dir, exc
+        )
+
     shutil.rmtree(temp_dir, ignore_errors=True)
 
     profile_id = Path(profile_path).stem
@@ -706,9 +817,17 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
             detail=f"Failed to read imported profile: {exc}",
         ).model_dump())
 
+    classification = classify_import(
+        PROFILE_REPOSITORY.list(),
+        source_hash=source_hash,
+        profile_data=data,
+        exclude_profile_id=profile_id,
+    )
+
     return ImportResponse(
         profileId=profile_id,
         profile=ProfileInfo(**to_profile_summary(data, profile_id, state=ProfileState.STAGING)),
+        classification=_to_classification_info(classification),
     )
 
 

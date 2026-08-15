@@ -3,6 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from careeros.evidence_hydration import (
+    compute_evidence_strength,
+    derive_skill_evidence_confidence,
+    evidence_confidence_meta,
+    evidence_strength_label,
+)
 from careeros.reasoning import ReasoningResult, Rule, RuleContext
 from careeros.reasoning.utils import (
     duration_years,
@@ -508,68 +514,36 @@ class SkillEvidenceStrengthRule(Rule):
 
         strengths.sort(key=lambda x: (-x["confidence"], -x["total_years"], x["name"]))
 
+        metadata = {
+            "total_skills_analyzed": len(skill_data),
+            "high_confidence_count": sum(
+                1 for s in strengths if s["label"] == "very_high"
+            ),
+        }
+        metadata.update(evidence_confidence_meta(skill_data, context.profile))
+
         return [
             ReasoningResult(
                 rule_id=self.id,
                 finding_type="skill_evidence_strength",
                 value=strengths,
-                confidence=1.0,
+                confidence=derive_skill_evidence_confidence(
+                    skill_data, context.profile
+                ),
                 evidence_refs=tuple(s["id"] for s in skill_data if s["id"]),
-                metadata={
-                    "total_skills_analyzed": len(skill_data),
-                    "high_confidence_count": sum(
-                        1 for s in strengths if s["label"] == "very_high"
-                    ),
-                },
+                metadata=metadata,
             )
         ]
 
     @staticmethod
     def _compute_confidence(skill: dict[str, Any]) -> float:
-        base = 0.1
-        exp_count = skill["experience_count"]
-        org_count = skill["organization_count"]
-        years = skill["total_years"]
-
-        if exp_count >= 4:
-            base += 0.35
-        elif exp_count >= 2:
-            base += 0.20
-        elif exp_count >= 1:
-            base += 0.10
-
-        if org_count >= 3:
-            base += 0.25
-        elif org_count >= 2:
-            base += 0.15
-        elif org_count >= 1:
-            base += 0.05
-
-        if years >= 5.0:
-            base += 0.20
-        elif years >= 3.0:
-            base += 0.15
-        elif years >= 1.0:
-            base += 0.10
-        else:
-            base += 0.05
-
-        if exp_count >= 1 and org_count >= 1 and years >= 2.0:
-            base += 0.10
-
-        return round(min(base, 1.0), 2)
+        """Evidence-strength confidence (reused shared implementation)."""
+        return compute_evidence_strength(skill)
 
     @staticmethod
     def _confidence_to_label(confidence: float) -> str:
-        if confidence >= 0.8:
-            return "very_high"
-        if confidence >= 0.6:
-            return "high"
-        if confidence >= 0.4:
-            return "medium"
-        if confidence >= 0.2:
-            return "low"
-        return "very_low"
+        """Evidence-strength band label (reused shared implementation)."""
+        return evidence_strength_label(confidence)
 
 
 # ---------------------------------------------------------------------------

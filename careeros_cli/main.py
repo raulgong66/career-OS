@@ -37,6 +37,11 @@ from careeros.profile_quality.cli import (
     print_profile_health,
 )
 from careeros.profile_repository import ProfileRepository, ProfileState, profile_display_id, profile_display_name
+from careeros.reconciliation import (
+    load_profiles_for_reconciliation,
+    reconcile_profiles,
+    write_reconciliation_plan,
+)
 
 app = typer.Typer(
     name="careeros",
@@ -345,14 +350,14 @@ def optimize_cv(
         console.print("[bold green]Your CV is already fully optimized for this opportunity.[/bold green]")
         console.print(f"[dim]{result.message}[/dim]")
         if result.summary:
-            _print_summary(result.summary)
+            _print_summary(result.summary, optimizer, job_desc_text)
         return
 
     if result.status == OptimizationStatus.NO_MATCHES:
         console.print("[bold yellow]No additions recommended.[/bold yellow]")
         console.print(f"[dim]{result.message}[/dim]")
         if result.summary:
-            _print_summary(result.summary)
+            _print_summary(result.summary, optimizer, job_desc_text)
         return
 
     recommendations = result.recommendations
@@ -365,7 +370,7 @@ def optimize_cv(
     table.add_column("Operation", style="green")
     table.add_column("Display Name", style="bold")
     table.add_column("Evidence", style="magenta")
-    table.add_column("Total Score", style="yellow", justify="right")
+    table.add_column("Overall match score", style="yellow", justify="right")
     table.add_column("Scores Breakdown", style="dim")
 
     for rec in recommendations:
@@ -373,9 +378,9 @@ def optimize_cv(
         ev_str = ", ".join(ev_list) if ev_list else "None"
         
         breakdown = (
-            f"JD: {rec.scores.get('job_description_match', 0.0):.1f} | "
-            f"Ctx: {rec.scores.get('target_context_match', 0.0):.1f} | "
-            f"Ev: {rec.scores.get('evidence_strength', 0.0):.1f}"
+            f"Requirement match: {rec.scores.get('job_description_match', 0.0):.1f} | "
+            f"Context match: {rec.scores.get('target_context_match', 0.0):.1f} | "
+            f"Evidence strength: {rec.scores.get('evidence_strength', 0.0):.1f}"
         )
         table.add_row(
             rec.type.capitalize(),
@@ -389,7 +394,7 @@ def optimize_cv(
     console.print(table)
 
     if result.summary:
-        _print_summary(result.summary)
+        _print_summary(result.summary, optimizer, job_desc_text)
 
     if docx or output:
         if not (docx and output):
@@ -733,7 +738,141 @@ def profiles_delete(
     console.print(f"[bold green]Deleted[/bold green] {display_id}")
 
 
-def _print_summary(summary: Any) -> None:
+@PROFILES_APP.command("reconcile")
+def profiles_reconcile(
+    left_id: str = typer.Argument(..., help="First profile ID to compare."),
+    right_id: str = typer.Argument(..., help="Second profile ID to compare."),
+    profiles_root: Path = typer.Option(
+        None,
+        "--profiles-root",
+        help="Profiles directory. Defaults to the repository profiles folder.",
+    ),
+    output: Path = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write reconciliation plan to a YAML file.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the plan as JSON to stdout.",
+    ),
+) -> None:
+    """Compare two profiles and produce a deterministic reconciliation plan.
+    
+    This command analyzes two profiles and classifies their differences
+    without modifying either profile. It compares:
+    - Person identity signals (name, email, phone, LinkedIn, GitHub)
+    - All profile entities (experiences, organizations, skills, etc.)
+    - Provenance metadata (sourceHash, sourceName, importedAt)
+    
+    The output is a deterministic reconciliation plan suitable for
+    human review or programmatic consumption.
+    """
+    root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
+    
+    left_record, right_record = load_profiles_for_reconciliation(root, left_id, right_id)
+    
+    if left_record is None:
+        console.print(f"[bold red]Profile not found:[/bold red] {left_id}")
+        raise typer.Exit(code=1)
+    if right_record is None:
+        console.print(f"[bold red]Profile not found:[/bold red] {right_id}")
+        raise typer.Exit(code=1)
+    
+    plan = reconcile_profiles(left_record, right_record)
+    
+    if output:
+        out_path = write_reconciliation_plan(plan, output)
+        console.print(f"[bold green]Reconciliation plan written[/bold green] {out_path}")
+        return
+    
+    if json_output:
+        import json
+        console.print_json(data=json.loads(format_reconciliation_plan(plan, output_format="json")))
+        return
+    
+    # Human-readable table output
+    from rich.table import Table
+    from rich import box
+    
+    console.print(f"[bold]Reconciliation Plan[/bold]")
+    console.print(f"  Left:  {plan.left_profile_id} (person: {plan.left_person_id or 'unknown'})")
+    console.print(f"  Right: {plan.right_profile_id} (person: {plan.right_person_id or 'unknown'})")
+    console.print()
+    
+    # Identity comparison
+    matched, conflicting = plan.identity_comparison
+    console.print("[bold]Identity Comparison[/bold]")
+    if matched:
+        console.print(f"  Matched: {', '.join(matched)}")
+    else:
+        console.print("  Matched: (none)")
+    if conflicting:
+        console.print(f"  Conflicting: {', '.join(conflicting)}")
+    else:
+        console.print("  Conflicting: (none)")
+    console.print()
+    
+    # Entity diffs summary
+    diff_counts = {"SAME": 0, "CONFLICT": 0, "ONLY_IN_LEFT": 0, "ONLY_IN_RIGHT": 0}
+    for diff in plan.entity_diffs:
+        diff_counts[diff.diff_type.value] += 1
+    
+    console.print("[bold]Entity Differences[/bold]")
+    table = Table(box=box.MINIMAL, padding=(0, 2))
+    table.add_column("Type", style="dim")
+    table.add_column("Count", justify="right")
+    for diff_type, count in diff_counts.items():
+        if count > 0:
+            table.add_row(diff_type, str(count))
+    console.print(table)
+    console.print()
+    
+    # Show conflicts and unique items
+    conflicts = [d for d in plan.entity_diffs if d.diff_type == EntityDiffType.CONFLICT]
+    if conflicts:
+        console.print("[bold]Conflicts[/bold]")
+        for diff in conflicts:
+            console.print(f"  {diff.entity_type}/{diff.entity_id}: {diff.details}")
+        console.print()
+
+    evidence_matches = [d for d in plan.entity_diffs if d.matched_on]
+    if evidence_matches:
+        console.print("[bold]Evidence Matches[/bold]")
+        for diff in evidence_matches:
+            matched = f" ({diff.matched_with})" if diff.matched_with else ""
+            console.print(f"  {diff.entity_type}/{diff.entity_id}{matched}: on {', '.join(diff.matched_on)}")
+        console.print()
+    
+    left_only = [d for d in plan.entity_diffs if d.diff_type == EntityDiffType.ONLY_IN_LEFT]
+    if left_only:
+        console.print("[bold]Only in Left[/bold]")
+        for diff in left_only:
+            console.print(f"  {diff.entity_type}/{diff.entity_id}")
+        console.print()
+    
+    right_only = [d for d in plan.entity_diffs if d.diff_type == EntityDiffType.ONLY_IN_RIGHT]
+    if right_only:
+        console.print("[bold]Only in Right[/bold]")
+        for diff in right_only:
+            console.print(f"  {diff.entity_type}/{diff.entity_id}")
+        console.print()
+    
+    # Provenance warnings
+    if plan.provenance_warnings:
+        console.print("[bold yellow]Provenance Warnings[/bold yellow]")
+        for w in plan.provenance_warnings:
+            console.print(f"  [{w.warning_type.value}] {w.profile_id}: {w.message}")
+        console.print()
+
+
+# Import needed for the reconcile command
+from careeros.reconciliation import EntityDiffType, format_reconciliation_plan
+
+
+def _print_summary(summary: Any, optimizer: Any = None, job_description: Any = None) -> None:
     """Display the optimization summary in the terminal."""
     from careeros import OptimizationSummary
 
@@ -745,7 +884,7 @@ def _print_summary(summary: Any) -> None:
     table.add_column("Metric", style="dim")
     table.add_column("Value", style="bold")
 
-    table.add_row("Profile Coverage", f"{summary.profile_coverage:.0f}%")
+    table.add_row("Profile Element Coverage", f"{summary.profile_coverage:.0f}%")
     table.add_row("Profile Elements", f"{summary.included_profile_elements} / {summary.total_profile_elements}")
     table.add_row("Additional Evidence", str(summary.additional_evidence))
     table.add_row("", "")
@@ -757,12 +896,29 @@ def _print_summary(summary: Any) -> None:
     table.add_row("Education Evaluated", str(summary.education_evaluated))
 
     if summary.requirements_detected is not None:
+        from careeros.reporting import evidence_backed_coverage
+        from careeros.reporting.partner_output import jd_concepts_from_text
+
         table.add_row("", "")
         table.add_row("Requirements Detected", str(summary.requirements_detected))
         table.add_row("Requirements Matched", str(summary.requirements_matched))
-        table.add_row("Requirement Coverage", f"{summary.requirement_coverage:.0f}%")
+        table.add_row("Profile coverage (text match)", f"{summary.requirement_coverage:.0f}%")
+        if optimizer is not None and job_description:
+            ev_backed = evidence_backed_coverage(
+                optimizer, jd_concepts_from_text(job_description)
+            )
+            table.add_row("Evidence-backed coverage", f"{ev_backed:.0f}%")
+            below_text = ev_backed < (summary.requirement_coverage or 0.0)
+        else:
+            below_text = False
 
     console.print(table)
+
+    if summary.requirements_detected is not None and optimizer is not None and job_description and below_text:
+        console.print(
+            "[bold yellow]Note:[/bold yellow] required capabilities are referenced "
+            "in this profile but are not all supported by evidence-backed records."
+        )
 
 
 def _load_payload(file_path: Path) -> dict[str, Any]:

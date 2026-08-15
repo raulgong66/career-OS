@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,13 @@ from careeros_cli.main import app
 
 
 runner = CliRunner()
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences so help-text assertions are terminal-independent."""
+    return ANSI_ESCAPE_RE.sub("", text)
 
 
 def test_help_command() -> None:
@@ -474,8 +482,9 @@ def test_profiles_list_help() -> None:
     result = runner.invoke(app, ["profiles", "list", "--help"])
 
     assert result.exit_code == 0
-    assert "List available profiles" in result.stdout
-    assert "--profiles-root" in result.stdout
+    stdout = _strip_ansi(result.stdout)
+    assert "List available profiles" in stdout
+    assert "--profiles-root" in stdout
 
 
 def test_profiles_list_json_outputs_valid_json(tmp_path: Path) -> None:
@@ -819,5 +828,6 @@ def test_profiles_lifecycle_help() -> None:
     ]:
         result = runner.invoke(app, ["profiles", command, "--help"])
         assert result.exit_code == 0
-        assert help_text in result.stdout
-        assert "--profiles-root" in result.stdout
+        stdout = _strip_ansi(result.stdout)
+        assert help_text in stdout
+        assert "--profiles-root" in stdout

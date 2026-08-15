@@ -21,7 +21,7 @@ def test_build_creates_valid_structure() -> None:
     profile = builder.build(person)
 
     assert profile["profileVersion"] == "1.0.0"
-    assert profile["person"]["id"] == "person-test"
+    assert profile["person"]["id"] == "person-jane-doe"
     assert profile["person"]["names"] == [{"value": "Jane Doe", "usage": "professional"}]
     assert profile["person"]["contact"]["email"] == "jane@example.com"
     assert profile["person"]["contact"]["phone"] == "+1-555-0100"
@@ -45,7 +45,7 @@ def test_build_handles_minimal_person() -> None:
     builder = CanonicalProfileBuilder()
     profile = builder.build(person)
 
-    assert profile["person"]["id"] == "person-min"
+    assert profile["person"]["id"] == "person-bob-smith"
     assert "contact" not in profile["person"]
     assert "location" not in profile["person"]
     assert "links" not in profile["person"]
