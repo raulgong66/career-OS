@@ -41,8 +41,15 @@ print_configuration_banner(runtime_config)
 from careeros import CVOptimizer, EntityValidator, FileSystemRepository, OptimizationResult, OptimizationStatus, ProfileLoader, SchemaLoader, TemplateRegistry, default_template_registry, generate_artifact, generate_markdown_cv, run_profile_quality
 from careeros.exceptions import CareerOSException, DuplicateProfileError, EntityNotFoundError, RepositoryError, SchemaLoadError, ValidationError
 from careeros.acquisition import AcquisitionPipeline, DocumentReadError, LLMExtractionError, PipelineError
-from careeros.import_classification import ImportClassification, classify_import, retain_source, source_hash_for_bytes
-from careeros.profile_repository import ProfileRepository, ProfileState
+from careeros.import_classification import (
+    CandidateMatch,
+    ImportClassification,
+    SAME_DOCUMENT,
+    classify_import,
+    retain_source,
+    source_hash_for_bytes,
+)
+from careeros.profile_repository import ProfileRecord, ProfileRepository, ProfileState
 from careeros.interview import InterviewEngine
 from careeros.interview.exceptions import InvalidProfileError
 from careeros.interview.simulation import (
@@ -667,6 +674,31 @@ def _to_classification_info(
     )
 
 
+def _colliding_record(exc: DuplicateProfileError) -> ProfileRecord | None:
+    """Best-effort lookup of the profile record that blocked an import."""
+    try:
+        return PROFILE_REPOSITORY.get(Path(exc.existing_path).stem)
+    except (EntityNotFoundError, ValueError):
+        return None
+
+
+def _same_source_document(record: ProfileRecord | None, source_hash: str) -> bool:
+    """True when a colliding record was produced from the same source bytes."""
+    if record is None:
+        return False
+    data = record.data if isinstance(record.data, dict) else {}
+    extensions = data.get("extensions") or {}
+    if not isinstance(extensions, dict):
+        extensions = {}
+    acquisition = extensions.get("_acquisition") or {}
+    if not isinstance(acquisition, dict):
+        acquisition = {}
+    return (
+        str(acquisition.get("sourceHash") or "").strip().lower()
+        == (source_hash or "").strip().lower()
+    )
+
+
 @app.post("/profiles/import", response_model=ImportResponse, status_code=status.HTTP_201_CREATED)
 def import_profile(file: UploadFile = File(...)) -> ImportResponse:
     """Import a CV document, run the acquisition pipeline, and create a canonical profile."""
@@ -720,6 +752,31 @@ def import_profile(file: UploadFile = File(...)) -> ImportResponse:
         )
     except DuplicateProfileError as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
+        # Phase 2B: an import that collides with an existing person.id is
+        # idempotent when the colliding record was produced from the exact
+        # same source document; otherwise the duplicate is real and 409.
+        existing = _colliding_record(exc)
+        if _same_source_document(existing, source_hash):
+            classification = ImportClassification(
+                result=SAME_DOCUMENT,
+                candidates=(
+                    CandidateMatch(
+                        profile_id=existing.profile_id,
+                        matched_on=("sourceHash",),
+                    ),
+                ),
+            )
+            return ImportResponse(
+                profileId=existing.profile_id,
+                profile=ProfileInfo(
+                    **to_profile_summary(
+                        existing.data,
+                        existing.profile_id,
+                        state=existing.state,
+                    )
+                ),
+                classification=_to_classification_info(classification),
+            )
         raise HTTPException(status_code=409, detail=ApiErrorResponse(
             error="DUPLICATE_PROFILE",
             detail=str(exc),

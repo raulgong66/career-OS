@@ -1123,6 +1123,92 @@ def test_import_identity_conflict_reported_not_merged(
     assert candidate["conflictingOn"] == ["email"]
 
 
+def test_import_same_document_reimport_is_idempotent(
+    isolated_profile_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2B: same person.id + matching sourceHash => SAME_DOCUMENT, no new profile."""
+    import hashlib
+
+    import api.main as api_main
+
+    payload = b"reimport-same-docx-bytes"
+    source_hash = hashlib.sha256(payload).hexdigest()
+    existing_path = _write_profile(
+        Path("staging") / "person-jane-doe-profile.yaml",
+        _person("person-jane-doe", name="Jane Doe"),
+        source_hash=source_hash,
+    )
+    before = existing_path.read_bytes()
+    stub = _StubImportPipeline(_person("person-jane-doe", name="Jane Doe"))
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", lambda: stub)
+
+    response = client.post(
+        "/profiles/import",
+        files={"file": ("jane.docx", payload, _DOCX_MIME)},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["profileId"] == "person-jane-doe-profile"
+    assert body["classification"]["result"] == "SAME_DOCUMENT"
+    assert body["classification"]["candidates"][0]["matchedOn"] == ["sourceHash"]
+
+    # no new profile is created and the existing record is untouched
+    staged = sorted(p.name for p in (isolated_profile_store / "staging").glob("*.yaml"))
+    assert staged == ["person-jane-doe-profile.yaml"]
+    assert existing_path.read_bytes() == before
+
+
+def test_import_same_person_different_document_still_409(
+    isolated_profile_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2B: same person.id + different sourceHash => 409 DUPLICATE_PROFILE."""
+    import hashlib
+
+    import api.main as api_main
+
+    existing_hash = hashlib.sha256(b"original-document").hexdigest()
+    _write_profile(
+        Path("staging") / "person-jane-doe-profile.yaml",
+        _person("person-jane-doe", name="Jane Doe"),
+        source_hash=existing_hash,
+    )
+    stub = _StubImportPipeline(_person("person-jane-doe", name="Jane Doe"))
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", lambda: stub)
+
+    response = client.post(
+        "/profiles/import",
+        files={"file": ("jane.docx", b"a-different-document", _DOCX_MIME)},
+    )
+    assert response.status_code == 409
+    body = response.json()
+    assert body["error"] == "DUPLICATE_PROFILE"
+    assert isinstance(body["detail"], str)
+
+
+def test_import_legacy_existing_without_hash_still_409(
+    isolated_profile_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Phase 2B: a legacy existing record without sourceHash keeps the 409."""
+    import api.main as api_main
+
+    existing_path = _write_profile(
+        Path("staging") / "person-jane-doe-profile.yaml",
+        _person("person-jane-doe", name="Jane Doe"),
+    )
+    before = existing_path.read_bytes()
+    stub = _StubImportPipeline(_person("person-jane-doe", name="Jane Doe"))
+    monkeypatch.setattr(api_main, "AcquisitionPipeline", lambda: stub)
+
+    response = client.post(
+        "/profiles/import",
+        files={"file": ("jane.docx", b"legacy-reimport", _DOCX_MIME)},
+    )
+    assert response.status_code == 409
+    assert response.json()["error"] == "DUPLICATE_PROFILE"
+    # legacy record untouched, no second profile
+    assert existing_path.read_bytes() == before
+
+
 def test_dto_mapping_profile_summary() -> None:
     """Verify DTO mapping layer produces correct ProfileSummary from canonical data."""
     from api.dto import to_profile_summary
