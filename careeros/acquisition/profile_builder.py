@@ -124,6 +124,10 @@ class CanonicalProfileBuilder:
             profile["extensions"]["_acquisition"] = trace
         if imported_at:
             profile["extensions"]["importedAt"] = imported_at
+
+        from careeros.evidence_hydration import build_evidence_items
+
+        profile["evidence"] = build_evidence_items(profile)
         return profile
 
     @staticmethod

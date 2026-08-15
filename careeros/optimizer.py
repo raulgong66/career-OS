@@ -512,6 +512,30 @@ class CVOptimizer:
             profile_data: Dictionary containing the canonical profile data.
         """
         self.profile = profile_data
+        self._hydrate_evidence()
+
+    def _hydrate_evidence(self) -> None:
+        """Hydrate profile evidence from skill experienceEvidence when absent.
+
+        Real profiles produced before evidence hydration carry an empty
+        ``evidence`` collection even though ``skill.extensions.experienceEvidence``
+        holds the substantiating skill-to-experience links. Fill the top-level
+        collection from those links (reusing the shared hydration function) so
+        the optimizer operates on real evidence. Profiles that already carry
+        evidence, or that have no experience evidence at all, are left untouched.
+        """
+        from .evidence_hydration import build_evidence_items
+
+        profile = self.profile or {}
+        if profile.get("evidence"):
+            return
+        has_experience_evidence = any(
+            (skill.get("extensions") or {}).get("experienceEvidence")
+            for skill in profile.get("skills") or []
+        )
+        if not has_experience_evidence:
+            return
+        profile["evidence"] = build_evidence_items(profile)
 
     def optimize_cv(self, artifact_id: str, job_description: Union[str, None] = None) -> OptimizationResult:
         """Generate structured recommendations for a CV artifact.

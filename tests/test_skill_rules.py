@@ -947,12 +947,11 @@ def test_all_skill_rules_deterministic() -> None:
 
 
 def test_all_skill_rules_confidence_is_one() -> None:
-    rules = [
+    non_evidence_rules = [
         StrongestSkillsRule(),
         EmergingSkillsRule(),
         CoreCompetenciesRule(),
         SkillCategoryBalanceRule(),
-        SkillEvidenceStrengthRule(),
         RareSkillsRule(),
         SpecializedSkillsRule(),
         TransferableSkillsRule(),
@@ -962,11 +961,20 @@ def test_all_skill_rules_confidence_is_one() -> None:
         skills=[_skill("s1", "Python", "Programming")],
     )
 
-    for rule in rules:
+    for rule in non_evidence_rules:
         ctx = _rule_context(profile)
         results = rule.execute(ctx)
         for r in results:
             assert r.confidence == 1.0, f"{rule.id} has confidence != 1.0"
+
+    rule = SkillEvidenceStrengthRule()
+    results = rule.execute(_rule_context(profile))
+    for r in results:
+        assert 0.0 <= r.confidence <= 1.0
+        assert r.metadata["provenance"] in ("full", "partial", "none")
+        assert r.metadata["evidence_confidence_grade"] in (
+            "very_low", "low", "medium", "high", "very_high",
+        )
 
 
 # ===================================================================
