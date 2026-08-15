@@ -350,14 +350,14 @@ def optimize_cv(
         console.print("[bold green]Your CV is already fully optimized for this opportunity.[/bold green]")
         console.print(f"[dim]{result.message}[/dim]")
         if result.summary:
-            _print_summary(result.summary)
+            _print_summary(result.summary, optimizer, job_desc_text)
         return
 
     if result.status == OptimizationStatus.NO_MATCHES:
         console.print("[bold yellow]No additions recommended.[/bold yellow]")
         console.print(f"[dim]{result.message}[/dim]")
         if result.summary:
-            _print_summary(result.summary)
+            _print_summary(result.summary, optimizer, job_desc_text)
         return
 
     recommendations = result.recommendations
@@ -370,7 +370,7 @@ def optimize_cv(
     table.add_column("Operation", style="green")
     table.add_column("Display Name", style="bold")
     table.add_column("Evidence", style="magenta")
-    table.add_column("Total Score", style="yellow", justify="right")
+    table.add_column("Overall match score", style="yellow", justify="right")
     table.add_column("Scores Breakdown", style="dim")
 
     for rec in recommendations:
@@ -378,9 +378,9 @@ def optimize_cv(
         ev_str = ", ".join(ev_list) if ev_list else "None"
         
         breakdown = (
-            f"JD: {rec.scores.get('job_description_match', 0.0):.1f} | "
-            f"Ctx: {rec.scores.get('target_context_match', 0.0):.1f} | "
-            f"Ev: {rec.scores.get('evidence_strength', 0.0):.1f}"
+            f"Requirement match: {rec.scores.get('job_description_match', 0.0):.1f} | "
+            f"Context match: {rec.scores.get('target_context_match', 0.0):.1f} | "
+            f"Evidence strength: {rec.scores.get('evidence_strength', 0.0):.1f}"
         )
         table.add_row(
             rec.type.capitalize(),
@@ -394,7 +394,7 @@ def optimize_cv(
     console.print(table)
 
     if result.summary:
-        _print_summary(result.summary)
+        _print_summary(result.summary, optimizer, job_desc_text)
 
     if docx or output:
         if not (docx and output):
@@ -872,7 +872,7 @@ def profiles_reconcile(
 from careeros.reconciliation import EntityDiffType, format_reconciliation_plan
 
 
-def _print_summary(summary: Any) -> None:
+def _print_summary(summary: Any, optimizer: Any = None, job_description: Any = None) -> None:
     """Display the optimization summary in the terminal."""
     from careeros import OptimizationSummary
 
@@ -884,7 +884,7 @@ def _print_summary(summary: Any) -> None:
     table.add_column("Metric", style="dim")
     table.add_column("Value", style="bold")
 
-    table.add_row("Profile Coverage", f"{summary.profile_coverage:.0f}%")
+    table.add_row("Profile Element Coverage", f"{summary.profile_coverage:.0f}%")
     table.add_row("Profile Elements", f"{summary.included_profile_elements} / {summary.total_profile_elements}")
     table.add_row("Additional Evidence", str(summary.additional_evidence))
     table.add_row("", "")
@@ -896,12 +896,29 @@ def _print_summary(summary: Any) -> None:
     table.add_row("Education Evaluated", str(summary.education_evaluated))
 
     if summary.requirements_detected is not None:
+        from careeros.reporting import evidence_backed_coverage
+        from careeros.reporting.partner_output import jd_concepts_from_text
+
         table.add_row("", "")
         table.add_row("Requirements Detected", str(summary.requirements_detected))
         table.add_row("Requirements Matched", str(summary.requirements_matched))
-        table.add_row("Requirement Coverage", f"{summary.requirement_coverage:.0f}%")
+        table.add_row("Profile coverage (text match)", f"{summary.requirement_coverage:.0f}%")
+        if optimizer is not None and job_description:
+            ev_backed = evidence_backed_coverage(
+                optimizer, jd_concepts_from_text(job_description)
+            )
+            table.add_row("Evidence-backed coverage", f"{ev_backed:.0f}%")
+            below_text = ev_backed < (summary.requirement_coverage or 0.0)
+        else:
+            below_text = False
 
     console.print(table)
+
+    if summary.requirements_detected is not None and optimizer is not None and job_description and below_text:
+        console.print(
+            "[bold yellow]Note:[/bold yellow] required capabilities are referenced "
+            "in this profile but are not all supported by evidence-backed records."
+        )
 
 
 def _load_payload(file_path: Path) -> dict[str, Any]:

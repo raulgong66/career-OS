@@ -955,6 +955,16 @@ class CVOptimizer:
             token = phrase_text.lower()
             normalized = _REQUIREMENT_ALIASES.get(token, token)
             requirements.add(normalized)
+            # Also emit individual words of the phrase so a captured
+            # capitalized sequence never hides a single-word requirement
+            # (e.g. "AWS Cloud Platform Expert" must still surface
+            # "aws"/"cloud").  Mirrors the component-splitting already
+            # done for slash-compounds above.
+            for word in phrase_text.split():
+                word = word.lower()
+                if len(word) >= 3 and word not in _STOP_WORDS:
+                    word_norm = _REQUIREMENT_ALIASES.get(word, word)
+                    requirements.add(word_norm)
 
         # --- Phase 2: known phrase extraction ---
         for phrase in _KNOWN_PHRASES:
