@@ -36,7 +36,11 @@ from careeros.profile_quality.cli import (
     print_improvement_queue as print_profile_quality_queue,
     print_profile_health,
 )
-from careeros.profile_repository import ProfileRepository, ProfileState, profile_display_id, profile_display_name
+from careeros.reconciliation import (
+    load_profiles_for_reconciliation,
+    reconcile_profiles,
+    write_reconciliation_plan,
+)
 
 app = typer.Typer(
     name="careeros",
@@ -731,6 +735,132 @@ def profiles_delete(
 
     repository.delete(record.profile_id)
     console.print(f"[bold green]Deleted[/bold green] {display_id}")
+
+
+@PROFILES_APP.command("reconcile")
+def profiles_reconcile(
+    left_id: str = typer.Argument(..., help="First profile ID to compare."),
+    right_id: str = typer.Argument(..., help="Second profile ID to compare."),
+    profiles_root: Path = typer.Option(
+        None,
+        "--profiles-root",
+        help="Profiles directory. Defaults to the repository profiles folder.",
+    ),
+    output: Path = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write reconciliation plan to a YAML file.",
+    ),
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Emit the plan as JSON to stdout.",
+    ),
+) -> None:
+    """Compare two profiles and produce a deterministic reconciliation plan.
+    
+    This command analyzes two profiles and classifies their differences
+    without modifying either profile. It compares:
+    - Person identity signals (name, email, phone, LinkedIn, GitHub)
+    - All profile entities (experiences, organizations, skills, etc.)
+    - Provenance metadata (sourceHash, sourceName, importedAt)
+    
+    The output is a deterministic reconciliation plan suitable for
+    human review or programmatic consumption.
+    """
+    root = profiles_root or (Path(__file__).resolve().parents[1] / "profiles")
+    
+    left_record, right_record = load_profiles_for_reconciliation(root, left_id, right_id)
+    
+    if left_record is None:
+        console.print(f"[bold red]Profile not found:[/bold red] {left_id}")
+        raise typer.Exit(code=1)
+    if right_record is None:
+        console.print(f"[bold red]Profile not found:[/bold red] {right_id}")
+        raise typer.Exit(code=1)
+    
+    plan = reconcile_profiles(left_record, right_record)
+    
+    if output:
+        out_path = write_reconciliation_plan(plan, output)
+        console.print(f"[bold green]Reconciliation plan written[/bold green] {out_path}")
+        return
+    
+    if json_output:
+        import json
+        console.print_json(data=json.loads(format_reconciliation_plan(plan, output_format="json")))
+        return
+    
+    # Human-readable table output
+    from rich.table import Table
+    from rich import box
+    
+    console.print(f"[bold]Reconciliation Plan[/bold]")
+    console.print(f"  Left:  {plan.left_profile_id} (person: {plan.left_person_id or 'unknown'})")
+    console.print(f"  Right: {plan.right_profile_id} (person: {plan.right_person_id or 'unknown'})")
+    console.print()
+    
+    # Identity comparison
+    matched, conflicting = plan.identity_comparison
+    console.print("[bold]Identity Comparison[/bold]")
+    if matched:
+        console.print(f"  Matched: {', '.join(matched)}")
+    else:
+        console.print("  Matched: (none)")
+    if conflicting:
+        console.print(f"  Conflicting: {', '.join(conflicting)}")
+    else:
+        console.print("  Conflicting: (none)")
+    console.print()
+    
+    # Entity diffs summary
+    diff_counts = {"SAME": 0, "CONFLICT": 0, "ONLY_IN_LEFT": 0, "ONLY_IN_RIGHT": 0}
+    for diff in plan.entity_diffs:
+        diff_counts[diff.diff_type.value] += 1
+    
+    console.print("[bold]Entity Differences[/bold]")
+    table = Table(box=box.MINIMAL, padding=(0, 2))
+    table.add_column("Type", style="dim")
+    table.add_column("Count", justify="right")
+    for diff_type, count in diff_counts.items():
+        if count > 0:
+            table.add_row(diff_type, str(count))
+    console.print(table)
+    console.print()
+    
+    # Show conflicts and unique items
+    conflicts = [d for d in plan.entity_diffs if d.diff_type == EntityDiffType.CONFLICT]
+    if conflicts:
+        console.print("[bold]Conflicts[/bold]")
+        for diff in conflicts:
+            console.print(f"  {diff.entity_type}/{diff.entity_id}: {diff.details}")
+        console.print()
+    
+    left_only = [d for d in plan.entity_diffs if d.diff_type == EntityDiffType.ONLY_IN_LEFT]
+    if left_only:
+        console.print("[bold]Only in Left[/bold]")
+        for diff in left_only:
+            console.print(f"  {diff.entity_type}/{diff.entity_id}")
+        console.print()
+    
+    right_only = [d for d in plan.entity_diffs if d.diff_type == EntityDiffType.ONLY_IN_RIGHT]
+    if right_only:
+        console.print("[bold]Only in Right[/bold]")
+        for diff in right_only:
+            console.print(f"  {diff.entity_type}/{diff.entity_id}")
+        console.print()
+    
+    # Provenance warnings
+    if plan.provenance_warnings:
+        console.print("[bold yellow]Provenance Warnings[/bold yellow]")
+        for w in plan.provenance_warnings:
+            console.print(f"  [{w.warning_type.value}] {w.profile_id}: {w.message}")
+        console.print()
+
+
+# Import needed for the reconcile command
+from careeros.reconciliation import EntityDiffType, format_reconciliation_plan
 
 
 def _print_summary(summary: Any) -> None:
