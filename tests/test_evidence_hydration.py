@@ -261,7 +261,7 @@ def test_hydration_deterministic_idempotent_schema_valid() -> None:
 
 
 def test_optimizer_consumes_hydrated_staging_profile() -> None:
-    staging = REPO_ROOT / "profiles" / "staging" / "person-smith-profile.yaml"
+    staging = REPO_ROOT / "tests" / "fixtures" / "person-smith-profile.yaml"
     profile = yaml.safe_load(staging.read_text(encoding="utf-8"))
 
     items = build_evidence_items(profile)
