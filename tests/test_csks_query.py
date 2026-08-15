@@ -42,6 +42,7 @@ def test_entity_lookup_unknown(engine: CSKSQueryEngine) -> None:
     result = engine.query("What is the ZzZzZzWidget?")
     assert result.entities_found == 0
     assert "Could not find entity" in result.answer
+    assert result.confidence == 0.0
 
 
 def test_entity_lookup_adr_hyphen(engine: CSKSQueryEngine) -> None:
@@ -107,6 +108,14 @@ def test_data_flow_path_artifact_generation(engine: CSKSQueryEngine) -> None:
     assert "Generate" in result.answer
 
 
+def test_how_is_ai_applied(engine: CSKSQueryEngine) -> None:
+    result = engine.query("How is AI applied?")
+    assert result.query_type == "data_flow_path"
+    assert "Data flow for" in result.answer
+    assert result.entities_found >= 1
+    assert result.confidence == 1.0
+
+
 def test_capability_check_pdf(engine: CSKSQueryEngine) -> None:
     result = engine.query("Does CareerOS support PDF generation?")
     assert result.query_type == "capability_check"
@@ -123,6 +132,12 @@ def test_status_check(engine: CSKSQueryEngine) -> None:
     result = engine.query("M1.21 status")
     assert result.query_type == "status_check"
     assert "Completed" in result.answer
+
+
+def test_confidence_zero_without_citations(engine: CSKSQueryEngine) -> None:
+    result = engine.query("M1.21 status")
+    assert result.entities_found >= 1
+    assert result.confidence == 0.0
 
 
 def test_unknown_query(engine: CSKSQueryEngine) -> None:
@@ -158,6 +173,12 @@ def test_extract_terms_quoted_and_numeric(engine: CSKSQueryEngine) -> None:
     terms = engine._extract_terms('"ProfileLoader" from 1999')
     assert "ProfileLoader" in terms
     assert not any(t.isdigit() for t in terms)
+
+
+def test_extract_terms_careeros_trailing_acronym(engine: CSKSQueryEngine) -> None:
+    terms = engine._extract_terms("What is CareerOS?")
+    assert "CareerOS" in terms
+    assert "What" not in terms
 
 
 def test_resolve_target_prefers_component_over_dependency(engine: CSKSQueryEngine) -> None:
