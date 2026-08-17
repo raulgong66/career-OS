@@ -11,6 +11,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/profiles': { target: 'http://localhost:8000', changeOrigin: true },
+      '/missions': { target: 'http://localhost:8000', changeOrigin: true },
       '/generate': { target: 'http://localhost:8000', changeOrigin: true },
       '/artifact-templates': { target: 'http://localhost:8000', changeOrigin: true },
       '/entities': { target: 'http://localhost:8000', changeOrigin: true },

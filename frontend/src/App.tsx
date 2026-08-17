@@ -4,12 +4,14 @@ import TailoringPage from './pages/TailoringPage';
 import InterviewPracticePage from './pages/InterviewPracticePage';
 import ArtifactWorkspacePage from './pages/ArtifactWorkspacePage';
 import CareerKnowledgePage from './pages/CareerKnowledgePage';
+import MissionPage from './pages/MissionPage';
 
 function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/mission" element={<MissionPage />} />
         <Route path="/tailoring" element={<TailoringPage />} />
         <Route path="/interviews/practice" element={<InterviewPracticePage />} />
         <Route path="/artifacts" element={<ArtifactWorkspacePage />} />

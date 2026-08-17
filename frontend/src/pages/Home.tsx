@@ -33,11 +33,21 @@ const primaryModules: PrimaryModule[] = [
   },
 ];
 
-const comingNextModules = [
-  'Career Analytics',
-  'Learning Planner',
-  'Application Tracking',
-  'Skill Gap Analysis',
+interface ComingNextModule {
+  title: string;
+  description?: string;
+  to?: string;
+}
+
+const comingNextModules: ComingNextModule[] = [
+  {
+    title: 'Mission Contract',
+    description: 'Turn a business challenge into an evidence-ready workforce mission.',
+    to: '/mission',
+  },
+  { title: 'Career Analytics' },
+  { title: 'Learning Planner' },
+  { title: 'Application Tracking' },
 ];
 
 export default function Home() {
@@ -208,13 +218,30 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
               {comingNextModules.map((module) => (
                 <div
-                  key={module}
-                  className="w-full bg-white/50 backdrop-blur-sm border border-dashed border-blue-200 rounded-xl p-6"
+                  key={module.title}
+                  className={`w-full bg-white/50 backdrop-blur-sm border border-dashed border-blue-200 rounded-xl p-6 flex flex-col ${
+                    module.to ? 'hover:bg-white/80 hover:border-blue-300 transition-all duration-300' : ''
+                  }`}
                 >
-                  <h3 className="text-lg font-semibold text-gray-700 mb-3">{module}</h3>
-                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100/70 text-blue-600">
-                    COMING NEXT
-                  </span>
+                  <h3 className="text-lg font-semibold text-gray-700 mb-3">{module.title}</h3>
+                  {module.description && (
+                    <p className="text-sm text-gray-500 leading-relaxed mb-3 flex-1">
+                      {module.description}
+                    </p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100/70 text-blue-600">
+                      COMING NEXT
+                    </span>
+                    {module.to && (
+                      <button
+                        onClick={() => module.to && navigate(module.to)}
+                        className="text-sm font-semibold text-blue-700 hover:text-blue-900"
+                      >
+                        Open &rarr;
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
