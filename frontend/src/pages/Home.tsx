@@ -45,6 +45,11 @@ const comingNextModules: ComingNextModule[] = [
     description: 'Turn a business challenge into an evidence-ready workforce mission.',
     to: '/mission',
   },
+  {
+    title: 'Transformation Mission',
+    description: 'Decompose a client business objective into evaluable transformation phases.',
+    to: '/transformation',
+  },
   { title: 'Career Analytics' },
   { title: 'Learning Planner' },
   { title: 'Application Tracking' },

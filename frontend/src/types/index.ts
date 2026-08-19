@@ -420,3 +420,19 @@ export interface MissionCandidateEvaluation {
   profile_id: string;
   result: MissionEvaluationResult;
 }
+
+export interface TransformationPhase {
+  phase_id: string;
+  phase_number: number;
+  title: string;
+  description: string;
+  contract: MissionContract;
+}
+
+export interface TransformationPlan {
+  plan_id: string;
+  objective: string;
+  summary: string;
+  phases: TransformationPhase[];
+  constraints: string[];
+}

@@ -27,6 +27,15 @@ from .interpreter import (
     MissionInterpreter,
     TruncatedMissionResponseError,
 )
+from .transformation import (
+    PhaseContractError,
+    PhaseCountError,
+    TransformationInterpretationError,
+    TransformationInterpreter,
+    TransformationPhase,
+    TransformationPlan,
+    TruncatedTransformationResponseError,
+)
 
 __all__ = [
     "MissionContract",
@@ -35,9 +44,16 @@ __all__ = [
     "MissionInterpretationError",
     "MissionInterpreter",
     "MissionStatus",
+    "PhaseContractError",
+    "PhaseCountError",
     "RequirementCoverage",
     "RequirementStatus",
+    "TransformationInterpretationError",
+    "TransformationInterpreter",
+    "TransformationPhase",
+    "TransformationPlan",
     "TruncatedMissionResponseError",
+    "TruncatedTransformationResponseError",
     "build_contract",
     "build_job_description",
     "evaluate_mission",

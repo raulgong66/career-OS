@@ -37,6 +37,6 @@ describe('Home', () => {
       screen.getByText('Turn a business challenge into an evidence-ready workforce mission.'),
     ).toBeTruthy();
     expect(screen.getAllByText('COMING NEXT').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Open →' })).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Open →' }).length).toBeGreaterThanOrEqual(1);
   });
 });
