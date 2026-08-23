@@ -84,7 +84,7 @@ describe('TransformationPage', () => {
 
   beforeEach(() => {
     interpretError = false;
-    fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/transformations/interpret')) {
         if (interpretError) {

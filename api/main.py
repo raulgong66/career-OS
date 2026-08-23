@@ -15,9 +15,10 @@ from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import yaml
 
 
@@ -1448,3 +1449,30 @@ def _media_type_for_format(output_format: str) -> str:
     if normalized_format == "docx":
         return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     return "application/octet-stream"
+
+
+# ---------------------------------------------------------------------------
+# Production frontend serving (single-service deployment)
+# ---------------------------------------------------------------------------
+# The React SPA is built into frontend/dist by `npm run build` and served by
+# this same origin, matching the relative API URLs used by the frontend
+# services. This block is registered last so every FastAPI route above
+# (including /docs, /redoc, /openapi.json) keeps matching precedence.
+# When frontend/dist does not exist (backend-only/test environments), the
+# app behaves exactly as before.
+
+FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
+
+if FRONTEND_DIST.is_dir():
+    _FRONTEND_ASSETS = FRONTEND_DIST / "assets"
+    if _FRONTEND_ASSETS.is_dir():
+        app.mount("/assets", StaticFiles(directory=_FRONTEND_ASSETS), name="frontend-assets")
+
+    @app.get("/{spa_path:path}", include_in_schema=False)
+    def serve_frontend(spa_path: str) -> Response:
+        """Serve built SPA files and fall back to index.html for client-side routes."""
+        if spa_path:
+            candidate = (FRONTEND_DIST / spa_path).resolve()
+            if candidate.is_relative_to(FRONTEND_DIST.resolve()) and candidate.is_file():
+                return FileResponse(candidate)
+        return FileResponse(FRONTEND_DIST / "index.html")
