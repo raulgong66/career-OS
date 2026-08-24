@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Iterable
 
 from careeros.knowledge import GraphEdge, GraphNode, KnowledgeGraph
 
 from .models import ExtractedEntity, ExtractedRelationship
+
+logger = logging.getLogger(__name__)
 
 
 class CSKSKnowledgeGraphBuilder:
@@ -94,10 +97,22 @@ class CSKSExtractorOrchestrator:
         """Return the canonical, deterministic source path order for this repo."""
         return self._discover_source_paths()
 
-    def extract_all(self, source_paths: list[str] | None = None) -> tuple[list, list]:
-        """Extract all entities and relationships from the repository."""
+    def extract_all(self, source_paths: list[str] | None = None, *, return_errors: bool = False) -> tuple[list, list] | tuple[list, list, list[dict]]:
+        """Extract all entities and relationships from the repository.
+
+        Args:
+            source_paths: Optional list of source paths to extract from. If None,
+                discovers all sources.
+            return_errors: If True, returns a 3-tuple including extraction errors.
+                Default False for backward compatibility.
+
+        Returns:
+            If return_errors=False (default): (entities, relationships)
+            If return_errors=True: (entities, relationships, extraction_errors)
+        """
         all_entities = []
         all_relationships = []
+        extraction_errors = []
 
         if source_paths is None:
             source_paths = self._discover_source_paths()
@@ -111,9 +126,24 @@ class CSKSExtractorOrchestrator:
                         all_entities.extend(entities)
                         all_relationships.extend(relationships)
                     except Exception as e:
+                        error_info = {
+                            "source_path": source_path,
+                            "extractor": extractor.__class__.__name__,
+                            "exception_type": type(e).__name__,
+                            "message": str(e),
+                        }
+                        extraction_errors.append(error_info)
                         # Log error but continue
-                        print(f"Error extracting from {source_path} with {extractor.__class__.__name__}: {e}")
+                        logger.warning(
+                            "CSKS extraction failed: %s with %s: %s",
+                            source_path,
+                            extractor.__class__.__name__,
+                            e,
+                            exc_info=True,
+                        )
 
+        if return_errors:
+            return all_entities, all_relationships, extraction_errors
         return all_entities, all_relationships
 
     def _discover_source_paths(self) -> list[str]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import subprocess
 import time
 from dataclasses import asdict, dataclass, field
@@ -9,9 +10,12 @@ from pathlib import Path
 
 from careeros.knowledge import KnowledgeGraph
 
+from .aliases import ALL_ALIASES
 from .builder import CSKSKnowledgeGraphBuilder, CSKSExtractorOrchestrator
 from .models import ExtractedEntity, ExtractedRelationship
 from .query import CSKSQueryEngine
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,6 +50,7 @@ class CSKSIndexer:
         self.graph: KnowledgeGraph | None = None
         self.query_engine: CSKSQueryEngine | None = None
         self._metadata = IndexMetadata()
+        self._extraction_errors: list[dict] = []
 
     def build_full_index(self) -> KnowledgeGraph:
         """Extract every source and build the complete knowledge graph.
@@ -56,18 +61,23 @@ class CSKSIndexer:
         start_time = time.time()
 
         orchestrator = CSKSExtractorOrchestrator(self.repo_root)
+        source_paths = orchestrator.discover_source_paths()
         entities: list = []
         relationships: list = []
-        for source_path in orchestrator.discover_source_paths():
-            source_entities, source_relationships = orchestrator.extract_all([source_path])
+        for source_path in source_paths:
+            source_entities, source_relationships, errors = orchestrator.extract_all([source_path], return_errors=True)
             entities.extend(source_entities)
             relationships.extend(source_relationships)
+            self._extraction_errors.extend(errors)
             self._write_artifact(source_path, source_entities, source_relationships)
-        self._prune_artifacts(orchestrator.discover_source_paths())
+        self._prune_artifacts(source_paths)
 
         graph = CSKSKnowledgeGraphBuilder().build(entities, relationships)
         self.graph = graph
         self.query_engine = CSKSQueryEngine(graph, repo_root=self.repo_root)
+
+        # Check for missing alias targets
+        missing_aliases = self._check_missing_alias_targets(graph)
 
         self._metadata = IndexMetadata(
             version="1.0",
@@ -81,6 +91,16 @@ class CSKSIndexer:
         )
         self._save_metadata()
         self._elapsed_ms = int((time.time() - start_time) * 1000)
+
+        # Diagnostic logging
+        logger.info(
+            "CSKS index built: %d files discovered, %d entities extracted, %d extraction errors, %d missing alias targets",
+            len(source_paths),
+            graph.node_count,
+            len(self._extraction_errors),
+            len(missing_aliases),
+        )
+
         return graph
 
     def get_graph(self) -> KnowledgeGraph:
@@ -149,7 +169,21 @@ class CSKSIndexer:
             "last_build_ms": getattr(self, "_elapsed_ms", 0),
             "created_at": self._metadata.created_at,
             "updated_at": self._metadata.updated_at,
+            "missing_alias_targets": self._check_missing_alias_targets(graph),
+            "extraction_errors": self._extraction_errors,
         }
+
+    def _check_missing_alias_targets(self, graph: KnowledgeGraph) -> list[dict]:
+        """Identify entity aliases whose target entity does not exist in the graph."""
+        missing = []
+        for alias_entry in ALL_ALIASES:
+            if alias_entry.kind == "entity" and alias_entry.entity_id:
+                if alias_entry.entity_id not in graph.nodes:
+                    missing.append({
+                        "alias": alias_entry.alias,
+                        "target_id": alias_entry.entity_id,
+                    })
+        return missing
 
     def incremental_update(self, changed_files: list[str]) -> KnowledgeGraph:
         """Re-index only the changed source files.
