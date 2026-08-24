@@ -1,0 +1,215 @@
+# Deterministic, sanitized test fixture (NOT a real person or CV).
+# Derived from a real imported staging CV only in structure; all personally
+# identifying details (name, email, phone, address, employers, source paths)
+# have been replaced with generic placeholders. Used by
+# tests/test_evidence_hydration.py to exercise optimizer evidence hydration
+# without depending on gitignored working data under profiles/staging/.
+profileVersion: 1.0.0
+person:
+  id: person-smith
+  names:
+  - value: Jane Smith
+    usage: professional
+  contact:
+    email: jane.smith@example.com
+  location:
+    label: Testville, UK
+professionalSummaries: []
+experiences:
+- id: exp-current
+  title: Sr Network Engineer
+  organizationRefs:
+  - id: org-current-inc
+    type: organization
+  dateRange:
+    start: 2022-09
+    isCurrent: true
+  engagementType: Full-time
+  scope: Lead network and security operations for enterprise clients.
+- id: exp-network-security
+  title: Network Security Consultant
+  organizationRefs:
+  - id: org-security-consultancy
+    type: organization
+  dateRange:
+    start: 2019-05
+    end: 2022-07
+    isCurrent: false
+  engagementType: Full-time
+  scope: Delivered penetration testing, network architecture, and security
+    operations for regulated clients.
+- id: exp-network-ops
+  title: Lead Network Operations
+  organizationRefs:
+  - id: org-network-ops
+    type: organization
+  dateRange:
+    start: 2016-05
+    end: 2019-04
+    isCurrent: false
+  engagementType: Full-time
+  scope: Managed 24x7 monitoring and SLA-based problem resolution for customers
+    and network components.
+- id: exp-security-ops
+  title: Sr. Security Consultant
+  organizationRefs:
+  - id: org-security-svc
+    type: organization
+  dateRange:
+    start: 2014-09
+    end: 2016-04
+    isCurrent: false
+  engagementType: Full-time
+  scope: Provided network security operations support and implemented firewalls,
+    routers, VPNs, and load balancers.
+- id: exp-network-architect
+  title: Associate Network Architect
+  organizationRefs:
+  - id: org-architecture-co
+    type: organization
+  dateRange:
+    start: 2013-11
+    end: 2014-09
+    isCurrent: false
+  engagementType: Full-time
+  scope: Designed LAN/WAN solutions for enterprise clients.
+- id: exp-network-engineer
+  title: Sr. Network Engineer
+  organizationRefs:
+  - id: org-networks-llc
+    type: organization
+  dateRange:
+    start: 2009-07
+    end: 2013-10
+    isCurrent: false
+  engagementType: Full-time
+  scope: Configured and maintained security appliances and routing infrastructure.
+- id: exp-support-engineer
+  title: Network Engineer
+  organizationRefs:
+  - id: org-it-services
+    type: organization
+  dateRange:
+    start: 2007-07
+    end: 2009-06
+    isCurrent: false
+  engagementType: Full-time
+  scope: Managed change control and provided technical support for critical
+    installations.
+- id: exp-systems-admin
+  title: System Admin
+  organizationRefs:
+  - id: org-admin-group
+    type: organization
+  dateRange:
+    start: 2004-07
+    end: 2007-06
+    isCurrent: false
+  engagementType: Full-time
+  scope: Managed routing, firewall, and server infrastructure.
+organizations:
+- id: org-current-inc
+  name: Current Inc.
+- id: org-security-consultancy
+  name: Security Consultancy
+- id: org-network-ops
+  name: Network Operations Ltd.
+- id: org-security-svc
+  name: Security Services Corp.
+- id: org-architecture-co
+  name: Architecture Co.
+- id: org-networks-llc
+  name: Networks LLC
+- id: org-it-services
+  name: IT Services Group
+- id: org-admin-group
+  name: Admin Group
+projects: []
+skills:
+- id: skill-kali-linux
+  name: Kali Linux
+  category: Operating System
+  extensions:
+    experienceEvidence:
+    - experienceId: exp-current
+      organization: Current Inc.
+      title: Sr Network Engineer
+    - experienceId: exp-network-security
+      organization: Security Consultancy
+      title: Network Security Consultant
+    - experienceId: exp-network-ops
+      organization: Network Operations Ltd.
+      title: Lead Network Operations
+    - experienceId: exp-security-ops
+      organization: Security Services Corp.
+      title: Sr. Security Consultant
+- id: skill-wireshark
+  name: Wireshark
+  category: Network Protocol Analyzer
+  extensions:
+    experienceEvidence:
+    - experienceId: exp-current
+      organization: Current Inc.
+      title: Sr Network Engineer
+    - experienceId: exp-network-security
+      organization: Security Consultancy
+      title: Network Security Consultant
+- id: skill-nmap
+  name: Nmap
+  category: Network Scanning Tool
+  extensions:
+    experienceEvidence:
+    - experienceId: exp-current
+      organization: Current Inc.
+      title: Sr Network Engineer
+    - experienceId: exp-network-security
+      organization: Security Consultancy
+      title: Network Security Consultant
+- id: skill-burp-suite
+  name: Burp Suite
+  category: Web Application Security Testing Tool
+  extensions:
+    experienceEvidence:
+    - experienceId: exp-current
+      organization: Current Inc.
+      title: Sr Network Engineer
+    - experienceId: exp-network-security
+      organization: Security Consultancy
+      title: Network Security Consultant
+- id: skill-metasploit
+  name: Metasploit
+  category: Penetration Testing Framework
+  extensions:
+    experienceEvidence:
+    - experienceId: exp-current
+      organization: Current Inc.
+      title: Sr Network Engineer
+    - experienceId: exp-network-security
+      organization: Security Consultancy
+      title: Network Security Consultant
+- id: skill-python
+  name: Python
+  category: Programming Language
+  extensions:
+    proficiency: Expert
+    experienceEvidence:
+    - experienceId: exp-network-ops
+      organization: Network Operations Ltd.
+      title: Lead Network Operations
+- id: skill-cisco
+  name: Cisco
+  category: Network Equipment Manufacturer
+  extensions:
+    proficiency: Advanced
+achievements: []
+evidence: []
+education: []
+certifications: []
+artifacts: []
+targetContexts: []
+extensions:
+  _acquisition:
+    sourceDocument: smith-cv.docx
+    sourceHash: 0000000000000000000000000000000000000000000000000000000000000000
+    sourceName: smith-cv.docx
+    importedAt: '2026-01-01T00:00:00+00:00'

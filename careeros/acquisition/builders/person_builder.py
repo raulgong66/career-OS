@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from ..person_data import PersonData
+from ..utils import person_id_from_name
 from .base import BaseBuilder, BuilderContext
 
 
@@ -24,7 +25,7 @@ class PersonBuilder(BaseBuilder):
             return []
         person = items[0]
         person_dict: dict[str, Any] = {
-            "id": person.id or "person-unknown",
+            "id": self._resolve_person_id(person),
             "names": [{"value": person.full_name or "", "usage": "professional"}],
         }
         contact: dict[str, str] = {}
@@ -47,3 +48,20 @@ class PersonBuilder(BaseBuilder):
             person_dict["links"] = links
 
         return [person_dict]
+
+    @staticmethod
+    def _resolve_person_id(person: PersonData) -> str:
+        """Deterministic person.id derived from identity, never from the LLM.
+
+        The LLM-provided id is only a fallback when no usable name is available.
+        """
+        name = (person.full_name or "").strip()
+        if not name:
+            name = " ".join(
+                part for part in (person.first_name or "", person.last_name or "") if part
+            ).strip()
+        if name:
+            derived = person_id_from_name(name)
+            if derived:
+                return derived
+        return person.id or "person-unknown"

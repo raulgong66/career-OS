@@ -57,6 +57,9 @@ class CanonicalProfileBuilder:
         education: list[EducationData] | None = None,
         source_document: str | None = None,
         extraction_timestamp: str | None = None,
+        source_name: str | None = None,
+        source_hash: str | None = None,
+        imported_at: str | None = None,
     ) -> dict[str, Any]:
         context = BuilderContext()
 
@@ -107,12 +110,24 @@ class CanonicalProfileBuilder:
         profile["organizations"] = self._organizations_from_context(context)
 
         trace: dict[str, str] = {}
+        if source_name:
+            trace["sourceName"] = source_name
+        if source_hash:
+            trace["sourceHash"] = source_hash
         if source_document:
             trace["sourceDocument"] = source_document
         if extraction_timestamp:
             trace["extractionTimestamp"] = extraction_timestamp
+        if imported_at:
+            trace["importedAt"] = imported_at
         if trace:
             profile["extensions"]["_acquisition"] = trace
+        if imported_at:
+            profile["extensions"]["importedAt"] = imported_at
+
+        from careeros.evidence_hydration import build_evidence_items
+
+        profile["evidence"] = build_evidence_items(profile)
         return profile
 
     @staticmethod

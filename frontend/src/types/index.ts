@@ -375,3 +375,64 @@ export interface KnowledgeAnswer {
   query_time_ms: number;
   query_type: string;
 }
+
+export interface MissionContract {
+  mission_id: string;
+  mission_statement: string;
+  summary: string;
+  role: string;
+  requirements: string[];
+  concepts: string[];
+  capabilities: string[];
+  evidence_standards: string[];
+  constraints: string[];
+}
+
+export type MissionStatus =
+  | 'no_requirements'
+  | 'evidence_gaps'
+  | 'partial_evidence'
+  | 'evidence_backed';
+
+export type RequirementStatus = 'evidenced' | 'referenced_without_evidence' | 'gap';
+
+export interface RequirementCoverage {
+  requirement: string;
+  status: RequirementStatus;
+  evidence_backed: boolean;
+  referenced: boolean;
+}
+
+export interface MissionEvaluationResult {
+  mission_id: string;
+  mission_statement: string;
+  role: string;
+  status: MissionStatus;
+  message: string;
+  text_coverage: number;
+  evidence_backed_coverage: number;
+  requirements: RequirementCoverage[];
+  recommendations: Recommendation[];
+  candidate: string;
+}
+
+export interface MissionCandidateEvaluation {
+  profile_id: string;
+  result: MissionEvaluationResult;
+}
+
+export interface TransformationPhase {
+  phase_id: string;
+  phase_number: number;
+  title: string;
+  description: string;
+  contract: MissionContract;
+}
+
+export interface TransformationPlan {
+  plan_id: string;
+  objective: string;
+  summary: string;
+  phases: TransformationPhase[];
+  constraints: string[];
+}

@@ -61,6 +61,18 @@ ENTITY_TYPE_ALIASES: dict[str, str] = {
 
 DOMAIN_ALIASES: tuple[AliasEntry, ...] = (
     AliasEntry(
+        alias="careeros",
+        canonical_name="CareerOS",
+        kind="entity",
+        entity_id="document.README.careeros",
+    ),
+    AliasEntry(
+        alias="career os",
+        canonical_name="CareerOS",
+        kind="entity",
+        entity_id="document.README.careeros",
+    ),
+    AliasEntry(
         alias="profile management",
         canonical_name="Profile Management",
         kind="entity",
