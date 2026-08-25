@@ -136,6 +136,16 @@ RULES: tuple[IntentRule, ...] = (
         ),
         _flow_topic,
     ),
+    # --- application usage (how is X applied/used) ---
+    IntentRule(
+        "application_usage",
+        (
+            r"\bhow is (?P<target>[\w.]+) applied\b",
+            r"\bhow does (?P<target>[\w.]+) apply\b",
+            r"\bwhat is the application of (?P<target>[\w.]+)\b",
+        ),
+        _extract_after_keyword("target"),
+    ),
     # --- reverse dependency ('what does X depend on') ---
     IntentRule(
         "reverse_dependency",

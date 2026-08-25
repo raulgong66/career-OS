@@ -19,6 +19,8 @@ from .models import (
     QueryType,
     make_entity_id,
 )
+from .concept_retrieval import ConceptRetriever, is_low_authority_source, is_low_authority_type
+from .rich_format import RichFormatter
 
 
 @dataclass(frozen=True)
@@ -241,6 +243,8 @@ class CSKSQueryEngine:
                 fallback = self._concept_fallback(question)
                 if fallback is not None:
                     result, query_type = fallback
+        elif query_type == "application_usage":
+            result = self._handle_application_usage(question, intent)
         elif query_type == "capability_check":
             result = self._handle_capability_check(question)
             if result["answer"].startswith("Unknown capability query"):
@@ -683,6 +687,7 @@ class CSKSQueryEngine:
         for node in self.graph.nodes.values():
             if node.type in ("dataflow", "component", "domain") and any(step.lower() in node.label.lower() for step in matched_flow):
                 related_entities.append(node)
+        related_entities.sort(key=lambda n: n.id)
 
         citations = []
         entities = []
@@ -700,6 +705,137 @@ class CSKSQueryEngine:
             "answer": "\n".join(answer_lines),
             "citations": citations,
             "entities": entities,
+        }
+
+    def _handle_application_usage(self, question: str, intent: "ClassifiedIntent | None" = None) -> dict:
+        """Handle application/usage queries by delegating to concept retrieval with fallback."""
+        target = intent.target if intent and intent.target else None
+        if target is None:
+            # Fallback: try to resolve from question terms
+            target_node = self._resolve_target(question)
+            if target_node:
+                target = target_node.id
+
+        if not target:
+            return {"answer": "Could not identify target for application query.", "citations": [], "entities": []}
+
+        # Use concept retrieval for authoritative, source-backed answer
+        pack = ConceptRetriever(self.graph, repo_root=self.repo_root).retrieve(question)
+        if pack is None:
+            # Fallback: targeted search for AI/LLM application in ADRs and docs
+            fallback_result = self._fallback_ai_application_search(question, target)
+            if fallback_result:
+                return fallback_result
+            return {"answer": f"No authoritative evidence found for how {target} is applied.", "citations": [], "entities": []}
+
+        render = RichFormatter(self.graph, root=self.repo_root).format_evidence(pack)
+        return {
+            "answer": render.text,
+            "citations": render.citations,
+            "entities": [c["entity_id"] for c in render.citations],
+        }
+
+    def _fallback_ai_application_search(self, question: str, target: str) -> dict | None:
+        """Fallback search for AI/LLM application information in ADRs and documentation."""
+        target_lower = target.lower()
+        ai_terms = {"ai", "llm", "llms", "model", "models"}
+
+        # Only apply special handling for AI-related targets
+        if target_lower not in ai_terms and not any(t in target_lower for t in ai_terms):
+            return None
+
+        # Search for AI/LLM application content in ADR and document nodes
+        ai_keywords = {"ai", "llm", "llms", "model", "models", "provider", "providers", "agent", "agents", "extraction", "applied", "application", "apply", "usage", "used", "uses"}
+        question_tokens = set(question.lower().split()) | {"ai", "applied", "apply", "application"}
+
+        candidates = []
+        for node in self.graph.nodes.values():
+            if node.type not in ("adr", "document"):
+                continue
+            if is_low_authority_source(node.properties.get("source_path", "")):
+                continue
+
+            # Check if node content is relevant to AI application
+            label_lower = node.label.lower()
+            id_lower = node.id.lower()
+            source_path = node.properties.get("source_path", "")
+
+            # Quick filter: check if node is likely AI-related
+            haystack = f"{label_lower} {id_lower} {source_path}"
+            if not any(kw in haystack for kw in ai_keywords):
+                continue
+
+            # Get section text for scoring
+            from .rich_format import RichFormatter
+            formatter = RichFormatter(self.graph, root=self.repo_root)
+            section_text = formatter.document_text(node) or ""
+            if not section_text:
+                continue
+
+            # Check relevance to AI application
+            text_lower = section_text.lower()
+            if not any(kw in text_lower for kw in ai_keywords):
+                continue
+
+            # Score based on keyword overlap
+            matched = sum(1 for kw in ai_keywords if kw in text_lower)
+            if matched < 2:  # Require at least 2 AI-related keywords
+                continue
+
+            candidates.append((matched, node, section_text))
+
+        if not candidates:
+            return None
+
+        # Sort by relevance (matched keywords desc, then by source type priority)
+        type_priority = {"adr": 0, "document": 1}
+        candidates.sort(key=lambda x: (-x[0], type_priority.get(x[1].type, 99)))
+
+        # Take top candidates
+        primary_node, primary_text = candidates[0][1], candidates[0][2]
+        related = []
+        for _, node, text in candidates[1:3]:
+            related.append((node, text))
+
+        from .models import CSKSEvidence, EvidencePack
+        from .rich_format import RichFormatter
+
+        formatter = RichFormatter(self.graph, root=self.repo_root)
+        primary = CSKSEvidence(
+            entity_id=primary_node.id,
+            label=primary_node.label,
+            source_path=primary_node.properties.get("source_path", ""),
+            line_start=primary_node.properties.get("line_start", 0),
+            line_end=primary_node.properties.get("line_end", 0),
+            text=primary_text,
+            role="primary",
+        )
+
+        related_evidence = []
+        for node, text in related:
+            related_evidence.append(CSKSEvidence(
+                entity_id=node.id,
+                label=node.label,
+                source_path=node.properties.get("source_path", ""),
+                line_start=node.properties.get("line_start", 0),
+                line_end=node.properties.get("line_end", 0),
+                text=text,
+                role="related",
+            ))
+
+        pack = EvidencePack(
+            query=f"How is {target} applied?",
+            primary=primary,
+            related=tuple(related_evidence),
+            retrieval_layer="application_usage_fallback",
+            retrieval_score=1.0,
+        )
+
+        render = RichFormatter(self.graph, root=self.repo_root).format_evidence(pack)
+        return {
+            "answer": render.text,
+            "citations": render.citations,
+            "entities": [c["entity_id"] for c in render.citations],
         }
 
     def _handle_reverse_dependency(self, question: str, intent: "ClassifiedIntent | None" = None) -> dict:

@@ -71,6 +71,12 @@ def test_grammar_classifies_data_flow_cv() -> None:
     assert intent.query_type == "data_flow_path"
 
 
+def test_grammar_classifies_how_applied() -> None:
+    intent = classify("How is AI applied?")
+    assert intent.query_type == "application_usage"
+    assert intent.target == "AI"
+
+
 def test_grammar_classifies_unknown() -> None:
     assert classify("potato potato potato").query_type == "unknown"
 
