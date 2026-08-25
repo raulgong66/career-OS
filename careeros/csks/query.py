@@ -19,8 +19,10 @@ from .models import (
     QueryType,
     make_entity_id,
 )
-from .concept_retrieval import ConceptRetriever, is_low_authority_source, is_low_authority_type
+from .concept_retrieval import ConceptRetriever
 from .rich_format import RichFormatter
+
+_LOW_AUTHORITY_SOURCE_PREFIXES = ("tests/", "careeros_cli/", "api/", "tools/")
 
 
 @dataclass(frozen=True)
@@ -752,7 +754,8 @@ class CSKSQueryEngine:
         for node in self.graph.nodes.values():
             if node.type not in ("adr", "document"):
                 continue
-            if is_low_authority_source(node.properties.get("source_path", "")):
+            source = node.properties.get("source_path", "")
+            if not source or source.startswith(_LOW_AUTHORITY_SOURCE_PREFIXES):
                 continue
 
             # Check if node content is relevant to AI application
