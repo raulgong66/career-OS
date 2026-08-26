@@ -50,6 +50,23 @@ def _infer_artifact_type(artifact: dict) -> str:
     return ""
 
 
+def _ensure_interest_letter_context(profile: dict, contract) -> None:
+    """Populate target_contexts for INTEREST_LETTER from profile when missing.
+
+    The standard interest-letter template hardcodes targetContextRefs as empty,
+    which causes the generator to skip JD-aware opening/closing paragraphs.
+    When the profile carries target contexts, inject the first one so the
+    generator can render role-aware content.
+    """
+    if contract.artifact_type.upper() != "INTEREST_LETTER":
+        return
+    if contract.target_contexts:
+        return
+    profile_contexts = profile.get("targetContexts", [])
+    if profile_contexts:
+        contract.target_contexts = [profile_contexts[0]]
+
+
 def generate_artifact(
     profile_file: Union[str, Path],
     artifact_id: str,
@@ -88,7 +105,7 @@ def generate_artifact(
     contract = ExportContractBuilder(schema_loader).build(profile, artifact_id, validate=False, reasoning=findings)
     selected_contract = EvidenceSelector().select(contract)
 
-    # Attach job description so JD-aware generators can consume it
+    _ensure_interest_letter_context(profile, selected_contract)
     selected_contract.job_description = job_description
 
     if artifact_type == "INTERVIEW_PREPARATION_GUIDE":
@@ -162,6 +179,7 @@ def generate_tailored_artifact(
     # Generate the artifact using the tailored profile
     contract = ExportContractBuilder(schema_loader).build(tailored_profile, artifact_id, validate=False, reasoning=tailored_findings)
     selected_contract = EvidenceSelector().select(contract)
+    _ensure_interest_letter_context(tailored_profile, selected_contract)
     selected_contract.job_description = job_description
     generator = generator_registry.resolve(selected_contract.artifact_type, output_format)
     artifact = generator.generate(selected_contract)

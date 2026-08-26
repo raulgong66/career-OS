@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from careeros.export_contract import ExportContract, ExportContractBuilder
+from careeros.export_contract import ExportContract, ExportContractBuilder, ExportSource
 from careeros.generators import DocxCVGenerator, MarkdownCVGenerator
 from careeros.reasoning import ReasoningEngine, ReasoningFindings, ReasoningReport, RuleRegistry, create_default_registry
 from careeros.schema_loader import SchemaLoader
@@ -322,6 +322,9 @@ def test_interest_letter_routes_through_tailoring_pipeline(schema_loader: Schema
         assert optimization_result.status is not None
         assert optimization_result.summary is not None
         assert "# Interest Letter" in artifact
+        # Verify role-aware output
+        assert "AI Product Engineer" in artifact
+        assert "Hiring Team" in artifact
     finally:
         profile_file.unlink(missing_ok=True)
 
@@ -352,6 +355,187 @@ def test_interest_letter_without_job_description_returns_plain_string(
         result = generate_artifact(profile_file, "interest-letter-1", "markdown", schema_loader)
         assert isinstance(result, str)
         assert "Interest Letter" in result
+    finally:
+        profile_file.unlink(missing_ok=True)
+
+
+# ---- Interest Letter JD-awareness ----
+
+
+def test_interest_letter_uses_target_context_role() -> None:
+    """Opening paragraph includes the role name from target_contexts."""
+    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0",
+        artifact_id="il-1",
+        artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Senior Engineer", "audience": "Hiring Manager"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Engineer", "scope": "Built systems"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "Python"}),
+        ],
+        job_description="Python engineer with system design experience",
+    )
+    result = MarkdownCoverLetterGenerator().generate(contract)
+    assert "Senior Engineer" in result
+    assert "Hiring Manager" in result
+
+
+def test_interest_letter_opening_includes_jd_requirements() -> None:
+    """Opening paragraph references top JD requirements when role and JD are present."""
+    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0",
+        artifact_id="il-1",
+        artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Senior Engineer", "audience": "Hiring Manager"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Engineer", "scope": "Built systems"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "Python"}),
+        ],
+        job_description="Python engineer with system design experience",
+    )
+    result = MarkdownCoverLetterGenerator().generate(contract)
+    assert "Senior Engineer" in result
+    # Opening should reference specific requirements, not be the generic fallback
+    assert "including" in result
+    assert "python" in result.lower() or "system design" in result.lower() or "engineer" in result.lower()
+
+
+def test_interest_letter_closing_references_role() -> None:
+    """Closing paragraph references the role instead of returning bare 'Sincerely,'."""
+    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0",
+        artifact_id="il-1",
+        artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Product Manager", "audience": "Hiring Committee"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "PM", "scope": "Led product"}),
+        ],
+        job_description="Product manager with cross-functional leadership",
+    )
+    result = MarkdownCoverLetterGenerator().generate(contract)
+    assert "Product Manager" in result
+    assert "confident" in result.lower()
+    assert "Sincerely" in result
+
+
+def test_interest_letter_evidence_ordered_by_jd() -> None:
+    """Evidence items are reordered by JD relevance when a job description is provided."""
+    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+
+    contract_with_jd = ExportContract(
+        profile_version="1.0.0",
+        artifact_id="il-1",
+        artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Python Developer", "scope": "Built backend APIs"}),
+            ExportSource(type="experience", id="exp-2", data={"title": "ML Engineer", "scope": "Built Python machine learning pipelines"}),
+        ],
+        job_description="AI engineer with Python and machine learning experience",
+    )
+    result_with_jd = MarkdownCoverLetterGenerator().generate(contract_with_jd)
+
+    # exp-2 (ML Engineer) should appear before exp-1 (Python Developer)
+    # because it matches both "python" and "machine learning" requirements
+    idx_exp2 = result_with_jd.find("ML Engineer")
+    idx_exp1 = result_with_jd.find("Python Developer")
+    assert idx_exp2 != -1 and idx_exp1 != -1
+    assert idx_exp2 < idx_exp1
+
+
+def test_interest_letter_generic_fallback_without_role() -> None:
+    """When no target context exists, opening uses generic fallback text."""
+    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0",
+        artifact_id="il-1",
+        artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Engineer", "scope": "Built systems"}),
+        ],
+        job_description="Engineer with systems experience",
+    )
+    result = MarkdownCoverLetterGenerator().generate(contract)
+    # Should use the generic fallback — not reference a specific role
+    assert "Jane Doe" in result
+    assert "share Jane Doe's background" in result or "background for your consideration" in result
+
+
+def test_interest_letter_pipeline_injects_target_context(schema_loader: SchemaLoader) -> None:
+    """Pipeline injects profile target_contexts for INTEREST_LETTER when artifact has empty targetContextRefs."""
+    from careeros.pipelines import generate_artifact
+
+    profile: dict[str, Any] = {
+        "profileVersion": "1.0.0",
+        "person": {"id": "person-1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        "professionalSummaries": [
+            {"id": "summary-1", "text": "AI product builder focused on reliable workflow systems."}
+        ],
+        "experiences": [
+            {"id": "exp-1", "title": "Product Engineer", "scope": "Built AI-native career workflows."}
+        ],
+        "skills": [
+            {"id": "skill-1", "name": "AI workflow design"},
+            {"id": "skill-2", "name": "Kubernetes"},
+        ],
+        "education": [],
+        "organizations": [],
+        "projects": [],
+        "achievements": [],
+        "evidence": [],
+        "certifications": [],
+        "targetContexts": [
+            {"id": "context-1", "audience": "Hiring Team", "role": "AI Product Engineer"}
+        ],
+        "artifacts": [
+            {
+                "id": "interest-letter-1",
+                "title": "Interest Letter",
+                "artifactType": "INTEREST_LETTER",
+                # Empty targetContextRefs — the pipeline fix should inject from profile
+                "targetContextRefs": [],
+                "sourceRefs": [
+                    {"id": "summary-1", "type": "professional_summary"},
+                    {"id": "exp-1", "type": "experience"},
+                    {"id": "skill-1", "type": "skill"},
+                ],
+            }
+        ],
+    }
+
+    profile_file = _write_profile(profile)
+    try:
+        artifact, _ = generate_artifact(
+            profile_file,
+            "interest-letter-1",
+            "markdown",
+            schema_loader,
+            job_description="Kubernetes engineer with automation experience",
+        )
+        assert isinstance(artifact, str)
+        # Pipeline-injected context should produce role-aware output
+        assert "AI Product Engineer" in artifact
+        assert "Hiring Team" in artifact
+        # Opening should reference JD requirements (not generic fallback)
+        assert "including" in artifact
     finally:
         profile_file.unlink(missing_ok=True)
 
