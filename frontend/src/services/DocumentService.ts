@@ -12,7 +12,7 @@ export class DocumentService {
     return DocumentService.instance;
   }
 
-  async downloadDocx(profileId: string, artifactId: string): Promise<Blob> {
+  async downloadDocx(profileId: string, artifactId: string, jobDescription?: string): Promise<Blob> {
     const response = await fetch(`${BASE}/generate/artifact`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -20,6 +20,7 @@ export class DocumentService {
         profile_id: profileId,
         artifact_id: artifactId,
         output_format: 'docx',
+        ...(jobDescription ? { job_description: jobDescription } : {}),
       }),
     });
 

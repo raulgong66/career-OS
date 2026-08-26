@@ -1503,7 +1503,7 @@ export default function TailoringPage() {
                         onClick={async () => {
                           try {
                             const docService = DocumentService.getInstance();
-                            const blob = await docService.downloadDocx(selectedProfileId, currentArtifactId);
+                            const blob = await docService.downloadDocx(selectedProfileId, currentArtifactId, jobDescription);
                             const ext = currentArtifactType ? `${currentArtifactType.replace(/_/g, '-')}.docx` : 'document.docx';
                             docService.downloadBlob(blob, ext);
                           } catch (err) {
