@@ -364,7 +364,7 @@ def test_interest_letter_without_job_description_returns_plain_string(
 
 def test_interest_letter_uses_target_context_role() -> None:
     """Opening paragraph includes the role name from target_contexts."""
-    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
 
     contract = ExportContract(
         profile_version="1.0.0",
@@ -379,14 +379,14 @@ def test_interest_letter_uses_target_context_role() -> None:
         ],
         job_description="Python engineer with system design experience",
     )
-    result = MarkdownCoverLetterGenerator().generate(contract)
+    result = MarkdownInterestLetterGenerator().generate(contract)
     assert "Senior Engineer" in result
     assert "Hiring Manager" in result
 
 
 def test_interest_letter_opening_includes_jd_requirements() -> None:
     """Opening paragraph references top JD requirements when role and JD are present."""
-    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
 
     contract = ExportContract(
         profile_version="1.0.0",
@@ -401,16 +401,16 @@ def test_interest_letter_opening_includes_jd_requirements() -> None:
         ],
         job_description="Python engineer with system design experience",
     )
-    result = MarkdownCoverLetterGenerator().generate(contract)
+    result = MarkdownInterestLetterGenerator().generate(contract)
     assert "Senior Engineer" in result
-    # Opening should reference specific requirements, not be the generic fallback
-    assert "including" in result
-    assert "python" in result.lower() or "system design" in result.lower() or "engineer" in result.lower()
+    # Opening should reference specific requirements in human-readable form
+    result_lower = result.lower()
+    assert "python" in result_lower or "system design" in result_lower
 
 
 def test_interest_letter_closing_references_role() -> None:
     """Closing paragraph references the role instead of returning bare 'Sincerely,'."""
-    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
 
     contract = ExportContract(
         profile_version="1.0.0",
@@ -424,7 +424,7 @@ def test_interest_letter_closing_references_role() -> None:
         ],
         job_description="Product manager with cross-functional leadership",
     )
-    result = MarkdownCoverLetterGenerator().generate(contract)
+    result = MarkdownInterestLetterGenerator().generate(contract)
     assert "Product Manager" in result
     assert "confident" in result.lower()
     assert "Sincerely" in result
@@ -432,7 +432,7 @@ def test_interest_letter_closing_references_role() -> None:
 
 def test_interest_letter_evidence_ordered_by_jd() -> None:
     """Evidence items are reordered by JD relevance when a job description is provided."""
-    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
 
     contract_with_jd = ExportContract(
         profile_version="1.0.0",
@@ -447,7 +447,7 @@ def test_interest_letter_evidence_ordered_by_jd() -> None:
         ],
         job_description="AI engineer with Python and machine learning experience",
     )
-    result_with_jd = MarkdownCoverLetterGenerator().generate(contract_with_jd)
+    result_with_jd = MarkdownInterestLetterGenerator().generate(contract_with_jd)
 
     # exp-2 (ML Engineer) should appear before exp-1 (Python Developer)
     # because it matches both "python" and "machine learning" requirements
@@ -459,7 +459,7 @@ def test_interest_letter_evidence_ordered_by_jd() -> None:
 
 def test_interest_letter_generic_fallback_without_role() -> None:
     """When no target context exists, opening uses generic fallback text."""
-    from careeros.generators.markdown_cover_letter import MarkdownCoverLetterGenerator
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
 
     contract = ExportContract(
         profile_version="1.0.0",
@@ -473,10 +473,10 @@ def test_interest_letter_generic_fallback_without_role() -> None:
         ],
         job_description="Engineer with systems experience",
     )
-    result = MarkdownCoverLetterGenerator().generate(contract)
+    result = MarkdownInterestLetterGenerator().generate(contract)
     # Should use the generic fallback — not reference a specific role
     assert "Jane Doe" in result
-    assert "share Jane Doe's background" in result or "background for your consideration" in result
+    assert "interest in this opportunity" in result
 
 
 def test_interest_letter_pipeline_injects_target_context(schema_loader: SchemaLoader) -> None:
@@ -516,6 +516,7 @@ def test_interest_letter_pipeline_injects_target_context(schema_loader: SchemaLo
                     {"id": "summary-1", "type": "professional_summary"},
                     {"id": "exp-1", "type": "experience"},
                     {"id": "skill-1", "type": "skill"},
+                    {"id": "skill-2", "type": "skill"},
                 ],
             }
         ],
@@ -535,7 +536,8 @@ def test_interest_letter_pipeline_injects_target_context(schema_loader: SchemaLo
         assert "AI Product Engineer" in artifact
         assert "Hiring Team" in artifact
         # Opening should reference JD requirements (not generic fallback)
-        assert "including" in artifact
+        result_lower = artifact.lower()
+        assert "kubernetes" in result_lower or "automation" in result_lower
     finally:
         profile_file.unlink(missing_ok=True)
 
@@ -545,3 +547,141 @@ def _write_profile(profile: dict[str, Any]) -> Path:
     path = Path(tempfile.mktemp(suffix=".yaml"))
     path.write_text(yaml.safe_dump(profile), encoding="utf-8")
     return path
+
+
+# ---- Interest Letter acceptance tests (new generator) ----
+
+
+def test_interest_letter_output_is_prose_not_bullets() -> None:
+    """Letter body is prose paragraphs, not bullet lists."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0",
+        artifact_id="il-1",
+        artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Senior Engineer", "scope": "Led cloud migration for enterprise clients; mentored junior engineers"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Designed microservices architecture on AWS"}),
+            ExportSource(type="certification", id="cert-1", data={"name": "CISSP"}),
+        ],
+        job_description="AWS engineer with security and cloud architecture experience",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    # No bullet markers
+    assert "- " not in result
+    # Body paragraphs contain prose connecting requirements to evidence
+    assert "Regarding" in result or "regarding" in result.lower()
+
+
+def test_interest_letter_jd_a_vs_jd_b_different_evidence() -> None:
+    """Different JDs produce materially different letters selecting different evidence."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    sources = [
+        ExportSource(type="experience", id="exp-1", data={"title": "Cloud Architect", "scope": "Designed AWS infrastructure for high-traffic applications; reduced costs by 40%"}),
+        ExportSource(type="experience", id="exp-2", data={"title": "ML Engineer", "scope": "Built recommendation engine using PyTorch; improved engagement by 25%"}),
+        ExportSource(type="skill", id="skill-1", data={"name": "AWS", "category": "Cloud", "description": "Expert in AWS services including EC2, S3, Lambda"}),
+        ExportSource(type="skill", id="skill-2", data={"name": "PyTorch", "category": "ML", "description": "Deep learning framework for NLP and computer vision"}),
+    ]
+
+    contract_a = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Cloud Platform Engineer", "audience": "Hiring Team"}],
+        sources=sources,
+        job_description="Cloud platform engineer with AWS and infrastructure automation experience",
+    )
+    contract_b = ExportContract(
+        profile_version="1.0.0", artifact_id="il-2", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "ML Research Engineer", "audience": "ML Team"}],
+        sources=sources,
+        job_description="Machine learning engineer with deep learning and PyTorch experience",
+    )
+
+    result_a = MarkdownInterestLetterGenerator().generate(contract_a)
+    result_b = MarkdownInterestLetterGenerator().generate(contract_b)
+
+    # JD_A should emphasize cloud/AWS evidence, JD_B should emphasize ML/PyTorch
+    assert "AWS" in result_a
+    assert "PyTorch" in result_b
+    # The two letters should be materially different
+    assert result_a != result_b
+    # JD_A should mention cloud infrastructure, JD_B should mention ML/deep learning
+    assert "cloud" in result_a.lower() or "aws" in result_a.lower()
+    assert "machine learning" in result_b.lower() or "pytorch" in result_b.lower()
+
+
+def test_interest_letter_human_readable_requirements() -> None:
+    """Requirements are displayed in human-readable form (not lowercase tokens)."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Security Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="skill", id="skill-1", data={"name": "SIEM", "category": "Security", "description": "Deployed SIEM solutions for threat detection"}),
+            ExportSource(type="certification", id="cert-1", data={"name": "CISSP"}),
+        ],
+        job_description="Security engineer with SIEM and CISSP certification",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    # Acronyms should appear uppercase
+    assert "SIEM" in result
+    assert "CISSP" in result
+
+
+def test_interest_letter_max_evidence_capped() -> None:
+    """Letter does not include more than _MAX_EVIDENCE sources."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator, MarkdownInterestLetterGenerator as M
+
+    sources = [
+        ExportSource(type="experience", id=f"exp-{i}", data={"title": f"Role {i}", "scope": f"Did {req} work"})
+        for i, req in enumerate(["python", "java", "cloud", "devops", "sql", "security", "networking"], start=1)
+    ]
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=sources,
+        job_description="python java cloud devops sql security networking engineer",
+    )
+
+    gen = M()
+    result = gen.generate(contract)
+    # No more than _MAX_EVIDENCE evidence items rendered
+    evidence_count = sum(1 for i in range(1, 8) if f"Role {i}" in result)
+    assert evidence_count <= gen._MAX_EVIDENCE
+
+
+def test_interest_letter_body_paragraphs_capped() -> None:
+    """Letter has at most _MAX_BODY_PARAGRAPHS body paragraphs."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    sources = [
+        ExportSource(type="experience", id="exp-1", data={"title": "Engineer", "scope": "Python and Java and Cloud and DevOps work"}),
+    ]
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=sources,
+        job_description="python java cloud devops engineer",
+    )
+
+    gen = MarkdownInterestLetterGenerator()
+    result = gen.generate(contract)
+    body_paras = [line for line in result.splitlines() if line.startswith("Regarding")]
+    assert len(body_paras) <= gen._MAX_BODY_PARAGRAPHS

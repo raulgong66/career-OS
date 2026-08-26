@@ -10,7 +10,9 @@ from .docx_cv import DocxCVGenerator
 from .docx_letter import DocxLetterGenerator
 from .docx_preparation_guide import DocxPreparationGuideGenerator
 from .markdown_cover_letter import MarkdownCoverLetterGenerator
+from .docx_interest_letter import DocxInterestLetterGenerator
 from .markdown_cv import MarkdownCVGenerator
+from .markdown_interest_letter import MarkdownInterestLetterGenerator
 from .markdown_preparation_guide import MarkdownPreparationGuideGenerator
 
 
@@ -58,10 +60,12 @@ def default_generator_registry() -> GeneratorRegistry:
     registry.register("RESUME", "markdown", markdown_cv_generator)
     registry.register("CV", "docx", docx_cv_generator)
     registry.register("RESUME", "docx", docx_cv_generator)
+    markdown_interest_letter_generator = MarkdownInterestLetterGenerator()
+    docx_interest_letter_generator = DocxInterestLetterGenerator()
     registry.register("COVER_LETTER", "markdown", markdown_cover_letter_generator)
     registry.register("COVER_LETTER", "docx", docx_letter_generator)
-    registry.register("INTEREST_LETTER", "markdown", markdown_cover_letter_generator)
-    registry.register("INTEREST_LETTER", "docx", docx_letter_generator)
+    registry.register("INTEREST_LETTER", "markdown", markdown_interest_letter_generator)
+    registry.register("INTEREST_LETTER", "docx", docx_interest_letter_generator)
     registry.register(
         "INTERVIEW_PREPARATION_GUIDE",
         "markdown",

@@ -6,6 +6,7 @@ from ..exceptions import ValidationError
 from ..export_contract import ExportContract, ExportSource
 from ..optimizer import CVOptimizer
 from .markdown_cv import MarkdownCVGenerator
+from .source_utils import extract_source_text
 
 
 class MarkdownCoverLetterGenerator:
@@ -22,7 +23,7 @@ class MarkdownCoverLetterGenerator:
     (backward compatible).
     """
 
-    supported_artifact_types = {"COVER_LETTER", "INTEREST_LETTER"}
+    supported_artifact_types = {"COVER_LETTER"}
 
     def __init__(self) -> None:
         """Create a cover letter generator using shared Markdown CV helpers."""
@@ -37,8 +38,7 @@ class MarkdownCoverLetterGenerator:
             )
 
         name = self._markdown_cv._person_name(contract.person)
-        default_title = "Interest Letter" if "interest" in contract.artifact_type.lower() else "Cover Letter"
-        title = contract.artifact.get("title") or default_title
+        title = contract.artifact.get("title") or "Cover Letter"
         context = contract.target_contexts[0] if contract.target_contexts else {}
         role = context.get("role")
         audience = context.get("audience") or "Hiring Team"
@@ -200,34 +200,8 @@ class MarkdownCoverLetterGenerator:
         return [r for _, _, r in candidates]
 
     def _source_jd_score(self, source: ExportSource, requirements: list[str]) -> int:
-        """Count how many JD requirement tokens appear in a source's text.
-
-        Checks the most descriptive fields of each source type.
-        """
-        data = source.data
-        text = ""
-        st = source.type.lower()
-        if st == "experience":
-            text = " ".join(
-                str(v) for v in [data.get("title"), data.get("scope"), data.get("organization")] if v
-            )
-        elif st == "project":
-            text = " ".join(
-                str(v) for v in [data.get("name"), data.get("description")] if v
-            )
-        elif st == "skill":
-            text = " ".join(
-                str(v) for v in [data.get("name"), data.get("description"), data.get("category")] if v
-            )
-        elif st == "achievement":
-            text = str(data.get("statement") or "")
-        elif st == "certification":
-            text = str(data.get("name") or "")
-        elif st == "education":
-            text = " ".join(
-                str(v) for v in [data.get("program"), data.get("fieldOfStudy"), data.get("institution")] if v
-            )
-        text_lower = text.lower()
+        """Count how many JD requirement tokens appear in a source's text."""
+        text_lower = extract_source_text(source).lower()
         return sum(1 for req in requirements if req in text_lower)
 
     # ------------------------------------------------------------------

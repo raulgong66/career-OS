@@ -15,7 +15,7 @@ from .markdown_cover_letter import MarkdownCoverLetterGenerator
 class DocxLetterGenerator:
     """Generate a minimal DOCX letter from an export contract."""
 
-    supported_artifact_types = {"COVER_LETTER", "INTEREST_LETTER"}
+    supported_artifact_types = {"COVER_LETTER"}
 
     def __init__(self) -> None:
         """Create a DOCX letter generator backed by the Markdown letter generator."""
