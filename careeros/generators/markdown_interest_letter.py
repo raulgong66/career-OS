@@ -9,15 +9,167 @@ from __future__ import annotations
 
 from ..exceptions import ValidationError
 from ..export_contract import ExportContract, ExportSource
-from ..optimizer import CVOptimizer
+from ..optimizer import CVOptimizer, _REQUIREMENT_ALIASES
 from .markdown_cv import MarkdownCVGenerator
 from .source_utils import extract_source_text
 
-_ACRONYMS: set[str] = {
+# Reverse of _REQUIREMENT_ALIASES: canonical form → original aliases.
+# Used by _score_sources to match "AWS" in source text when the requirement
+# has been normalised to "amazon web services".
+_REVERSE_REQ_ALIASES: dict[str, list[str]] = {}
+for _alias, _canonical in _REQUIREMENT_ALIASES.items():
+    _REVERSE_REQ_ALIASES.setdefault(_canonical, []).append(_alias)
+
+_ACronyms: set[str] = {
     "cissp", "siem", "aws", "gcp", "sql", "devops", "devsecops",
     "mlops", "gitops", "ci/cd", "iam", "iac", "sre", "nlp", "cv",
     "ml", "dl", "llm", "soar", "vpn", "mdm",
 }
+
+# ---------------------------------------------------------------------------
+# Requirement consolidation
+# ---------------------------------------------------------------------------
+# Maps raw extracted tokens to canonical theme keys so that semantically
+# overlapping requirements (e.g. "google" + "google cloud") are merged into
+# a single paragraph instead of appearing as separate requirement groups.
+
+_CONSOLIDATION_ALIASES: dict[str, str] = {
+    # Cloud / infrastructure
+    "aws": "cloud_infra",
+    "amazon web services": "cloud_infra",
+    "cloud": "cloud_infra",
+    "gcp": "cloud_infra",
+    "google cloud": "cloud_infra",
+    "google cloud platform": "cloud_infra",
+    "azure": "cloud_infra",
+    "cloud infrastructure": "cloud_infra",
+    "cloud platforms": "cloud_infra",
+    "cloud security": "cloud_infra",
+    "cloud architecture": "cloud_infra",
+    "cloud computing": "cloud_infra",
+    "cloud services": "cloud_infra",
+    "cloud native": "cloud_infra",
+    "cloud migration": "cloud_infra",
+    "cloud management": "cloud_infra",
+    # Google (standalone or with cloud — both map to cloud_infra)
+    "google": "cloud_infra",
+    # Security / DevSecOps
+    "devsecops": "security_devops",
+    "devops": "security_devops",
+    "cybersecurity": "security_devops",
+    "security": "security_devops",
+    "infosec": "security_devops",
+    "information security": "security_devops",
+    "identity and access management": "security_devops",
+    "threat detection": "security_devops",
+    "incident response": "security_devops",
+    "threat hunting": "security_devops",
+    "sre": "security_devops",
+    "site reliability engineering": "security_devops",
+    "siem": "security_devops",
+    "soar": "security_devops",
+    "observability": "infra_tooling",
+    # Programming / software engineering
+    "python": "software_eng",
+    "java": "software_eng",
+    "javascript": "software_eng",
+    "typescript": "software_eng",
+    "golang": "software_eng",
+    "go": "software_eng",
+    "rust": "software_eng",
+    "c++": "software_eng",
+    "c#": "software_eng",
+    ".net": "software_eng",
+    "node.js": "software_eng",
+    "nodejs": "software_eng",
+    "react": "software_eng",
+    "vue": "software_eng",
+    "angular": "software_eng",
+    "frontend": "software_eng",
+    "backend": "software_eng",
+    "fullstack": "software_eng",
+    "full stack": "software_eng",
+    "full-stack": "software_eng",
+    "microservices": "software_eng",
+    "api": "software_eng",
+    "rest api": "software_eng",
+    "restful": "software_eng",
+    # ML / AI / data
+    "machine learning": "ml_ai",
+    "deep learning": "ml_ai",
+    "nlp": "ml_ai",
+    "natural language processing": "ml_ai",
+    "computer vision": "ml_ai",
+    "mlops": "ml_ai",
+    "machine learning operations": "ml_ai",
+    "data science": "ml_ai",
+    "ai": "ml_ai",
+    "artificial intelligence": "ml_ai",
+    "tensorflow": "ml_ai",
+    "pytorch": "ml_ai",
+    "llm": "ml_ai",
+    "large language models": "ml_ai",
+    "cv": "ml_ai",
+    # Infrastructure / DevOps tooling
+    "kubernetes": "infra_tooling",
+    "docker": "infra_tooling",
+    "terraform": "infra_tooling",
+    "ansible": "infra_tooling",
+    "helm": "infra_tooling",
+    "jenkins": "infra_tooling",
+    "ci/cd": "infra_tooling",
+    "cicd": "infra_tooling",
+    "gitops": "infra_tooling",
+    "iac": "infra_tooling",
+    "infrastructure as code": "infra_tooling",
+    "infrastructure": "infra_tooling",
+    "linux": "infra_tooling",
+    "git": "infra_tooling",
+    # Databases / data
+    "sql": "data_platform",
+    "nosql": "data_platform",
+    "postgresql": "data_platform",
+    "mysql": "data_platform",
+    "mongodb": "data_platform",
+    "redis": "data_platform",
+    "elasticsearch": "data_platform",
+    "data engineering": "data_platform",
+    "data pipeline": "data_platform",
+    "etl": "data_platform",
+    "data warehouse": "data_platform",
+    # Soft skills / leadership
+    "leadership": "leadership",
+    "mentoring": "leadership",
+    "agile": "leadership",
+    "scrum": "leadership",
+    "cross-functional": "leadership",
+    "stakeholder management": "leadership",
+    "communication": "leadership",
+}
+
+# Canonical theme → human-readable display label (for internal use only;
+# not exposed as paragraph headings in the final output).
+_THEME_LABELS: dict[str, str] = {
+    "cloud_infra": "Cloud and Infrastructure",
+    "security_devops": "Security and DevOps",
+    "software_eng": "Software Engineering",
+    "ml_ai": "Machine Learning and AI",
+    "infra_tooling": "Infrastructure Tooling",
+    "data_platform": "Data Platforms",
+    "leadership": "Leadership",
+}
+
+# Preferred order when multiple themes are present — stronger / more
+# discriminating themes appear earlier in the letter body.
+_THEME_PRIORITY: list[str] = [
+    "ml_ai",
+    "cloud_infra",
+    "security_devops",
+    "software_eng",
+    "data_platform",
+    "infra_tooling",
+    "leadership",
+]
 
 
 class MarkdownInterestLetterGenerator:
@@ -31,7 +183,7 @@ class MarkdownInterestLetterGenerator:
 
     supported_artifact_types = {"INTEREST_LETTER"}
     _MAX_EVIDENCE = 5
-    _MAX_BODY_PARAGRAPHS = 4
+    _MAX_BODY_PARAGRAPHS = 3
 
     def __init__(self) -> None:
         self._markdown_cv = MarkdownCVGenerator()
@@ -55,17 +207,17 @@ class MarkdownInterestLetterGenerator:
         if requirements:
             scored = self._score_sources(contract.sources, requirements)
             evidence = scored[: self._MAX_EVIDENCE]
-            requirement_groups = self._group_by_requirement(evidence)
+            theme_groups = self._assign_themes(evidence)
         else:
             evidence = [
                 s for s in contract.sources
                 if s.type.lower() not in {"professional_summary", "professionalsummary"}
             ][: self._MAX_EVIDENCE]
-            requirement_groups = []
+            theme_groups = []
 
         lines = [f"# {title}", "", f"Dear {audience},", ""]
 
-        lines.append(self._opening_paragraph(role, requirement_groups))
+        lines.append(self._opening_paragraph(role, theme_groups))
         lines.append("")
 
         summary = self._first_source(
@@ -75,11 +227,11 @@ class MarkdownInterestLetterGenerator:
             lines.append(self._summary_text(summary))
             lines.append("")
 
-        for para in self._body_paragraphs(evidence, requirement_groups):
+        for para in self._body_paragraphs(evidence, theme_groups):
             lines.append(para)
             lines.append("")
 
-        lines.append(self._closing_paragraph(name, role, requirement_groups))
+        lines.append(self._closing_paragraph(name, role, theme_groups))
         lines.append("")
         lines.append(name)
 
@@ -105,7 +257,10 @@ class MarkdownInterestLetterGenerator:
             if source.type.lower() in {"professional_summary", "professionalsummary"}:
                 continue
             text = extract_source_text(source).lower()
-            matched = [r for r in requirements if r in text]
+            matched = [
+                r for r in requirements
+                if r in text or any(a in text for a in _REVERSE_REQ_ALIASES.get(r, ()))
+            ]
             if matched:
                 scored.append((source, len(matched), matched))
 
@@ -113,37 +268,97 @@ class MarkdownInterestLetterGenerator:
         return scored
 
     @staticmethod
-    def _group_by_requirement(
-        evidence: list[tuple[ExportSource, int, list[str]]],
-    ) -> list[tuple[str, list[ExportSource]]]:
-        """Group evidence by the requirements they demonstrate.
+    def _consolidate_requirements(
+        matched_reqs: list[str],
+    ) -> str:
+        """Map a list of raw requirement tokens to a canonical theme key.
 
-        Returns ``(requirement, [sources])`` sorted by source count
-        descending so the most-evidenced requirements appear first.
+        Returns the theme with the most matching tokens, or the first
+        raw token if no consolidation alias is found.
         """
-        groups: dict[str, list[ExportSource]] = {}
+        theme_counts: dict[str, int] = {}
+        unmatched: list[str] = []
+        for req in matched_reqs:
+            canonical = _CONSOLIDATION_ALIASES.get(req)
+            if canonical:
+                theme_counts[canonical] = theme_counts.get(canonical, 0) + 1
+            else:
+                unmatched.append(req)
+
+        if theme_counts:
+            return max(theme_counts, key=theme_counts.get)  # type: ignore[arg-type]
+        if unmatched:
+            return unmatched[0]
+        return matched_reqs[0] if matched_reqs else ""
+
+    @staticmethod
+    def _assign_themes(
+        evidence: list[tuple[ExportSource, int, list[str]]],
+    ) -> list[tuple[str, list[ExportSource], list[str]]]:
+        """Consolidate requirements into themes and deduplicate evidence.
+
+        Returns ``(theme_key, [sources], [raw_requirements])`` tuples.
+        Each source appears in at most one theme.  Themes are returned in
+        priority order (most discriminating first), limited to
+        ``_MAX_BODY_PARAGRAPHS``.
+        """
+        # Step 1: assign each source to its best theme, track raw reqs
+        theme_sources: dict[str, list[ExportSource]] = {}
+        theme_reqs: dict[str, list[str]] = {}
+
         for source, _score, matched_reqs in evidence:
-            for req in matched_reqs:
-                groups.setdefault(req, []).append(source)
-        return sorted(groups.items(), key=lambda x: -len(x[1]))
+            theme = MarkdownInterestLetterGenerator._consolidate_requirements(matched_reqs)
+            if not theme:
+                continue
+            theme_sources.setdefault(theme, []).append(source)
+            theme_reqs.setdefault(theme, [])
+            for r in matched_reqs:
+                if r not in theme_reqs[theme]:
+                    theme_reqs[theme].append(r)
+
+        # Step 2: deduplicate — each source appears in at most one theme
+        seen_sources: set[str] = set()
+        deduped: dict[str, list[ExportSource]] = {}
+        for theme, sources in theme_sources.items():
+            unique = []
+            for s in sources:
+                if s.id not in seen_sources:
+                    seen_sources.add(s.id)
+                    unique.append(s)
+            if unique:
+                deduped[theme] = unique
+
+        # Step 3: order by priority then by number of sources
+        def _sort_key(item: tuple[str, list[ExportSource]]) -> tuple[int, int]:
+            theme, sources = item
+            try:
+                priority = _THEME_PRIORITY.index(theme)
+            except ValueError:
+                priority = len(_THEME_PRIORITY)
+            return (priority, -len(sources))
+
+        sorted_themes = sorted(deduped.items(), key=_sort_key)
+        result = [
+            (theme, sources, theme_reqs.get(theme, []))
+            for theme, sources in sorted_themes
+        ]
+        return result[: MarkdownInterestLetterGenerator._MAX_BODY_PARAGRAPHS]
 
     # ------------------------------------------------------------------
     # Letter sections
     # ------------------------------------------------------------------
 
     def _opening_paragraph(
-        self, role: object, requirement_groups: list[tuple[str, list[ExportSource]]]
+        self, role: object, theme_groups: list[tuple[str, list[ExportSource], list[str]]]
     ) -> str:
-        """Build opening paragraph referencing top requirements."""
-        top_reqs = [
-            self._display_requirement(req) for req, _ in requirement_groups[:3]
-        ]
+        """Build opening paragraph referencing top capability areas."""
+        labels = self._capability_labels(theme_groups)
 
-        if role and top_reqs:
-            req_text = self._join_requirements(top_reqs)
+        if role and labels:
+            req_text = self._join_requirements(labels)
             return (
                 f"I am writing to express strong interest in the {role} opportunity. "
-                f"My background aligns closely with your requirements in {req_text}."
+                f"My background in {req_text} aligns closely with this role."
             )
         if role:
             return (
@@ -156,18 +371,19 @@ class MarkdownInterestLetterGenerator:
         )
 
     def _body_paragraphs(
-        self, evidence: list[ExportSource], requirement_groups: list[tuple[str, list[ExportSource]]]
+        self,
+        evidence: list[ExportSource],
+        theme_groups: list[tuple[str, list[ExportSource], list[str]]],
     ) -> list[str]:
-        """Build body paragraphs connecting requirements to evidence.
+        """Build body paragraphs connecting themes to evidence.
 
-        When requirement groups exist (JD provided), each paragraph
-        connects one requirement to matching evidence. When no JD is
-        provided, each evidence item is rendered as its own paragraph.
+        Each paragraph connects one theme to its best matching evidence
+        using natural prose.  Evidence is deduplicated across paragraphs.
         """
         paragraphs: list[str] = []
-        if requirement_groups:
-            for req, sources in requirement_groups[: self._MAX_BODY_PARAGRAPHS]:
-                para = self._requirement_paragraph(req, sources)
+        if theme_groups:
+            for idx, (theme, sources, raw_reqs) in enumerate(theme_groups):
+                para = self._narrative_paragraph(theme, sources, raw_reqs, idx)
                 if para:
                     paragraphs.append(para)
         else:
@@ -177,37 +393,143 @@ class MarkdownInterestLetterGenerator:
                     paragraphs.append(f"{self._lower_first(desc)}.")
         return paragraphs
 
-    def _requirement_paragraph(
-        self, requirement: str, sources: list[ExportSource]
+    def _narrative_paragraph(
+        self,
+        theme: str,
+        sources: list[ExportSource],
+        raw_reqs: list[str],
+        para_idx: int,
     ) -> str:
-        """Build a paragraph connecting one requirement to evidence."""
-        display_req = self._display_requirement(requirement)
+        """Build a natural narrative paragraph for one theme group.
 
-        evidence_parts: list[str] = []
-        for source in sources[:2]:
-            desc = self._source_prose(source)
+        Uses ``para_idx`` (0, 1, 2) to vary sentence openers
+        deterministically across paragraphs.
+        """
+        exp_sources = [s for s in sources if s.type.lower() == "experience"]
+        skill_sources = [s for s in sources if s.type.lower() == "skill"]
+        cert_sources = [s for s in sources if s.type.lower() == "certification"]
+        other_sources = [
+            s for s in sources
+            if s.type.lower() not in ("experience", "skill", "certification")
+        ]
+
+        sentences: list[str] = []
+
+        # --- Lead sentence with supporting details woven in ---
+        if exp_sources:
+            exp = exp_sources[0]
+            title = exp.data.get("title", exp.id)
+            scope = self._first_clause(exp.data.get("scope", ""))
+            scope_l = self._lower_first(scope) if scope else "contributed to key initiatives"
+
+            # Drop skills already implied by the experience scope
+            scope_lower = scope.lower()
+            skill_sources = [
+                s for s in skill_sources
+                if s.data.get("name", "").lower() not in scope_lower
+            ]
+
+            supporting = self._build_supporting_clause(skill_sources, cert_sources, para_idx)
+
+            _exp_leads = [
+                f"In my role as {title}, I {scope_l}",
+                f"As {title}, I {scope_l}",
+                f"Working as {title}, I {scope_l}",
+            ]
+            lead = _exp_leads[para_idx % len(_exp_leads)]
+
+            if supporting:
+                sentences.append(f"{lead}, {supporting}.")
+            else:
+                sentences.append(f"{lead}.")
+        elif skill_sources:
+            names = [s.data.get("name", s.id) for s in skill_sources[:3]]
+            area = self._join_requirements(names)
+
+            detail = ""
+            for s in skill_sources[:1]:
+                desc = self._clean_skill_desc(s.data.get("description", ""))
+                if desc:
+                    detail = f", including {self._lower_first(desc)}"
+                    break
+
+            _skill_leads = [
+                f"I bring strong expertise in {area}{detail}",
+                f"My technical capabilities span {area}{detail}",
+                f"My experience includes {area}{detail}",
+            ]
+            sentences.append(_skill_leads[para_idx % len(_skill_leads)] + ".")
+        elif cert_sources:
+            for s in cert_sources[:1]:
+                name = s.data.get("name", s.id)
+                if "cert" in name.lower():
+                    sentences.append(f"My background includes {name}.")
+                else:
+                    sentences.append(f"My background includes {name} certification.")
+
+        # --- Other sources (projects, achievements) rendered separately ---
+        for s in other_sources[:1]:
+            prose = self._source_prose(s)
+            if prose:
+                sentences.append(self._upper_first(prose) + ".")
+
+        return " ".join(sentences)
+
+    def _build_supporting_clause(
+        self,
+        skill_sources: list[ExportSource],
+        cert_sources: list[ExportSource],
+        para_idx: int,
+    ) -> str | None:
+        """Build a natural supporting clause from skills and certifications.
+
+        Combines up to 2 skills and 1 certification into a single flowing
+        clause that attaches to the experience lead sentence.
+        """
+        parts: list[str] = []
+
+        for s in skill_sources[:2]:
+            name = s.data.get("name", s.id)
+            desc = self._clean_skill_desc(s.data.get("description", ""))
             if desc:
-                evidence_parts.append(desc)
+                parts.append(f"{name} ({self._lower_first(desc)})")
+            else:
+                parts.append(name)
 
-        if not evidence_parts:
-            return ""
+        for s in cert_sources[:1]:
+            name = s.data.get("name", s.id)
+            if "cert" in name.lower():
+                parts.append(name)
+            else:
+                parts.append(f"{name} certification")
 
-        evidence_text = " and ".join(evidence_parts)
-        return f"Regarding {display_req}, {evidence_text}."
+        if not parts:
+            return None
+
+        connectors = ["using", "leveraging", "with", "applying"]
+        connector = connectors[para_idx % len(connectors)]
+
+        if len(parts) == 1:
+            return f"{connector} {parts[0]}"
+        if len(parts) == 2:
+            return f"{connector} {parts[0]} and {parts[1]}"
+        return f"{connector} {parts[0]}, {parts[1]}, and {parts[2]}"
 
     def _closing_paragraph(
         self,
         name: str,
         role: object,
-        requirement_groups: list[tuple[str, list[ExportSource]]],
+        theme_groups: list[tuple[str, list[ExportSource], list[str]]],
     ) -> str:
-        """Build closing paragraph referencing role and strongest competency."""
+        """Build closing paragraph referencing role and strongest fit."""
         if not role:
             return "Sincerely,"
 
         strongest = ""
-        if requirement_groups:
-            strongest = self._display_requirement(requirement_groups[0][0])
+        if theme_groups:
+            labels = self._capability_labels(theme_groups[:1])
+            if labels:
+                strongest = labels[0]
 
         if strongest:
             return (
@@ -276,6 +598,43 @@ class MarkdownInterestLetterGenerator:
     def _person_name(self, person: dict) -> str:
         return self._markdown_cv._person_name(person)
 
+    def _capability_labels(
+        self, theme_groups: list[tuple[str, list[ExportSource], list[str]]]
+    ) -> list[str]:
+        """Extract human-readable capability labels from theme groups.
+
+        For each theme, picks the most specific (multi-word preferred)
+        label from the raw requirement tokens.
+        """
+        labels: list[str] = []
+        for _theme, _sources, raw_reqs in theme_groups[:3]:
+            if not raw_reqs:
+                continue
+            humanized = [self._display_requirement(r) for r in raw_reqs]
+            multi = [h for h in humanized if " " in h]
+            if multi:
+                labels.append(multi[0])
+            elif humanized:
+                labels.append(humanized[0])
+        return labels
+
+    @staticmethod
+    def _clean_skill_desc(desc: str) -> str:
+        """Strip leading 'Expert in', 'Proficient in', etc. from descriptions."""
+        if not desc:
+            return ""
+        for prefix in ("Expert in ", "Proficient in ", "Skilled in ", "Experienced in "):
+            if desc.startswith(prefix):
+                return desc[len(prefix):]
+        return desc
+
+    @staticmethod
+    def _upper_first(text: str) -> str:
+        """Capitalize the first character."""
+        if not text:
+            return ""
+        return text[0].upper() + text[1:]
+
     @staticmethod
     def _first_source(
         sources: list[ExportSource], source_types: set[str]
@@ -292,11 +651,11 @@ class MarkdownInterestLetterGenerator:
     @staticmethod
     def _display_requirement(token: str) -> str:
         """Convert a normalised requirement token to a human-readable name."""
-        if token in _ACRONYMS:
+        if token in _ACronyms:
             return token.upper()
         if "/" in token:
             return "/".join(
-                p.upper() if p in _ACRONYMS else p.title() for p in token.split("/")
+                p.upper() if p in _ACronyms else p.title() for p in token.split("/")
             )
         return token.title()
 

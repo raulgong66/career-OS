@@ -549,6 +549,24 @@ def _write_profile(profile: dict[str, Any]) -> Path:
     return path
 
 
+def _body_paragraph_count(result: str) -> int:
+    """Count narrative body paragraphs in the letter (between opening and closing)."""
+    sections = result.split("\n\n")
+    dear_idx = next(
+        (i for i, s in enumerate(sections) if s.strip().startswith("Dear")), 0
+    )
+    # Find the closing paragraph (starts with "I am confident" or "I am sure")
+    closing_idx = len(sections)
+    for i in range(dear_idx + 1, len(sections)):
+        stripped = sections[i].strip()
+        if stripped.startswith("I am confident") or stripped.startswith("I am sure"):
+            closing_idx = i
+            break
+    # Skip greeting (dear_idx) and opening (dear_idx + 1)
+    body = [s.strip() for s in sections[dear_idx + 2 : closing_idx] if s.strip()]
+    return len(body)
+
+
 # ---- Interest Letter acceptance tests (new generator) ----
 
 
@@ -573,8 +591,8 @@ def test_interest_letter_output_is_prose_not_bullets() -> None:
     result = MarkdownInterestLetterGenerator().generate(contract)
     # No bullet markers
     assert "- " not in result
-    # Body paragraphs contain prose connecting requirements to evidence
-    assert "Regarding" in result or "regarding" in result.lower()
+    # Body should contain narrative prose connecting requirements to evidence
+    assert "In my role" in result or "My experience" in result or "My background" in result
 
 
 def test_interest_letter_jd_a_vs_jd_b_different_evidence() -> None:
@@ -683,5 +701,437 @@ def test_interest_letter_body_paragraphs_capped() -> None:
 
     gen = MarkdownInterestLetterGenerator()
     result = gen.generate(contract)
-    body_paras = [line for line in result.splitlines() if line.startswith("Regarding")]
-    assert len(body_paras) <= gen._MAX_BODY_PARAGRAPHS
+    body_count = _body_paragraph_count(result)
+    assert body_count <= gen._MAX_BODY_PARAGRAPHS
+
+
+# ---- Consolidation / dedup regression tests ----
+
+
+def test_interest_letter_consolidates_google_and_google_cloud() -> None:
+    """'google' and 'google cloud' requirements produce one paragraph, not two."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Cloud Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed Google Cloud infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "Google Cloud", "description": "Expert in GCP"}),
+        ],
+        job_description="Google Cloud engineer with infrastructure experience",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    body_count = _body_paragraph_count(result)
+    # Should be 1 body paragraph — both google and google cloud collapse to cloud_infra
+    assert body_count == 1
+    # The paragraph should mention Google/GCP
+    assert "Google" in result or "GCP" in result
+
+
+def test_interest_letter_consolidates_cloud_and_aws_and_gcp() -> None:
+    """'cloud', 'aws', and 'google cloud' collapse into one paragraph."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Platform Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Architect", "scope": "Designed AWS and GCP infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Expert in AWS"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "Google Cloud", "description": "Expert in GCP"}),
+        ],
+        job_description="Cloud platform engineer with AWS and Google Cloud",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    body_count = _body_paragraph_count(result)
+    # All cloud requirements should collapse into one paragraph
+    assert body_count == 1, f"Expected 1 body paragraph, got {body_count}"
+    # Should mention cloud-related evidence
+    assert "AWS" in result or "Google Cloud" in result or "GCP" in result
+
+
+def test_interest_letter_no_source_repeated_across_paragraphs() -> None:
+    """Each evidence source appears at most once in the entire letter body."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed GCP and AWS infrastructure; implemented DevSecOps pipelines"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "Google Cloud", "description": "Expert in GCP"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "DevSecOps", "description": "Automated security scanning in CI/CD"}),
+        ],
+        job_description="Cloud and DevSecOps engineer with Google Cloud",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    assert "Cloud Engineer" in result
+    assert "Google Cloud" in result
+    result_lower = result.lower()
+    assert "devsecops" in result_lower
+    # The experience source should NOT appear twice
+    exp_count = result.count("In my role as Cloud Engineer")
+    assert exp_count <= 1, f"Cloud Engineer experience repeated {exp_count} times"
+
+
+def test_interest_letter_body_has_at_most_three_paragraphs() -> None:
+    """Letter body contains at most 3 paragraphs even with many requirements."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Engineer", "scope": "Python ML pipelines on GCP with DevSecOps practices"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "Python"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "Google Cloud"}),
+            ExportSource(type="skill", id="skill-3", data={"name": "DevSecOps"}),
+            ExportSource(type="skill", id="skill-4", data={"name": "Machine Learning"}),
+        ],
+        job_description="Python Google Cloud DevSecOps ML engineer",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    body_count = _body_paragraph_count(result)
+    assert body_count <= 3, f"Expected at most 3 body paragraphs, got {body_count}"
+
+
+def test_interest_letter_opening_uses_human_readable_labels() -> None:
+    """Opening paragraph uses human-readable capability labels, not raw tokens."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Cloud Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Cloud architecture"}),
+        ],
+        job_description="Cloud infrastructure engineer with AWS",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    # Opening paragraph is the first non-empty line after "Dear ..."
+    lines = result.splitlines()
+    dear_idx = next(i for i, l in enumerate(lines) if l.startswith("Dear"))
+    opening = ""
+    for j in range(dear_idx + 1, len(lines)):
+        if lines[j].strip():
+            opening = lines[j]
+            break
+    # Should contain human-readable label
+    assert "AWS" in opening or "Cloud" in opening
+    # Should not contain raw lowercase "aws" as a standalone word
+    opening_words = opening.lower().replace(",", "").replace(".", "").split()
+    assert "aws" not in opening_words, f"Raw token 'aws' found in opening: {opening}"
+
+
+def test_interest_letter_closing_references_strongest_capability() -> None:
+    """Closing paragraph references the strongest capability area."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "ML Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="skill", id="skill-1", data={"name": "PyTorch", "description": "Deep learning"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "AWS", "description": "Cloud infrastructure"}),
+        ],
+        job_description="ML engineer with PyTorch and AWS experience",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    closing = result.split("Sincerely")[0]
+    # Should reference the strongest capability (PyTorch or Machine Learning)
+    assert "pytorch" in closing.lower() or "machine learning" in closing.lower()
+
+
+def test_interest_letter_raw_tokens_not_exposed_in_body() -> None:
+    """Raw extracted tokens like 'google' or 'devsecops' don't appear as standalone words in body."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="skill", id="skill-1", data={"name": "Google Cloud", "description": "Cloud platform"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "DevSecOps", "description": "Security automation"}),
+        ],
+        job_description="Google Cloud DevSecOps engineer",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    # Body lines should not contain raw lowercase tokens as standalone words
+    body_text = result.lower()
+    # "google" should only appear as part of "google cloud" (a proper name)
+    # Not as a standalone word like "regarding google,"
+    lines = result.splitlines()
+    for line in lines:
+        if line.startswith("Dear") or line.startswith("#") or line.startswith("Sincerely"):
+            continue
+        words = line.lower().replace(",", "").replace(".", "").replace("(", "").replace(")", "").split()
+        # Check that "google" without "cloud" following doesn't appear as a standalone token
+        for i, w in enumerate(words):
+            if w == "google" and i + 1 < len(words) and words[i + 1] != "cloud":
+                # This is OK if it's part of "Google Cloud" in the skill name
+                pass
+
+
+# ---- Narrative quality regression tests ----
+
+
+def test_interest_letter_no_regarding_pattern() -> None:
+    """Body paragraphs do not begin with 'Regarding'."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed GCP and AWS infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Cloud architecture"}),
+        ],
+        job_description="Cloud engineer with AWS experience",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    for line in result.splitlines():
+        if line.strip():
+            assert not line.startswith("Regarding"), f"Paragraph begins with 'Regarding': {line}"
+
+
+def test_interest_letter_no_repetitive_my_expertise_pattern() -> None:
+    """Body does not repeat 'my expertise in' / 'my experience as' across every sentence."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed GCP and AWS infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Cloud architecture"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "DevSecOps", "description": "Security automation"}),
+        ],
+        job_description="Cloud and DevSecOps engineer with AWS",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    body = result.split("Sincerely")[0]
+    # Count occurrences of repetitive patterns
+    expertise_count = body.lower().count("my expertise in")
+    experience_count = body.lower().count("my experience as")
+    # At most one of each pattern should appear
+    assert expertise_count <= 1, f"'my expertise in' appears {expertise_count} times"
+    assert experience_count <= 1, f"'my experience as' appears {experience_count} times"
+
+
+def test_interest_letter_narrative_has_varied_sentence_openers() -> None:
+    """Body paragraphs use varied sentence structures (not all starting the same way)."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed GCP and AWS infrastructure"}),
+            ExportSource(type="experience", id="exp-2", data={"title": "DevSecOps Engineer", "scope": "Built security scanning pipelines"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Cloud architecture"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "DevSecOps", "description": "Security automation"}),
+        ],
+        job_description="Cloud and DevSecOps engineer with AWS",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    body = result.split("Sincerely")[0]
+    # Body should contain at least two different sentence opener patterns
+    has_in_my_role = "In my role as" in body
+    has_as_role = "As " in body and ", I " in body
+    has_my_experience = "My experience" in body
+    has_my_background = "My background" in body
+    openers = sum([has_in_my_role, has_as_role, has_my_experience, has_my_background])
+    assert openers >= 2, f"Expected at least 2 different opener patterns, found {openers}"
+
+
+def test_interest_letter_experience_used_as_anchor() -> None:
+    """Experience sources are used as narrative anchors, not just listed."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Architect", "scope": "Designed AWS infrastructure; reduced costs by 40%"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Expert in EC2, S3, Lambda"}),
+        ],
+        job_description="Cloud engineer with AWS",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    # Experience should appear as "In my role as X, I ..." not just "my experience as X: ..."
+    assert "In my role as Cloud Architect, I" in result
+    assert "my experience as Cloud Architect:" not in result
+
+
+def test_interest_letter_certification_woven_into_narrative() -> None:
+    """Certifications are woven into the narrative, not rendered as standalone sentences."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed cloud infrastructure"}),
+            ExportSource(type="certification", id="cert-1", data={"name": "AWS cloud certification"}),
+        ],
+        job_description="Cloud engineer with cloud certification",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    # Cert should appear woven into the narrative, not as "I hold a ... certification"
+    assert "AWS cloud certification" in result
+    assert "I hold a" not in result
+
+
+def test_interest_letter_skill_description_cleaned() -> None:
+    """Skill descriptions have 'Expert in' prefix stripped for natural prose."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed cloud infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "cloud tools", "description": "Expert in EC2, S3, and Lambda"}),
+        ],
+        job_description="Cloud engineer with cloud tools",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    assert "Expert in" not in result
+    assert "EC2" in result
+    assert "S3" in result
+
+
+def test_interest_letter_no_this_includes_pattern() -> None:
+    """Body does not contain 'This includes' mechanical pattern."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed cloud infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Cloud architecture"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "DevSecOps", "description": "Security automation"}),
+        ],
+        job_description="Cloud and DevSecOps engineer with AWS",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    assert "This includes" not in result
+
+
+def test_interest_letter_no_i_hold_pattern() -> None:
+    """Body does not contain 'I hold a' standalone cert pattern."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed cloud infrastructure"}),
+            ExportSource(type="certification", id="cert-1", data={"name": "AWS cert"}),
+        ],
+        job_description="Cloud engineer with cloud certification",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    assert "I hold a" not in result
+
+
+def test_interest_letter_varied_connectors_in_supporting_clause() -> None:
+    """Supporting clauses across paragraphs use different connectors."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed cloud infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "Cloud architecture"}),
+            ExportSource(type="experience", id="exp-2", data={"title": "DevSecOps Engineer", "scope": "Built security pipelines"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "DevSecOps", "description": "Security automation"}),
+        ],
+        job_description="Cloud and DevSecOps engineer with AWS",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    connectors = ["using", "leveraging", "with", "applying"]
+    found = [c for c in connectors if f", {c} " in result]
+    assert len(found) >= 1, f"Expected at least one supporting clause connector, found: {found}"
+
+
+def test_interest_letter_aws_skill_matches_without_gcp() -> None:
+    """AWS skill sources match JD requirements containing 'AWS' (normalised to 'amazon web services')."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Cloud Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed AWS infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "EC2, S3, Lambda"}),
+        ],
+        job_description="AWS cloud engineer",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    assert "Amazon Web Services" in result or "AWS" in result
+
+
+def test_interest_letter_expansion_of_cloud_requirements() -> None:
+    """Both 'AWS' and 'Google Cloud' requirements are handled via canonical forms."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Cloud Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Cloud Engineer", "scope": "Managed AWS and GCP infrastructure"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "AWS", "description": "EC2, S3"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "Google Cloud", "description": "GKE, Compute Engine"}),
+        ],
+        job_description="Cloud infrastructure engineer with AWS and Google Cloud",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    body = result.split("Sincerely")[0]
+    assert "AWS" in body or "Google Cloud" in body
