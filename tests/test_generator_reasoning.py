@@ -1135,3 +1135,339 @@ def test_interest_letter_expansion_of_cloud_requirements() -> None:
     result = MarkdownInterestLetterGenerator().generate(contract)
     body = result.split("Sincerely")[0]
     assert "AWS" in body or "Google Cloud" in body
+
+
+# ---- JD role resolution & curated capability labels (deterministic fixes) ----
+
+
+def _opening_paragraph(result: str) -> str:
+    """Extract the first non-empty line after the 'Dear ...' greeting."""
+    lines = result.splitlines()
+    dear_idx = next(i for i, l in enumerate(lines) if l.startswith("Dear"))
+    for j in range(dear_idx + 1, len(lines)):
+        if lines[j].strip():
+            return lines[j]
+    return ""
+
+
+def test_interest_letter_uses_jd_role_with_precedence() -> None:
+    """A JD-derived role title takes precedence over the profile target-context role."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[
+            {"id": "ctx-1", "role": "Senior IT DevSecOps Specialist / AI Solutions Architect", "audience": "Hiring Team"}
+        ],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Infrastructure Engineer", "scope": "Administered Linux environments and CI/CD automation"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "Linux", "description": "System administration"}),
+        ],
+        job_description=(
+            "About the job\n"
+            "We are looking for a Senior IT Infrastructure & DevOps Engineer with a strong "
+            "background in cloud-native architectures and CI/CD automation."
+        ),
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    opening = _opening_paragraph(result)
+    assert "Senior IT Infrastructure & DevOps Engineer" in opening
+    assert "Senior IT DevSecOps Specialist / AI Solutions Architect" not in result
+
+
+def test_interest_letter_jd_role_heading_label_skipped() -> None:
+    """'Job Title:' / 'Role:' heading labels do not hijack the extracted role."""
+    from careeros.reporting.partner_output import jd_role_text
+
+    assert jd_role_text("Job Title: Senior DevOps Engineer\nResponsibilities include CI/CD.") == "Senior DevOps Engineer"
+    assert jd_role_text("Role: Cloud Architect\nLocation: Paris") == "Cloud Architect"
+    assert jd_role_text("") == ""
+    assert jd_role_text("Python engineer with system design experience") == ""
+
+
+def test_interest_letter_falls_back_to_target_context_role() -> None:
+    """When the JD names no role, the target-context role is preserved."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Senior Engineer", "audience": "Hiring Manager"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={"title": "Engineer", "scope": "Built systems"}),
+            ExportSource(type="skill", id="skill-1", data={"name": "Python"}),
+        ],
+        job_description="Python engineer with system design experience",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    assert "Senior Engineer" in _opening_paragraph(result)
+
+
+def test_interest_letter_headline_fallback_when_no_role() -> None:
+    """Without a JD role or target-context role, the profile headline is used."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}],
+                "positioning": {"headline": "Infrastructure Automation Specialist"}},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[],
+        sources=[
+            ExportSource(type="skill", id="skill-1", data={"name": "Linux", "description": "System administration"}),
+        ],
+        job_description="Systems engineer opportunity",
+    )
+    opening = _opening_paragraph(MarkdownInterestLetterGenerator().generate(contract))
+    assert "Infrastructure Automation Specialist" in opening
+
+
+def test_interest_letter_capability_labels_are_curated() -> None:
+    """Capability labels come from curated theme labels; unknown themes are skipped."""
+    from careeros.generators.markdown_interest_letter import _THEME_LABELS
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    generator = MarkdownInterestLetterGenerator()
+    theme_groups = [
+        (theme, [], [f"raw {index}"])
+        for index, theme in enumerate(["cloud_infra", "infra_tooling", "unknown_theme"])
+    ]
+    labels = generator._capability_labels(theme_groups)
+    assert labels == ["Cloud and Infrastructure", "Infrastructure Tooling"]
+    assert set(labels) <= set(_THEME_LABELS.values())
+
+
+def test_interest_letter_generic_verbs_not_capability_labels() -> None:
+    """'Administer' (a JD duty verb) never surfaces as a capability label."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Infrastructure Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="skill", id="skill-1", data={"name": "Linux", "description": "System administration"}),
+        ],
+        job_description="Administer and maintain Linux environments with CI/CD automation",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    opening = _opening_paragraph(result)
+    assert "Administer" not in opening
+    assert "Maintain" not in opening
+    assert "Infrastructure Tooling" in opening
+
+
+def test_interest_letter_earthlab_jd_role_and_labels() -> None:
+    """End-to-end: EarthLab JD yields the true role and curated labels (acceptance)."""
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    jd = (
+        "About the job\n"
+        "We are looking for a Senior IT Infrastructure & DevOps Engineer with a strong background\n"
+        "in cloud-native architectures, systems administration, and CI/CD automation.\n"
+        "What is expected from you:\n"
+        "- Take ownership of EarthLab's existing IT infrastructure\n"
+        "- Administer and maintain Linux environments, on-premise servers in the data center, networking,\n"
+        "  storage, virtualization platforms, containers, monitoring tools, backup processes, and technical documentation.\n"
+        "- Improve automation, deployment, monitoring, backup, security, and configuration management practices\n"
+        "- Implement, maintain, and enhance CI/CD pipelines and deployment tools, integrating DevSecOps practices\n"
+        "Technical Skills:\n"
+        "- Linux system administration\n"
+        "- Networking and storage fundamentals\n"
+        "- CI/CD tools such as GitLab CI or Jenkins\n"
+        "- Docker and application packaging\n"
+        "- Infrastructure automation, ideally Ansible or Terraform\n"
+        "Nice to have:\n"
+        "- Kubernetes or Mesos/Marathon\n"
+        "- VMware or Hyper-V\n"
+        "- AWS, Azure, or GCP\n"
+        "- DevSecOps practices"
+    )
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}],
+                "positioning": {"headline": "Senior IT DevSecOps Specialist / AI Solutions Architect"}},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[
+            {"id": "ctx-1", "role": "Senior IT DevSecOps Specialist / AI Solutions Architect", "audience": "Hiring Team"}
+        ],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={
+                "title": "Infrastructure Engineer",
+                "scope": "Administered and maintained Linux environments, on-premise servers, "
+                         "networking, storage, and VMware virtualization platforms",
+            }),
+            ExportSource(type="skill", id="skill-1", data={"name": "Linux", "description": "System administration"}),
+            ExportSource(type="skill", id="skill-2", data={"name": "Kubernetes", "description": "Container orchestration"}),
+            ExportSource(type="skill", id="skill-3", data={"name": "Docker", "description": "Application packaging"}),
+            ExportSource(type="skill", id="skill-4", data={"name": "Ansible", "description": "Infrastructure automation"}),
+            ExportSource(type="skill", id="skill-5", data={"name": "AWS", "description": "Cloud infrastructure"}),
+        ],
+        job_description=jd,
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    opening = _opening_paragraph(result)
+    # 1. True role title wins over the outdated profile role
+    assert "Senior IT Infrastructure & DevOps Engineer" in opening
+    assert "Senior IT DevSecOps Specialist / AI Solutions Architect" not in result
+    # 2. No 'Administer'/'Devops Engineer' machine-generated capability labels
+    assert "Administer" not in opening
+    assert "Devops Engineer" not in result
+    # 3. Curated labels, not raw tokens, describe the background
+    opening_words = opening.split()
+    raw_junk = {"administer", "devops", "jenkins", "terraform", "kubernetes"}
+    assert raw_junk.isdisjoint(set(opening_words))
+    # 4. Relevant capability concepts surface in the body
+    body = result.split("Sincerely")[0]
+    body_lower = body.lower()
+    assert "linux" in body_lower
+    assert "docker" in body_lower
+    assert "ansible" in body_lower
+    assert "aws" in body_lower
+
+
+# ---- A1/A2/A3 milestone: aggregated theme relevance, within-theme narration, punctuation ----
+
+
+def test_interest_letter_pooled_theme_relevance_surfaces_cloud_in_opening() -> None:
+    """A1: a theme with no single winning source still surfaces via aggregated evidence.
+
+    Cloud requirements (AWS / Google Cloud / Azure) are spread across several
+    evidence sources, none of which claims cloud_infra winner-take-all.  The
+    aggregated relevance pool must promote 'Cloud and Infrastructure' into the
+    opening AND closing labels — while the empty cloud theme never renders a
+    body paragraph.
+    """
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Platform Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-root", data={
+                "title": "Senior DevSecOps Specialist",
+                "scope": "Led migration from VMware VxRail datacenters to AWS, reducing infrastructure "
+                         "overhead; managed Linux environments with Ansible; built CI/CD automation "
+                         "with Docker and Kubernetes",
+            }),
+            ExportSource(type="skill", id="skill-clouds", data={
+                "name": "Cloud & Containers",
+                "description": "AWS, Google Cloud, VMware, Kubernetes, Docker, CI/CD pipelines, Azure, "
+                               "Linux, Ansible, Infrastructure as Code",
+            }),
+            ExportSource(type="experience", id="exp-sec", data={
+                "title": "IT System Administrator",
+                "scope": "Administered Google Cloud infrastructure; enforced DevSecOps, cybersecurity, "
+                         "SIEM, and identity and access management policy",
+            }),
+        ],
+        job_description=(
+            "Infrastructure engineer with Linux, VMware, Ansible, Docker, Kubernetes, CI/CD, AWS, "
+            "Google Cloud, Azure, DevSecOps, cybersecurity, SIEM, and identity and access "
+            "management experience"
+        ),
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+    opening = _opening_paragraph(result)
+
+    # Pooled aggregation surfaces the cloud thread even without a cloud-winning source
+    assert "Cloud and Infrastructure" in opening
+    assert "Infrastructure Tooling" in opening
+    # Closing references the aggregated top themes, including the distributed cloud thread
+    closing = result.split("Sincerely")[0]
+    assert "Cloud and Infrastructure" in closing
+    assert "Infrastructure Tooling" in closing
+    # The empty cloud theme disappears from the body: exactly two focused paragraphs
+    assert _body_paragraph_count(result) == 2
+
+
+def test_interest_letter_linux_evidence_narrated_within_theme() -> None:
+    """A2: within a theme, the strongest distinct same-theme experience is narrated.
+
+    A second experience with materially distinct evidence (Linux administration)
+    must appear in the body, while a redundant same-theme experience that adds no
+    distinct requirements stays out.  Evidence is never dumped wholesale.
+    """
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Infrastructure Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={
+                "title": "Cloud Infrastructure Lead",
+                "scope": "Led migration from VMware VxRail datacenters to AWS; built CI/CD automation "
+                         "with Docker and Kubernetes",
+            }),
+            ExportSource(type="experience", id="exp-2", data={
+                "title": "Systems Engineer",
+                "scope": "Managed Linux environments and monitoring for 1,000+ users",
+            }),
+            ExportSource(type="experience", id="exp-3", data={
+                "title": "Networking Admin",
+                "scope": "Managed CI/CD pipelines and infrastructure automation",
+            }),
+            ExportSource(type="skill", id="skill-1", data={"name": "Kubernetes", "description": "Container orchestration"}),
+        ],
+        job_description=(
+            "Infrastructure engineer with Linux, VMware, Docker, Kubernetes, CI/CD, and "
+            "monitoring experience"
+        ),
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    # Linux evidence from the second experience is narrated in the theme paragraph
+    assert "managed Linux environments" in result
+    # The redundant same-theme experience adds zero distinct requirements: not narrated
+    assert "Networking Admin" not in result
+    # Still a single coherent paragraph (anchor + one additional sentence + skill clause)
+    assert _body_paragraph_count(result) == 1
+    # No punctuation artifacts from the woven sentence
+    assert ".." not in result
+
+
+def test_interest_letter_no_punctuation_artifacts_in_parentheticals() -> None:
+    """A3: skill descriptions wrapped in parentheses never leave '.).' or '..' artifacts.
+
+    A description that ends with a period (e.g. 'Infrastructure as Code.') must be
+    stripped before embedding mid-sentence, and an experience scope ending with a
+    period must not double the sentence terminator.
+    """
+    from careeros.generators.markdown_interest_letter import MarkdownInterestLetterGenerator
+
+    contract = ExportContract(
+        profile_version="1.0.0", artifact_id="il-1", artifact_type="INTEREST_LETTER",
+        person={"id": "p1", "names": [{"value": "Jane Doe", "usage": "professional"}]},
+        artifact={"title": "Interest Letter"},
+        target_contexts=[{"id": "ctx-1", "role": "Cloud Engineer", "audience": "Hiring Team"}],
+        sources=[
+            ExportSource(type="experience", id="exp-1", data={
+                "title": "Cloud Engineer",
+                "scope": "Managed cloud infrastructure for 200+ users; maintained Kubernetes "
+                         "clusters, Docker, and CI/CD.",
+            }),
+            ExportSource(type="skill", id="skill-1", data={
+                "name": "Cloud & Containers",
+                "description": "AWS, Google Cloud, VMware VxRail, Kubernetes, Docker, OpenStack, "
+                               "Azure, CI/CD pipelines, Infrastructure as Code.",
+            }),
+        ],
+        job_description="Cloud engineer with AWS, Kubernetes, Docker, and infrastructure experience",
+    )
+    result = MarkdownInterestLetterGenerator().generate(contract)
+
+    # The description no longer ends with '.', so the closing parenthesis is clean
+    assert ".)." not in result
+    assert "Infrastructure as Code)." in result
+    # The scope's trailing period is stripped before the template adds its own
+    assert "users.." not in result
+    assert "for 200+ users," in result

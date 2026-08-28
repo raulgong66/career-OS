@@ -7,9 +7,12 @@ listing all profile sources as bullets.
 
 from __future__ import annotations
 
+import re
+
 from ..exceptions import ValidationError
 from ..export_contract import ExportContract, ExportSource
 from ..optimizer import CVOptimizer, _REQUIREMENT_ALIASES
+from ..reporting.partner_output import jd_role_text
 from .markdown_cv import MarkdownCVGenerator
 from .source_utils import extract_source_text
 
@@ -188,6 +191,31 @@ class MarkdownInterestLetterGenerator:
     def __init__(self) -> None:
         self._markdown_cv = MarkdownCVGenerator()
 
+    @staticmethod
+    def _resolve_role(
+        contract: ExportContract, context: dict[str, Any]
+    ) -> str:
+        """Resolve the letter role with JD-first precedence.
+
+        1. the role title extracted from the job description, when present
+        2. the selected target-context role
+        3. the profile positioning headline as a last resort
+
+        A JD role only overrides the target-context role when the JD
+        actually names one; generic JDs keep the curated target role.
+        """
+        if contract.job_description:
+            jd_role = jd_role_text(contract.job_description)
+            if jd_role:
+                return jd_role
+        target_role = context.get("role")
+        if target_role:
+            return str(target_role)
+        headline = (contract.person.get("positioning") or {}).get("headline")
+        if headline:
+            return str(headline)
+        return ""
+
     def generate(self, contract: ExportContract) -> str:
         """Generate a personalized Markdown interest letter."""
         if contract.artifact_type.upper() not in self.supported_artifact_types:
@@ -198,7 +226,7 @@ class MarkdownInterestLetterGenerator:
         name = self._person_name(contract.person)
         title = contract.artifact.get("title") or "Interest Letter"
         context = contract.target_contexts[0] if contract.target_contexts else {}
-        role = context.get("role")
+        role = self._resolve_role(contract, context)
         audience = context.get("audience") or "Hiring Team"
 
         jd = contract.job_description
@@ -208,16 +236,18 @@ class MarkdownInterestLetterGenerator:
             scored = self._score_sources(contract.sources, requirements)
             evidence = scored[: self._MAX_EVIDENCE]
             theme_groups = self._assign_themes(evidence)
+            label_groups = self._pooled_theme_groups(evidence)
         else:
             evidence = [
                 s for s in contract.sources
                 if s.type.lower() not in {"professional_summary", "professionalsummary"}
             ][: self._MAX_EVIDENCE]
             theme_groups = []
+            label_groups = []
 
         lines = [f"# {title}", "", f"Dear {audience},", ""]
 
-        lines.append(self._opening_paragraph(role, theme_groups))
+        lines.append(self._opening_paragraph(role, label_groups))
         lines.append("")
 
         summary = self._first_source(
@@ -231,7 +261,7 @@ class MarkdownInterestLetterGenerator:
             lines.append(para)
             lines.append("")
 
-        lines.append(self._closing_paragraph(name, role, theme_groups))
+        lines.append(self._closing_paragraph(name, role, label_groups))
         lines.append("")
         lines.append(name)
 
@@ -344,6 +374,35 @@ class MarkdownInterestLetterGenerator:
         ]
         return result[: MarkdownInterestLetterGenerator._MAX_BODY_PARAGRAPHS]
 
+    @staticmethod
+    def _pooled_theme_groups(
+        evidence: list[tuple[ExportSource, int, list[str]]],
+    ) -> list[tuple[str, list[ExportSource], list[str]]]:
+        """Rank themes by aggregate relevance across the selected evidence.
+
+        Every requirement matched by any evidence source contributes to its
+        canonical theme's relevance pool, so a theme earns a top rank from
+        accumulated cross-source strength even when no single source claims
+        it winner-take-all.  This aggregated ordering drives the opening and
+        closing capability labels.  Source lists are empty because this
+        ordering never narrates the letter body.
+        """
+        counts: dict[str, int] = {}
+        for _source, _score, matched_reqs in evidence:
+            for req in matched_reqs:
+                canonical = _CONSOLIDATION_ALIASES.get(req)
+                if canonical:
+                    counts[canonical] = counts.get(canonical, 0) + 1
+
+        def _sort_key(theme: str) -> tuple[int, int, str]:
+            try:
+                priority = _THEME_PRIORITY.index(theme)
+            except ValueError:
+                priority = len(_THEME_PRIORITY)
+            return (-counts.get(theme, 0), priority, theme)
+
+        return [(theme, [], []) for theme in sorted(counts, key=_sort_key)]
+
     # ------------------------------------------------------------------
     # Letter sections
     # ------------------------------------------------------------------
@@ -382,13 +441,18 @@ class MarkdownInterestLetterGenerator:
         """
         paragraphs: list[str] = []
         if theme_groups:
+            matched_by_id: dict[str, set[str]] = {}
+            for _source, _score, matched_reqs in evidence:
+                matched_by_id.setdefault(_source.id, set()).update(matched_reqs)
             for idx, (theme, sources, raw_reqs) in enumerate(theme_groups):
-                para = self._narrative_paragraph(theme, sources, raw_reqs, idx)
+                para = self._narrative_paragraph(
+                    theme, sources, raw_reqs, idx, matched_by_id=matched_by_id
+                )
                 if para:
                     paragraphs.append(para)
         else:
             for source in evidence[: self._MAX_BODY_PARAGRAPHS]:
-                desc = self._source_prose(source)
+                desc = self._strip_terminal_punctuation(self._source_prose(source))
                 if desc:
                     paragraphs.append(f"{self._lower_first(desc)}.")
         return paragraphs
@@ -399,6 +463,7 @@ class MarkdownInterestLetterGenerator:
         sources: list[ExportSource],
         raw_reqs: list[str],
         para_idx: int,
+        matched_by_id: dict[str, set[str]] | None = None,
     ) -> str:
         """Build a natural narrative paragraph for one theme group.
 
@@ -420,7 +485,11 @@ class MarkdownInterestLetterGenerator:
             exp = exp_sources[0]
             title = exp.data.get("title", exp.id)
             scope = self._first_clause(exp.data.get("scope", ""))
-            scope_l = self._lower_first(scope) if scope else "contributed to key initiatives"
+            scope_l = (
+                self._lower_first(self._strip_terminal_punctuation(scope))
+                if scope
+                else "contributed to key initiatives"
+            )
 
             # Drop skills already implied by the experience scope
             scope_lower = scope.lower()
@@ -442,6 +511,10 @@ class MarkdownInterestLetterGenerator:
                 sentences.append(f"{lead}, {supporting}.")
             else:
                 sentences.append(f"{lead}.")
+
+            second = self._pick_second_experience(exp, exp_sources[1:], matched_by_id, scope_l)
+            if second is not None:
+                sentences.append(self._additional_experience_sentence(second, para_idx))
         elif skill_sources:
             names = [s.data.get("name", s.id) for s in skill_sources[:3]]
             area = self._join_requirements(names)
@@ -471,9 +544,72 @@ class MarkdownInterestLetterGenerator:
         for s in other_sources[:1]:
             prose = self._source_prose(s)
             if prose:
-                sentences.append(self._upper_first(prose) + ".")
+                sentences.append(
+                    self._upper_first(self._strip_terminal_punctuation(prose)) + "."
+                )
 
         return " ".join(sentences)
+
+    @staticmethod
+    def _pick_second_experience(
+        anchor: ExportSource,
+        candidates: list[ExportSource],
+        matched_by_id: dict[str, set[str]] | None,
+        anchor_scope_l: str,
+    ) -> ExportSource | None:
+        """Pick the strongest additional same-theme experience to narrate.
+
+        Prefers the candidate contributing the most distinct matched
+        requirements not already covered by the anchor experience (materially
+        new evidence), tie-breaking by total match count, then source id for
+        full determinism.  Returns ``None`` when no candidate adds distinct
+        evidence or every candidate duplicates the anchor scope text.
+        """
+        if not candidates or not matched_by_id:
+            return None
+        anchor_reqs = matched_by_id.get(anchor.id, set())
+        best: ExportSource | None = None
+        best_key: tuple[int, int, str] | None = None
+        for candidate in candidates:
+            cand_reqs = matched_by_id.get(candidate.id, set())
+            distinct = cand_reqs - anchor_reqs
+            if not distinct:
+                continue
+            scope = MarkdownInterestLetterGenerator._first_clause(
+                candidate.data.get("scope", "")
+            )
+            if MarkdownInterestLetterGenerator._lower_first(scope) == anchor_scope_l:
+                continue
+            key = (-len(distinct), -len(cand_reqs), candidate.id)
+            if best_key is None or key < best_key:
+                best, best_key = candidate, key
+        return best
+
+    @staticmethod
+    def _additional_experience_sentence(
+        candidate: ExportSource, para_idx: int
+    ) -> str:
+        """Build one natural sentence narrating a second same-theme experience.
+
+        Uses the same deterministic lead templates as the anchor sentence,
+        offset by one so the two openers never repeat verbatim.
+        """
+        title = candidate.data.get("title", candidate.id)
+        scope = MarkdownInterestLetterGenerator._first_clause(
+            candidate.data.get("scope", "")
+        )
+        if scope:
+            scope_l = MarkdownInterestLetterGenerator._lower_first(
+                MarkdownInterestLetterGenerator._strip_terminal_punctuation(scope)
+            )
+        else:
+            scope_l = "contributed to key initiatives"
+        leads = [
+            f"In my role as {title}, I {scope_l}",
+            f"As {title}, I {scope_l}",
+            f"Working as {title}, I {scope_l}",
+        ]
+        return f"{leads[(para_idx + 1) % len(leads)]}."
 
     def _build_supporting_clause(
         self,
@@ -521,15 +657,21 @@ class MarkdownInterestLetterGenerator:
         role: object,
         theme_groups: list[tuple[str, list[ExportSource], list[str]]],
     ) -> str:
-        """Build closing paragraph referencing role and strongest fit."""
+        """Build closing paragraph referencing role and strongest fit.
+
+        The closing reflects the aggregate theme ranking (top two pooled
+        themes, joined deterministically), so a distributed thread like
+        ``cloud_infra`` surfaces here even when it is not the single top
+        theme in the aggregated pool.
+        """
         if not role:
             return "Sincerely,"
 
         strongest = ""
         if theme_groups:
-            labels = self._capability_labels(theme_groups[:1])
+            labels = self._capability_labels(theme_groups[:2])
             if labels:
-                strongest = labels[0]
+                strongest = self._join_requirements(labels)
 
         if strongest:
             return (
@@ -603,30 +745,41 @@ class MarkdownInterestLetterGenerator:
     ) -> list[str]:
         """Extract human-readable capability labels from theme groups.
 
-        For each theme, picks the most specific (multi-word preferred)
-        label from the raw requirement tokens.
+        Each canonical theme is mapped to its curated display label.  Raw
+        requirement tokens are never used: curated labels are stable and
+        grammatical, so generic JD verbs or malformed multi-line tokens can
+        never surface as a capability label.
         """
         labels: list[str] = []
-        for _theme, _sources, raw_reqs in theme_groups[:3]:
-            if not raw_reqs:
-                continue
-            humanized = [self._display_requirement(r) for r in raw_reqs]
-            multi = [h for h in humanized if " " in h]
-            if multi:
-                labels.append(multi[0])
-            elif humanized:
-                labels.append(humanized[0])
+        for theme, _sources, _raw_reqs in theme_groups[:3]:
+            label = _THEME_LABELS.get(theme)
+            if label:
+                labels.append(label)
         return labels
 
     @staticmethod
     def _clean_skill_desc(desc: str) -> str:
-        """Strip leading 'Expert in', 'Proficient in', etc. from descriptions."""
+        """Strip leading 'Expert in', 'Proficient in', etc. and terminal punctuation."""
         if not desc:
             return ""
+        cleaned = desc
         for prefix in ("Expert in ", "Proficient in ", "Skilled in ", "Experienced in "):
-            if desc.startswith(prefix):
-                return desc[len(prefix):]
-        return desc
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):]
+                break
+        return MarkdownInterestLetterGenerator._strip_terminal_punctuation(cleaned)
+
+    @staticmethod
+    def _strip_terminal_punctuation(text: str) -> str:
+        """Remove trailing sentence punctuation and whitespace before embedding.
+
+        Prevents artifacts such as ``.).`` or ``..`` when a source description
+        or scope fragment (which may end with ``.``) is wrapped in parentheses
+        or placed mid-sentence.
+        """
+        if not text:
+            return ""
+        return re.sub(r"[.!?\s]+$", "", text)
 
     @staticmethod
     def _upper_first(text: str) -> str:
