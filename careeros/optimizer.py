@@ -18,9 +18,12 @@ logger = logging.getLogger(__name__)
 
 # Structural phrase patterns (generic, not hardcoded phrases)
 _SLASH_COMPOUND_RE = re.compile(r"\b[\w]+/[\w/]+\b")  # CI/CD, ML/AI
+# Single-line capitalized sequences (Azure DevOps, Zero Trust).  Horizontal
+# whitespace only — sequences must never span newline boundaries, otherwise
+# JD bullet lists produce malformed tokens such as "devops engineer\ntake".
 _CAPITALIZED_SEQUENCE_RE = re.compile(
-    r"\b([A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*)+)\b"
-)  # Azure DevOps, Zero Trust
+    r"\b([A-Z][a-zA-Z]*(?:[ \t]+[A-Z][a-zA-Z]*)+)\b"
+)
 
 # Curated vocabulary: common multi-word technical phrases (lowercased).
 # Kept small — generic patterns above catch most phrases.
@@ -114,6 +117,12 @@ _STOP_WORDS: set[str] = {
     "fast", "paced", "deadline", "deadlines",
     "pipeline", "pipelines", "tooling", "toolchain",
     "platforms", "toolsets", "toolsets",
+    # English JD responsibility verbs (duties, not requirements).  These
+    # generic action verbs describe expected work, never a capability, and
+    # must not become primary requirement tokens.
+    "administer", "maintain", "identify", "contribute", "support",
+    "implement", "improve", "create", "communicate", "ensure",
+    "collaborate", "manage", "operate", "drive", "propose", "execute",
     # Swedish stop words (common function words)
     "och", "att", "det", "i", "en", "ett", "som", "är", "för", "med",
     "till", "av", "den", "har", "de", "inte", "om", "var", "men", "kan",

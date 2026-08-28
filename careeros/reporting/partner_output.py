@@ -22,6 +22,7 @@ scoring, coverage, or provenance model changes are made here.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..optimizer import (
@@ -127,6 +128,9 @@ def primary_role_phrase(job_description: str) -> str:
     Migration Lead").  Role-title stop words (e.g. "lead") are dropped so
     the phrase matches both "Cloud Migration Lead" and "Lead Cloud
     Migration Architect".  Returns "" when no such phrase exists.
+
+    This is the normalized matching form (lower-cased, stop words dropped).
+    For a human-readable display role title use :func:`jd_role_text`.
     """
     if not job_description:
         return ""
@@ -139,6 +143,57 @@ def primary_role_phrase(job_description: str) -> str:
         if word not in _STOP_WORDS and word not in _SEQUENCE_BLACKLIST
     ]
     return " ".join(words)
+
+
+# Extended role-title delimiter: "& DevOps Engineer" appended to
+# "Senior IT Infrastructure".  Only capitalized words (English letters) —
+# never crosses a line break, so bullet lists cannot leak a multi-line role.
+_ROLE_SEGMENT_RE = re.compile(
+    r"[ \t]*&[ \t]*[A-Z][a-zA-Z]+(?:[ \t]+[A-Z][a-zA-Z]+)*"
+)
+
+# Section-label words that precede a role title in a JD ("Job Title:",
+# "Role:", ...).  A match starting with one of these is a heading, not
+# the target role, so extraction moves on to the next candidate.
+_DISPLAY_ROLE_HEADING_STARTS: set[str] = {
+    "job", "role", "title", "position", "location", "salary",
+}
+
+
+def jd_role_text(job_description: str) -> str:
+    """Extract a human-readable role title from the JD (display form).
+
+    Reuses the single-line capitalized-sequence matcher shared with
+    :func:`primary_role_phrase` and extends a match across ``&``-joined
+    segments, e.g. ``"Senior IT Infrastructure & DevOps Engineer"``.
+    Heading labels such as ``"Job Title:"`` are skipped so the target
+    role, not the heading, is returned.  Returns ``""`` when no credible
+    role title exists.
+    """
+    if not job_description:
+        return ""
+    for raw_line in job_description.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        pos = 0
+        while True:
+            match = _CAPITALIZED_SEQUENCE_RE.search(line, pos)
+            if not match:
+                break
+            first_word = match.group().split()[0].lower()
+            if first_word in _DISPLAY_ROLE_HEADING_STARTS:
+                pos = match.end()
+                continue
+            role = match.group()
+            following = line[match.end():]
+            segment = _ROLE_SEGMENT_RE.match(following)
+            if segment:
+                role += segment.group()
+            if len(role.split()) >= 2:
+                return role
+            pos = match.end()
+    return ""
 
 
 def has_primary_role_recommendation(

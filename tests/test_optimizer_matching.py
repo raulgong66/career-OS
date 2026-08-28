@@ -245,3 +245,65 @@ def test_note_absent_when_coverage_below_threshold() -> None:
     # appear even though no primary-role recommendation exists.
     out = _render("Senior Engineer", "Python development at ACME Corp")
     assert _NOTE not in out
+
+
+# ---------------------------------------------------------------------------
+# JD requirement extraction must never cross line boundaries
+# ---------------------------------------------------------------------------
+
+
+def test_extract_requirements_never_cross_line_boundaries() -> None:
+    """Capitalized-sequence tokens must never span newlines in bulleted JDs."""
+    jd = (
+        "We are looking for a DevOps Engineer\n"
+        "Take ownership of the platform\n"
+        "GCP\n"
+        "DevSecOps practices are mandatory\n"
+        "Jenkins\n"
+        "Docker and application packaging\n"
+        "Terraform and Ansible\n"
+        "Kubernetes and Mesos\n"
+        "VMware and Hyper-V\n"
+        "AWS and Azure"
+    )
+    requirements = CVOptimizer._extract_requirements(jd)
+    assert all("\n" not in req for req in requirements)
+
+
+def test_extract_requirements_drops_malformed_cross_line_tokens() -> None:
+    """The previously-produced multi-line junk tokens ('devops engineer\\ntake', ...) are gone."""
+    jd = (
+        "Senior IT Infrastructure & DevOps Engineer\n"
+        "Take ownership of the platform\n"
+        "GCP\n"
+        "DevSecOps practices\n"
+        "Jenkins\n"
+        "Docker and application packaging\n"
+        "Terraform\n"
+        "Kubernetes or Mesos/Marathon\n"
+        "VMware or Hyper-V\n"
+        "AWS, Azure, or GCP\n"
+    )
+    requirements = CVOptimizer._extract_requirements(jd)
+    junk_tokens = {
+        "devops engineer\ntake",
+        "gcp\ndevsecops",
+        "jenkins\ndocker",
+        "terraform\nkubernetes",
+        "marathon\nvmware",
+        "v\naws",
+    }
+    assert not (junk_tokens & set(requirements))
+
+
+def test_extract_requirements_stops_generic_jd_verbs() -> None:
+    """Generic JD responsibility verbs are not extracted as requirements."""
+    jd = (
+        "Administer and maintain Linux environments\n"
+        "Implement and enhance CI/CD pipelines\n"
+        "Support and improve automation practices\n"
+        "Create and maintain technical documentation"
+    )
+    requirements = CVOptimizer._extract_requirements(jd)
+    verbs = {"administer", "maintain", "implement", "support", "improve", "create"}
+    assert verbs.isdisjoint(requirements)
